@@ -71,7 +71,8 @@ export interface PersonalLoan {
   industryType?: string;
   industryTypeOther?: string;
   subIndustry?: string;
-  transactionBankName?: string | { displayName: string; banks: string[] };
+  transactionBankName?: string | string[] | { displayName?: string; banks?: string[] };
+  transactionBankDisplayName?: string;
   transactionBankOther?: string;
   transactionBanks?: string[];
 

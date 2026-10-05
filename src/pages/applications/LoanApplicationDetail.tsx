@@ -260,20 +260,23 @@ const LoanApplicationDetail = () => {
   const existingBanks = loan ? [...(loan.existingBanks ?? []), ...(loan.otherBankList ?? [])].filter(Boolean) : [];
   const existingLoans = loan ? [...(loan.existingLoanTypes ?? []), ...(loan.otherLoanList ?? [])].filter(Boolean) : [];
 
-  // transactionBankName can be string OR { displayName, banks[] }
-  const transactionBanks: string[] = loan
-    ? (() => {
-        const t = loan.transactionBankName;
-        if (!t) return loan.transactionBanks ?? [];
-        if (typeof t === "object" && Array.isArray(t.banks)) return t.banks;
-        return loan.transactionBanks ?? [];
-      })()
-    : [];
   const transactionBankValue = loan?.transactionBankName;
+  const transactionBanks: string[] = Array.isArray(transactionBankValue)
+    ? transactionBankValue.filter((bank): bank is string => typeof bank === "string" && Boolean(bank.trim()))
+    : typeof transactionBankValue === "object" && transactionBankValue !== null
+      ? transactionBankValue.banks?.filter((bank) => Boolean(bank?.trim())) ?? loan?.transactionBanks ?? []
+      : loan?.transactionBanks ??
+        (typeof transactionBankValue === "string" && transactionBankValue !== "Other"
+          ? transactionBankValue.split(",").map((bank) => bank.trim()).filter(Boolean)
+          : []);
   const transactionBankDisplayName =
-    typeof transactionBankValue === "object" && transactionBankValue !== null
-      ? transactionBankValue.displayName
-      : typeof transactionBankValue === "string" ? transactionBankValue : null;
+    typeof transactionBankValue === "object" && transactionBankValue !== null && !Array.isArray(transactionBankValue)
+      ? transactionBankValue.displayName ?? loan?.transactionBankDisplayName ?? transactionBanks.join(", ")
+      : typeof transactionBankValue === "string"
+        ? transactionBankValue === "Other"
+          ? V(loan?.transactionBankOther) ?? loan?.transactionBankDisplayName ?? "Other"
+          : loan?.transactionBankDisplayName ?? transactionBankValue
+        : loan?.transactionBankDisplayName ?? (transactionBanks.length > 1 ? "Multiple Transaction Banks" : transactionBanks[0] ?? null);
 
   // ── Section flags + fields already displayed in curated sections ──────────
   const sectionFlags = {
@@ -313,11 +316,10 @@ const LoanApplicationDetail = () => {
       "lastYearTurnover", "last2YearsTurnover", "lastYearNetIncome", "last2YearsNetIncome",
     ] : []),
     ...(sectionFlags.professional ? [
-      "employmentType", "profession", "businessPlaceStatus", "businessState", "businessCity", "businessPincode",
-      "transactionBankName", "transactionBanks", "currentYearTurnover", "priorYearTurnover",
-      "currentYearNetIncome", "previousYearNetIncome",
-      ...(loan?.profession === "Other" ? ["professionOther"] : []),
-      ...(loan?.businessPlaceStatus === "Other" ? ["businessPlaceStatusOther"] : []),
+      "employmentType", "profession", "businessPlaceStatus", "businessPlaceStatusOther",
+      "businessState", "businessCity", "businessPincode", "businessPincodeOther",
+      "transactionBankName", "transactionBankDisplayName", "transactionBankOther", "transactionBanks",
+      "currentYearTurnover", "priorYearTurnover", "currentYearNetIncome", "previousYearNetIncome",
     ] : []),
     ...(sectionFlags.lease ? [
       "monthlyLeaseIncome", "totalLeaseAmount", "leasePropertyDuration", "leasePropertyMarketValue",
@@ -525,22 +527,30 @@ const LoanApplicationDetail = () => {
         </div>
 
         {/* ── Section navigation (sticky) ── */}
-        <nav className="sticky top-[72px] z-20">
-          <div className="bg-white/95 backdrop-blur border border-slate-200 rounded-2xl shadow-sm px-2 py-1.5 flex items-center gap-1 overflow-x-auto">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 shrink-0">
-              Jump to
+        <nav className="sticky top-0 z-20">
+          <div className="scrollbar-hidden flex items-center gap-1.5 overflow-x-auto rounded-2xl border border-slate-200/90 bg-white/95 px-2.5 py-2 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-md">
+            <span className="shrink-0 border-r border-slate-200 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
+              Sections
             </span>
-            {navItems.map((item) => (
+            {navItems.map((item, index) => (
               <button
                 key={item.id}
                 onClick={() => jumpTo(item.id)}
-                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                  activeSection === item.id ? "text-white shadow-sm" : "text-slate-500 hover:bg-slate-100"
+                aria-current={activeSection === item.id ? "location" : undefined}
+                className={`group inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 ${
+                  activeSection === item.id
+                    ? "text-white shadow-md shadow-sky-900/15"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 }`}
                 style={activeSection === item.id
                   ? { background: "linear-gradient(135deg,#066a9c,#26ae90)" }
                   : undefined}
               >
+                <span className={`font-mono text-[10px] tabular-nums ${
+                  activeSection === item.id ? "text-white/70" : "text-slate-400 group-hover:text-slate-500"
+                }`}>
+                  {String(index + 1).padStart(2, "0")}
+                </span>
                 {item.label}
               </button>
             ))}
@@ -611,15 +621,22 @@ const LoanApplicationDetail = () => {
           <>
             <InfoSection id="professional" icon={Briefcase} accent="#0d9488" title="Professional Details" subtitle="Self-employed professional information">
               <DataField label="Employment Type"       value={V(loan!.employmentType)} />
-              <DataField label="Profession"
-                value={loan!.profession === "Other" ? `Other — ${V(loan!.professionOther) ?? ""}` : V(loan!.profession)} />
+              <DataField label="Profession" value={V(loan!.profession)} />
               <DataField label="Business Place Status"
-                value={loan!.businessPlaceStatus === "Other" ? `Other — ${V(loan!.businessPlaceStatusOther) ?? ""}` : V(loan!.businessPlaceStatus)} />
+                value={loan!.businessPlaceStatus === "Other"
+                  ? `Other — ${V(loan!.businessPlaceStatusOther) ?? "Not specified"}`
+                  : V(loan!.businessPlaceStatus)} />
               <DataField label="Business State"        value={V(loan!.businessState)} />
               <DataField label="Business City"         value={V(loan!.businessCity)} />
-              <DataField label="Business Pincode"      value={V(loan!.businessPincode)} mono />
+              <DataField label="Business Pincode"
+                value={loan!.businessPincode === "Other"
+                  ? `Other — ${V(loan!.businessPincodeOther) ?? "Not specified"}`
+                  : V(loan!.businessPincode) ?? V(loan!.businessPincodeOther)} mono />
               <DataField label="Transaction Bank Selection" value={V(transactionBankDisplayName)} />
               <TagList   label="Transaction Banks"     items={transactionBanks} />
+              {V(loan!.transactionBankOther) && (
+                <DataField label="Other Transaction Bank" value={V(loan!.transactionBankOther)} />
+              )}
             </InfoSection>
             <InfoSection id="professional-financials" icon={TrendingDown} accent="#d97706" title="Professional Financials" subtitle="Annual turnover and net income">
               <DataField label="Current Year Turnover"    value={INR(loan!.currentYearTurnover)} highlight />

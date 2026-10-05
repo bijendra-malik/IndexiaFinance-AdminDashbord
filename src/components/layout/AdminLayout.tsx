@@ -155,10 +155,10 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
   const handleProfile = () => navigate("/profile");
 
   return (
-    <div className="min-h-screen flex" style={{ background: "#f1f5f9" }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: "#f1f5f9" }}>
 
       {/* ══════════════ SIDEBAR ══════════════ */}
-      <aside className="w-64 shrink-0 flex flex-col shadow-xl z-20"
+      <aside className="h-full w-64 shrink-0 flex flex-col shadow-xl z-20"
         style={{ background: "linear-gradient(180deg,#03405e 0%,#055a84 60%,#066a9c 100%)" }}>
 
         {/* Logo */}
@@ -175,7 +175,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto pb-4">
+        <nav className="scrollbar-hidden flex-1 px-3 space-y-0.5 overflow-y-auto pb-4">
 
           {/* Flat links */}
           {[
@@ -252,7 +252,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               <ChevronRight size={14} className={`transition-transform duration-200 opacity-60 ${applicationsOpen ? "rotate-90" : ""}`} />
             </button>
             {applicationsOpen && (
-              <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5 max-h-64 overflow-y-auto">
+              <div className="scrollbar-hidden ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5 max-h-64 overflow-y-auto">
                 {LOAN_TYPES.map(({ slug, label }) => {
                   const to = `${APPLICATIONS_BASE}/${slug}`;
                   const isActive = location.pathname === to;
@@ -322,7 +322,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
       </aside>
 
       {/* ══════════════ MAIN AREA ══════════════ */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
 
         {/* Topbar */}
         <header className="bg-white/80 backdrop-blur-sm sticky top-0 z-10 border-b border-slate-200/70">
@@ -356,7 +356,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           <div style={{ height: "2px", background: "linear-gradient(90deg,#066a9c,#26ae90,#f2f231)" }} />
         </header>
 
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-6">{children}</main>
       </div>
     </div>
   );
