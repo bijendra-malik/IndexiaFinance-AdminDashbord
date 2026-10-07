@@ -140,6 +140,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
   const isOnMasters      = location.pathname.startsWith("/masters");
   const isOnApplications = location.pathname.startsWith(APPLICATIONS_BASE);
   const isOnFranchises   = location.pathname.startsWith("/franchises");
+  const isOnFranchiseCustomers = location.pathname.startsWith("/franchise-customers");
 
   const [mastersOpen,      setMastersOpen]      = useState(isOnMasters);
   const [applicationsOpen, setApplicationsOpen] = useState(isOnApplications);
@@ -175,8 +176,14 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
             { to: "/customers", label: "Customers",  icon: Users },
             { to: "/franchises", label: "Franchises", icon: Building2 },
+            { to: "/franchise-customers", label: "Franchise Customers", icon: Users },
+            { to: "/franchise-customers/stats", label: "CIBIL Overview", icon: BarChart3 },
           ].map(({ to, label, icon: Icon }) => {
-            const isActive = to === "/franchises" ? isOnFranchises : location.pathname === to;
+            const isActive = to === "/franchises"
+              ? isOnFranchises
+              : to === "/franchise-customers"
+                ? isOnFranchiseCustomers && location.pathname !== "/franchise-customers/stats"
+                : location.pathname === to;
             return (
               <Link key={to} to={to}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
