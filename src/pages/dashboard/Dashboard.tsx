@@ -477,21 +477,16 @@ const Dashboard = () => {
         </>
       ) : null}
 
-      {/* Coming soon */}
-      <div className="mt-4 border border-dashed border-slate-300 rounded-xl p-4 flex items-center gap-3 text-slate-400 bg-slate-50/60">
-        <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
+      <Link
+        to="/franchises"
+        className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50/40"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[rgb(0,102,153)]">
           <Handshake size={18} />
         </div>
-        <p className="text-sm">
-          <span className="font-medium text-slate-500">Franchisee management</span> — coming soon.
-        </p>
-        <Link
-          to="/masters/type/banks"
-          className="ml-auto text-xs font-semibold text-[rgb(0,102,153)] hover:underline shrink-0"
-        >
-          Manage bank masters →
-        </Link>
-      </div>
+        <span className="text-sm font-medium">Manage franchise applications</span>
+        <span className="ml-auto text-xs font-semibold text-[rgb(0,102,153)]">Open management →</span>
+      </Link>
     </AdminLayout>
   );
 };

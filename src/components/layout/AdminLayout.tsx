@@ -139,17 +139,10 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
   const isOnMasters      = location.pathname.startsWith("/masters");
   const isOnApplications = location.pathname.startsWith(APPLICATIONS_BASE);
+  const isOnFranchises   = location.pathname.startsWith("/franchises");
 
   const [mastersOpen,      setMastersOpen]      = useState(isOnMasters);
   const [applicationsOpen, setApplicationsOpen] = useState(isOnApplications);
-
-  useEffect(() => {
-    if (isOnMasters) setMastersOpen(true);
-  }, [isOnMasters]);
-
-  useEffect(() => {
-    if (isOnApplications) setApplicationsOpen(true);
-  }, [isOnApplications]);
 
   const handleLogout  = () => { logout(); navigate("/login", { replace: true }); };
   const handleProfile = () => navigate("/profile");
@@ -181,8 +174,9 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {[
             { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
             { to: "/customers", label: "Customers",  icon: Users },
+            { to: "/franchises", label: "Franchises", icon: Building2 },
           ].map(({ to, label, icon: Icon }) => {
-            const isActive = location.pathname === to;
+            const isActive = to === "/franchises" ? isOnFranchises : location.pathname === to;
             return (
               <Link key={to} to={to}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
