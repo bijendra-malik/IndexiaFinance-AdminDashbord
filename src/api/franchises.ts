@@ -15,7 +15,17 @@ export interface Franchise {
   phone?: string;
   city?: string;
   state?: string;
+  continent?: string;
+  country?: string;
   status?: string;
+  panNumber?: string;
+  package?: string;
+  isVerified?: boolean;
+  isActive?: boolean;
+  lastLogin?: string;
+  franchiseAppliedAt?: string;
+  franchiseApprovedAt?: string;
+  franchiseRejectedAt?: string;
   createdAt?: string;
   updatedAt?: string;
   address?: string;
@@ -102,7 +112,17 @@ const toFranchise = (value: unknown): Franchise => {
     phone: optionalText(item.phone),
     city: optionalText(item.city),
     state: optionalText(item.state),
+    continent: optionalText(item.continent),
+    country: optionalText(item.country),
     status: optionalText(item.franchiseStatus ?? item.status),
+    panNumber: optionalText(item.panNumber),
+    package: optionalText(item.package),
+    isVerified: typeof item.isVerified === "boolean" ? item.isVerified : undefined,
+    isActive: typeof item.isActive === "boolean" ? item.isActive : undefined,
+    lastLogin: optionalText(item.lastLogin),
+    franchiseAppliedAt: optionalText(item.franchiseAppliedAt),
+    franchiseApprovedAt: optionalText(item.franchiseApprovedAt),
+    franchiseRejectedAt: optionalText(item.franchiseRejectedAt),
     createdAt: optionalText(item.createdAt),
     updatedAt: optionalText(item.updatedAt),
     address: optionalText(item.address),

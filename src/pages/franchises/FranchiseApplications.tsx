@@ -285,11 +285,16 @@ const FranchiseApplications = () => {
                   {franchise.contactPerson && <p><span className="font-medium text-slate-800">Contact person:</span> {franchise.contactPerson}</p>}
                   {franchise.email && <p><span className="font-medium text-slate-800">Email:</span> {franchise.email}</p>}
                   {(franchise.mobile || franchise.phone) && <p><span className="font-medium text-slate-800">Phone:</span> {franchise.mobile || franchise.phone}</p>}
-                  {(franchise.city || franchise.state) && <p className="flex items-center gap-1"><MapPin size={14} /> {[franchise.city, franchise.state].filter(Boolean).join(", ")}</p>}
+                  {(franchise.city || franchise.state || franchise.country) && <p className="flex items-center gap-1"><MapPin size={14} /> {[franchise.city, franchise.state, franchise.country].filter(Boolean).join(", ")}</p>}
                   {franchise.address && <p><span className="font-medium text-slate-800">Address:</span> {franchise.address}</p>}
                   {franchise.pincode && <p><span className="font-medium text-slate-800">Pincode:</span> {franchise.pincode}</p>}
                   {franchise.experience && <p><span className="font-medium text-slate-800">Experience:</span> {franchise.experience}</p>}
+                  {franchise.panNumber && <p><span className="font-medium text-slate-800">PAN:</span> {franchise.panNumber}</p>}
+                  {franchise.package && <p><span className="font-medium text-slate-800">Package:</span> {franchise.package}</p>}
                   <p><span className="font-medium text-slate-800">Registered:</span> {formatDate(franchise.createdAt)}</p>
+                  {franchise.franchiseAppliedAt && <p><span className="font-medium text-slate-800">Applied:</span> {formatDate(franchise.franchiseAppliedAt)}</p>}
+                  {franchise.franchiseApprovedAt && <p><span className="font-medium text-slate-800">Approved:</span> {formatDate(franchise.franchiseApprovedAt)}</p>}
+                  {franchise.franchiseRejectedAt && <p><span className="font-medium text-slate-800">Rejected:</span> {formatDate(franchise.franchiseRejectedAt)}</p>}
                   {franchise.franchiseId && <p><span className="font-medium text-slate-800">Franchise login ID:</span> {franchise.franchiseId}</p>}
                 </div>
               </div>
@@ -520,7 +525,7 @@ const FranchiseApplications = () => {
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">{item.franchiseId || "—"}</td>
                       <td className="px-4 py-3 text-slate-600">{item.mobile || item.phone || item.email || "—"}</td>
-                      <td className="px-4 py-3 text-slate-600">{[item.city, item.state].filter(Boolean).join(", ") || "—"}</td>
+                      <td className="px-4 py-3 text-slate-600">{[item.city, item.state, item.country].filter(Boolean).join(", ") || "—"}</td>
                       <td className="px-4 py-3 text-slate-500">{formatDate(item.createdAt)}</td>
                       <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle(item.status)}`}>{statusLabel(item.status)}</span></td>
                       <td className="px-4 py-3"><Link to={`/franchises/${encodeURIComponent(item._id)}`} className="text-xs font-semibold text-sky-700 hover:underline">View details</Link></td>
