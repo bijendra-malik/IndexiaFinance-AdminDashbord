@@ -11,7 +11,14 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
 import { getLoanTypeLabel } from "../../constants/loanTypes";
-import { deleteLoanBySlug, getLoanBySlug, getApiErrorMessage, type PersonalLoan } from "../../api/personalLoans";
+import {
+  deleteLoanBySlug,
+  getLoanBySlug,
+  getApiErrorMessage,
+  updateLoanStatusBySlug,
+  type LoanStatus,
+  type PersonalLoan,
+} from "../../api/personalLoans";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const INR = (v?: number | null) =>
@@ -219,6 +226,9 @@ const LoanApplicationDetail = () => {
   const [copied, setCopied] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<LoanStatus | null>(null);
+  const [statusNote, setStatusNote] = useState("");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const load = async () => {
     if (!id || !loanType) return;
@@ -251,6 +261,34 @@ const LoanApplicationDetail = () => {
       setPendingDelete(false);
     }
   };
+
+  const handleStatusUpdate = async () => {
+    if (!loan || !loanType || !pendingStatus) return;
+    setIsUpdatingStatus(true);
+    try {
+      const updatedLoan = await updateLoanStatusBySlug(
+        loanType,
+        loan._id,
+        pendingStatus,
+        statusNote.trim()
+      );
+      setLoan(updatedLoan);
+      showToast(`Application marked ${pendingStatus.toLowerCase()}.`, "success");
+      setPendingStatus(null);
+      setStatusNote("");
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Unable to update this application's status."), "error");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const nextStatuses: LoanStatus[] =
+    loan?.status === "Submitted"
+      ? ["Pending", "Approved", "Rejected"]
+      : loan?.status === "Pending"
+        ? ["Approved", "Rejected"]
+        : [];
 
   const isBiz   = loanType === "business-loan";
   const sCfg    = loan ? (STATUS_MAP[loan.status] ?? STATUS_MAP.Submitted) : null;
@@ -446,6 +484,37 @@ const LoanApplicationDetail = () => {
       </div>
 
       <div className="space-y-5">
+
+        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              {nextStatuses.length
+                ? "Choose a permitted next status. Approved and rejected decisions cannot be changed."
+                : "This application has a final status and can no longer be changed."}
+            </p>
+          </div>
+          {nextStatuses.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {nextStatuses.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setPendingStatus(status)}
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                    status === "Rejected"
+                      ? "border border-red-200 text-red-700 hover:bg-red-50"
+                      : status === "Approved"
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "border border-amber-200 text-amber-800 hover:bg-amber-50"
+                  }`}
+                >
+                  {status === "Pending" ? "Mark Pending" : status}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* ════════════ HERO ════════════════════════════════════════════════ */}
         <div className="rounded-3xl overflow-hidden shadow-lg"
@@ -792,6 +861,63 @@ const LoanApplicationDetail = () => {
           onConfirm={handleDelete}
           onCancel={() => setPendingDelete(false)}
         />
+      )}
+      {pendingStatus && pendingStatus !== "Rejected" && (
+        <ConfirmDialog
+          title={`Set application to ${pendingStatus.toLowerCase()}?`}
+          message={`This records the application as ${pendingStatus.toLowerCase()}. This decision cannot be changed later.`}
+          confirmLabel={`Set ${pendingStatus}`}
+          danger={false}
+          isSubmitting={isUpdatingStatus}
+          onConfirm={() => void handleStatusUpdate()}
+          onCancel={() => setPendingStatus(null)}
+        />
+      )}
+      {pendingStatus === "Rejected" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleStatusUpdate();
+            }}
+            className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl"
+          >
+            <h2 className="text-lg font-semibold text-slate-800">Reject application?</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              This decision is final. Add an optional note for the rejection record.
+            </p>
+            <textarea
+              autoFocus
+              value={statusNote}
+              onChange={(event) => setStatusNote(event.target.value)}
+              maxLength={500}
+              rows={4}
+              placeholder="Reason for rejection (optional)"
+              className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-100"
+            />
+            <p className="mt-1 text-right text-xs text-slate-400">{statusNote.length}/500</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={isUpdatingStatus}
+                onClick={() => {
+                  setPendingStatus(null);
+                  setStatusNote("");
+                }}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isUpdatingStatus}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isUpdatingStatus ? "Please wait..." : "Reject application"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </AdminLayout>
   );

@@ -146,7 +146,7 @@ const Dashboard = () => {
         <div className="flex items-center gap-3">
           {stats && (
             <span className="text-xs text-slate-400 hidden sm:block">
-              Updated {formatDateTime(stats.generatedAt)}
+              Last updated {formatDateTime(stats.generatedAt)}
             </span>
           )}
           <button
@@ -188,19 +188,27 @@ const Dashboard = () => {
       ) : stats ? (
         <>
           {/* ── KPI row ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-4">
             <StatCard
               label="Total Customers"
               value={stats.totalCustomers.toLocaleString("en-IN")}
-              sub={stats.customersError ? "Could not load customers" : "Registered users"}
+              sub="Registered users"
               icon={Users}
               iconBg="rgba(0,102,153,0.08)"
               iconColor="rgb(0,102,153)"
             />
             <StatCard
+              label="Franchise Customers"
+              value={stats.franchiseCustomerTotal.toLocaleString("en-IN")}
+              sub={stats.franchiseCustomersError ?? "Registered through franchises"}
+              icon={Handshake}
+              iconBg="rgba(38,174,144,0.1)"
+              iconColor="rgb(20,140,115)"
+            />
+            <StatCard
               label="Total Applications"
               value={stats.totalApplications.toLocaleString("en-IN")}
-              sub={`Across ${stats.products.filter(p => p.total > 0).length} active product${stats.products.filter(p => p.total > 0).length === 1 ? "" : "s"}`}
+              sub={`Across ${stats.products.length} products`}
               icon={FileText}
               iconBg="rgba(38,174,144,0.1)"
               iconColor="rgb(20,140,115)"
@@ -216,10 +224,18 @@ const Dashboard = () => {
             <StatCard
               label="Approved"
               value={stats.approved.toLocaleString("en-IN")}
-              sub={`${stats.rejected} rejected`}
+              sub={`${stats.approvalRate.toFixed(1)}% approval rate`}
               icon={CheckCircle2}
               iconBg="#ecfdf5"
               iconColor="#047857"
+            />
+            <StatCard
+              label="Rejected"
+              value={stats.rejected.toLocaleString("en-IN")}
+              sub="Applications declined"
+              icon={XCircle}
+              iconBg="#fff1f2"
+              iconColor="#be123c"
             />
           </div>
 
@@ -259,7 +275,7 @@ const Dashboard = () => {
             <Panel
               className="lg:col-span-2"
               title="Loan Products"
-              subtitle={`Application volume per product · ${stats.unavailableProducts.length} product${stats.unavailableProducts.length === 1 ? "" : "s"} not wired to an API yet`}
+              subtitle="Application volume and amounts per product"
             >
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -267,43 +283,27 @@ const Dashboard = () => {
                     <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border-y border-slate-100 bg-slate-50/60">
                       <th className="px-5 py-2.5">Product</th>
                       <th className="px-4 py-2.5 text-right">Total</th>
+                      <th className="px-4 py-2.5 text-right">Submitted</th>
                       <th className="px-4 py-2.5 text-right">Pending</th>
                       <th className="px-4 py-2.5 text-right">Approved</th>
+                      <th className="px-4 py-2.5 text-right">Rejected</th>
                       <th className="px-4 py-2.5 text-right">Requested</th>
-                      <th className="px-4 py-2.5" />
+                      <th className="px-4 py-2.5 text-right">Approved amount</th>
+                      <th className="px-5 py-2.5" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {stats.products.map((p) => {
-                      const isLive = p.supported && !p.error;
-                      return (
+                    {stats.products.map((p) => (
                         <tr
                           key={p.slug}
-                          onClick={() => isLive && navigate(`/applications/${p.slug}`)}
-                          className={`transition ${isLive ? "cursor-pointer hover:bg-slate-50" : "opacity-70"}`}
+                          onClick={() => navigate(`/applications/${p.slug}`)}
+                          className="group cursor-pointer transition hover:bg-slate-50"
                         >
                           <td className="px-5 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-slate-800">{p.label}</span>
-                              {!p.supported && (
-                                <span
-                                  title="No frontend endpoint mapped for this product yet"
-                                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500"
-                                >
-                                  no API
-                                </span>
-                              )}
-                              {p.error && (
-                                <span
-                                  title={p.error}
-                                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-600"
-                                >
-                                  failed
-                                </span>
-                              )}
-                            </div>
+                            <span className="font-medium text-slate-800">{p.label}</span>
                           </td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-800 tabular-nums">{p.total}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{p.submitted}</td>
                           <td className="px-4 py-3 text-right tabular-nums">
                             {p.pending > 0 ? (
                               <span className="text-amber-700 font-medium">{p.pending}</span>
@@ -318,44 +318,22 @@ const Dashboard = () => {
                               <span className="text-slate-300">0</span>
                             )}
                           </td>
+                          <td className="px-4 py-3 text-right tabular-nums">{p.rejected}</td>
                           <td className="px-4 py-3 text-right text-slate-600 tabular-nums">
                             {p.total > 0 ? formatCurrency(p.requestedAmount) : "—"}
                           </td>
-                          <td className="px-4 py-3 w-8">
-                            {isLive && (
-                              <ArrowUpRight
-                                size={14}
-                                className="text-slate-300 group-hover:text-[rgb(6,106,156)]"
-                              />
-                            )}
+                          <td className="px-4 py-3 text-right text-slate-600 tabular-nums">
+                            {p.approved > 0 ? formatCurrency(p.approvedAmount) : "—"}
+                          </td>
+                          <td className="px-5 py-3 w-8">
+                            <ArrowUpRight size={14} className="text-slate-300 group-hover:text-[rgb(6,106,156)]" />
                           </td>
                         </tr>
-                      );
-                    })}
+                    ))}
                   </tbody>
                 </table>
               </div>
 
-              {(stats.failedProducts.length > 0 || stats.unavailableProducts.length > 0) && (
-                <div className="px-5 py-3 border-t border-slate-100 flex items-start gap-2 text-xs text-slate-500 bg-slate-50/60">
-                  <AlertTriangle size={13} className="text-amber-500 shrink-0 mt-0.5" />
-                  <p>
-                    {stats.failedProducts.length > 0 && (
-                      <>
-                        <span className="font-medium text-slate-600">Failed to load:</span>{" "}
-                        {stats.failedProducts.join(", ")}.{" "}
-                      </>
-                    )}
-                    {stats.unavailableProducts.length > 0 && (
-                      <>
-                        <span className="font-medium text-slate-600">No endpoint mapped:</span>{" "}
-                        {stats.unavailableProducts.join(", ")} — add them in{" "}
-                        <code className="text-[11px] bg-white border border-slate-200 rounded px-1 py-0.5">SLUG_ENDPOINT</code>.
-                      </>
-                    )}
-                  </p>
-                </div>
-              )}
             </Panel>
 
             {/* ── Status distribution ── */}

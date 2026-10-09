@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Eye, LoaderCircle, RefreshCw, Search, Trash2, Users, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Check, Eye, LoaderCircle, RefreshCw, Search, ToggleLeft, ToggleRight, Trash2, Users, X } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
@@ -8,6 +9,7 @@ import {
   getApiErrorMessage,
   getCustomerApplications,
   getCustomers,
+  updateCustomerStatus,
   type Customer,
   type CustomerApplicationGroup,
 } from "../../api/customers";
@@ -60,6 +62,9 @@ const CustomersList = () => {
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [updatingCustomerId, setUpdatingCustomerId] = useState<string | null>(null);
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const [applicationGroups, setApplicationGroups] = useState<CustomerApplicationGroup[] | null>(null);
   const [applicationsError, setApplicationsError] = useState("");
@@ -69,34 +74,26 @@ const CustomersList = () => {
   const [pendingDecision, setPendingDecision] = useState<{
     group: CustomerApplicationGroup;
     application: PersonalLoan;
-    status: Extract<LoanStatus, "Approved" | "Rejected">;
+    status: Extract<LoanStatus, "Pending" | "Approved" | "Rejected">;
   } | null>(null);
+  const [decisionNote, setDecisionNote] = useState("");
   const [pendingDelete, setPendingDelete] = useState<Customer | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const load = async () => {
     setError("");
     try {
-      const data = await getCustomers();
+      const data = await getCustomers({
+        search: appliedSearch || undefined,
+        isActive: activeFilter === "all" ? undefined : activeFilter === "active",
+      });
       setCustomers(data);
     } catch (err) {
       setError(getApiErrorMessage(err, "Unable to load customers."));
     }
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    getCustomers()
-      .then((data) => {
-        if (!cancelled) setCustomers(data);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(getApiErrorMessage(err, "Unable to load customers."));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useEffect(() => { void load(); }, [appliedSearch, activeFilter]); // eslint-disable-line
 
   const viewingCustomerId = viewingCustomer?._id;
 
@@ -162,16 +159,44 @@ const CustomersList = () => {
       setPendingDelete(null);
       setViewingCustomer(null);
     } catch (err) {
-      showToast(getApiErrorMessage(err, "Unable to delete this customer."), "error");
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const message = getApiErrorMessage(err, "Unable to delete this customer.");
+      showToast(
+        status === 409
+          ? `${message} Approve or reject their open applications, then try again.`
+          : message,
+        "error"
+      );
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleToggleCustomer = async (customer: Customer) => {
+    const isActive = !customer.isActive;
+    setUpdatingCustomerId(customer._id);
+    try {
+      await updateCustomerStatus(customer._id, isActive);
+      setCustomers((current) =>
+        current?.flatMap((item) => {
+          if (item._id !== customer._id) return [item];
+          if (activeFilter !== "all" && (activeFilter === "active") !== isActive) return [];
+          return [{ ...item, isActive }];
+        }) ?? current
+      );
+      showToast(`Customer ${isActive ? "activated" : "deactivated"}.`, "success");
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Unable to update this customer's account status."), "error");
+    } finally {
+      setUpdatingCustomerId(null);
     }
   };
 
   const handleApplicationDecision = async (
     group: CustomerApplicationGroup,
     application: PersonalLoan,
-    status: Extract<LoanStatus, "Approved" | "Rejected">
+    status: Extract<LoanStatus, "Pending" | "Approved" | "Rejected">,
+    note = ""
   ) => {
     const slug = PRODUCT_SLUGS[group.product] ?? application.loanType;
     if (!slug) {
@@ -185,7 +210,7 @@ const CustomersList = () => {
         slug,
         application._id,
         status,
-        "Reviewed by admin from customer applications"
+        note.trim()
       );
       setApplicationGroups((current) =>
         current?.map((currentGroup) => ({
@@ -237,7 +262,13 @@ const CustomersList = () => {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setAppliedSearch(search.trim());
+          }}
+          className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
           <div className="relative w-full sm:max-w-sm">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -247,13 +278,28 @@ const CustomersList = () => {
               className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             />
           </div>
+          <div className="flex items-center gap-2">
+            <select
+              aria-label="Filter customers by account status"
+              value={activeFilter}
+              onChange={(event) => setActiveFilter(event.target.value as typeof activeFilter)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"
+            >
+              <option value="all">All accounts</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            <button type="submit" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}>
+              Search
+            </button>
+          </div>
           {customers && !error && (
             <p className="text-xs font-medium text-slate-500">
               Showing <span className="font-bold text-slate-700">{filtered.length}</span> of{" "}
               <span className="font-bold text-slate-700">{customers.length}</span>
             </p>
           )}
-        </div>
+        </form>
 
         {error ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 px-6 text-center">
@@ -323,11 +369,13 @@ const CustomersList = () => {
                           <Eye size={14} /> View
                         </button>
                         <button
-                          onClick={() => openCustomerDetails(c)}
-                          aria-label={`Delete ${c.name}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                          onClick={() => void handleToggleCustomer(c)}
+                          disabled={updatingCustomerId === c._id}
+                          aria-label={`${c.isActive ? "Deactivate" : "Activate"} ${c.name}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-500 transition hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50"
                         >
-                          <Trash2 size={14} /> Delete
+                          {c.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                          {c.isActive ? "Disable" : "Enable"}
                         </button>
                       </div>
                     </td>
@@ -508,14 +556,35 @@ const CustomersList = () => {
                                 </div>
                                 <div className="col-span-2 min-w-0 border-t border-slate-200/80 pt-2">
                                   <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Application ID</p>
-                                  <p className="mt-1 break-all font-mono text-[10px] text-slate-600">{application._id}</p>
+                                  {SUPPORTED_LOAN_SLUGS.has(slug) ? (
+                                    <Link
+                                      to={`/applications/${slug}/${application._id}`}
+                                      className="mt-1 block break-all font-mono text-[10px] text-sky-700 hover:underline"
+                                    >
+                                      {application._id} · Open application
+                                    </Link>
+                                  ) : (
+                                    <p className="mt-1 break-all font-mono text-[10px] text-slate-600">{application._id}</p>
+                                  )}
                                 </div>
                               </div>
 
                               {isOpen && canReview ? (
                                 <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
+                                  {application.status === "Submitted" && (
+                                    <button
+                                      onClick={() => setPendingDecision({ group, application, status: "Pending" })}
+                                      disabled={Boolean(updatingApplicationId)}
+                                      className="rounded-lg border border-amber-200 bg-white px-3.5 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Mark Pending
+                                    </button>
+                                  )}
                                   <button
-                                    onClick={() => setPendingDecision({ group, application, status: "Rejected" })}
+                                    onClick={() => {
+                                      setDecisionNote("");
+                                      setPendingDecision({ group, application, status: "Rejected" });
+                                    }}
                                     disabled={Boolean(updatingApplicationId)}
                                     className="rounded-lg border border-red-200 bg-white px-3.5 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                                   >
@@ -587,19 +656,71 @@ const CustomersList = () => {
       )}
 
       {pendingDecision && (
-        <ConfirmDialog
-          title={`${pendingDecision.status} this application?`}
-          message={`This will permanently mark this application as ${pendingDecision.status.toLowerCase()}. The decision cannot be changed later.`}
-          confirmLabel={pendingDecision.status}
-          danger={pendingDecision.status === "Rejected"}
-          isSubmitting={Boolean(updatingApplicationId)}
-          onConfirm={() => {
-            const decision = pendingDecision;
-            setPendingDecision(null);
-            void handleApplicationDecision(decision.group, decision.application, decision.status);
-          }}
-          onCancel={() => setPendingDecision(null)}
-        />
+        pendingDecision.status === "Rejected" ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleApplicationDecision(
+                  pendingDecision.group,
+                  pendingDecision.application,
+                  pendingDecision.status,
+                  decisionNote
+                );
+                setPendingDecision(null);
+              }}
+              className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl"
+            >
+              <h2 className="text-lg font-semibold text-slate-800">Reject this application?</h2>
+              <p className="mt-1 text-sm text-slate-500">This decision is final. Add an optional note.</p>
+              <textarea
+                autoFocus
+                value={decisionNote}
+                onChange={(event) => setDecisionNote(event.target.value)}
+                maxLength={500}
+                rows={4}
+                placeholder="Reason for rejection (optional)"
+                className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-100"
+              />
+              <p className="mt-1 text-right text-xs text-slate-400">{decisionNote.length}/500</p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(updatingApplicationId)}
+                  onClick={() => setPendingDecision(null)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={Boolean(updatingApplicationId)}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  Reject application
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <ConfirmDialog
+            title={pendingDecision.status === "Pending" ? "Move this application to pending?" : "Approve this application?"}
+            message={
+              pendingDecision.status === "Pending"
+                ? "The application will remain in the action queue and can later be approved or rejected."
+                : "This will permanently mark this application as approved. The decision cannot be changed later."
+            }
+            confirmLabel={pendingDecision.status === "Pending" ? "Mark Pending" : "Approve"}
+            danger={false}
+            isSubmitting={Boolean(updatingApplicationId)}
+            onConfirm={() => {
+              const decision = pendingDecision;
+              setPendingDecision(null);
+              void handleApplicationDecision(decision.group, decision.application, decision.status);
+            }}
+            onCancel={() => setPendingDecision(null)}
+          />
+        )
       )}
     </AdminLayout>
   );

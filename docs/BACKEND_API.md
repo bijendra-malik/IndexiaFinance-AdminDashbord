@@ -35,10 +35,10 @@ The frontend reads it from `VITE_API_BASE_URL` (`src/api/axiosInstance.ts`).
 
 ## 2. Dashboard — `/dashboard`  ⭐ NEW / recommended
 
-The dashboard currently aggregates numbers on the client by calling every loan
-product endpoint (14 products) plus `/customers` on every load. That is N+1
-requests per page view. A single endpoint removes the fan-out and lets the
-backend use Mongo aggregations.
+The dashboard reads pre-aggregated loan metrics from this endpoint and makes a
+second request to `/franchise-customers/stats` for franchise-customer totals.
+This keeps loan statistics to one request instead of calling every product
+endpoint separately.
 
 ### `GET /dashboard/stats`
 
@@ -75,12 +75,9 @@ backend use Mongo aggregations.
 }
 ```
 
-The frontend already produces exactly this shape in `src/api/dashboard.ts`, so
-swapping the data source is a one-function change once the endpoint exists.
-
-**Interim behaviour (what ships today):** the client fans out with
-`Promise.allSettled`, so one failing product never blanks the dashboard — it is
-reported in the products table as `failed` / `no API`.
+The dashboard also reads `{ stats: { total, byFranchise } }` from
+`GET /franchise-customers/stats`. If that secondary request fails, the loan
+dashboard remains available and the franchise-customer KPI reports the error.
 
 ---
 
@@ -88,7 +85,7 @@ reported in the products table as `failed` / `no API`.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/customers?search=` | `{ success, customers: Customer[] }`. `search` matches name / email / mobile. |
+| `GET` | `/customers?search=&isActive=` | `{ success, customers: Customer[] }`. `search` matches name / email / mobile; `isActive` filters active accounts. |
 | `GET` | `/customers/:id` | `{ success, customer }` |
 
 `Customer` = `{ _id, name, mobile, email, isVerified, isActive, role, lastLogin, createdAt, updatedAt }`.

@@ -19,11 +19,11 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Handle 401 globally — clear session and bounce to login
+// Admin tokens that are expired, invalid, or no longer authorised must sign out.
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 || error.response?.status === 403) {
       localStorage.removeItem("admin_token");
       localStorage.removeItem("admin_user");
       if (window.location.pathname !== "/login") {

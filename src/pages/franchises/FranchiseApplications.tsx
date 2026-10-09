@@ -7,6 +7,8 @@ import {
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
+import { LOAN_TYPES } from "../../constants/loanTypes";
+import { SUPPORTED_LOAN_SLUGS } from "../../api/personalLoans";
 import {
   approveFranchise,
   getApiErrorMessage,
@@ -68,6 +70,7 @@ const FranchiseApplications = () => {
   } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmApprove, setConfirmApprove] = useState(false);
+  const [confirmApprovedReject, setConfirmApprovedReject] = useState(false);
   const [confirmResetPassword, setConfirmResetPassword] = useState(false);
   const [showReject, setShowReject] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
@@ -242,6 +245,7 @@ const FranchiseApplications = () => {
   if (id) {
     const isPending = (franchise?.status ?? "").toLowerCase() === "pending";
     const isApproved = (franchise?.status ?? "").toLowerCase() === "approved";
+    const canReject = isPending || isApproved;
     const credentials = franchise?.credentials;
     const franchiseLoginId = credentials?.loginId || franchise?.franchiseId;
     const showCredentialPassword = franchise?._id === revealedCredentialFor;
@@ -298,9 +302,12 @@ const FranchiseApplications = () => {
                   {franchise.franchiseId && <p><span className="font-medium text-slate-800">Franchise login ID:</span> {franchise.franchiseId}</p>}
                 </div>
               </div>
-              {isPending && (
+              {canReject && (
                 <div className="flex shrink-0 gap-2">
-                  <button onClick={() => setShowReject(true)} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                  <button
+                    onClick={() => isApproved ? setConfirmApprovedReject(true) : setShowReject(true)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                  >
                     <X size={15} /> Reject
                   </button>
                   <button onClick={() => setConfirmApprove(true)} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ background: ACTIVE_BACKGROUND }}>
@@ -314,7 +321,7 @@ const FranchiseApplications = () => {
               <section className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
                 <h2 className="font-semibold text-slate-800">Franchise login credentials</h2>
                 <button type="button" onClick={() => setConfirmResetPassword(true)} disabled={actionLoading} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">
-                  <RefreshCw size={14} /> Reset password to registered mobile
+                  <RefreshCw size={14} /> Reset password to registered PAN
                 </button>
                 {credentials ? (
                   <>
@@ -356,7 +363,6 @@ const FranchiseApplications = () => {
                         </div>
                       </div>
                     </div>
-                    {credentials?.passwordIsMobile && <p className="mt-3 text-xs text-slate-500">The backend confirms the initial password is the registered mobile number.</p>}
                     {credentials?.note && <p className="mt-2 text-xs text-slate-500">{credentials.note}</p>}
                   </>
                 ) : (
@@ -400,17 +406,34 @@ const FranchiseApplications = () => {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {product.loans.map((loan: FranchiseLoan) => (
+                            {product.loans.map((loan: FranchiseLoan) => {
+                              const slug = LOAN_TYPES.find(
+                                (type) =>
+                                  type.slug === loan.loanType ||
+                                  type.label.toLowerCase() === loan.loanType.toLowerCase()
+                              )?.slug;
+                              const canOpenApplication = !!slug && SUPPORTED_LOAN_SLUGS.has(slug);
+                              return (
                               <tr key={loan._id}>
                                 <td className="px-5 py-3">
-                                  <p className="font-medium text-slate-800">{loan.fullName || "—"}</p>
+                                  {canOpenApplication ? (
+                                    <Link
+                                      to={`/applications/${slug}/${encodeURIComponent(loan._id)}`}
+                                      className="font-medium text-sky-800 hover:underline"
+                                    >
+                                      {loan.fullName || "View application"}
+                                    </Link>
+                                  ) : (
+                                    <p className="font-medium text-slate-800">{loan.fullName || "—"}</p>
+                                  )}
                                   <p className="text-xs text-slate-500">{loan.mobile || loan.email || ""}</p>
                                 </td>
                                 <td className="px-4 py-3 text-slate-600">{Number.isFinite(loan.loanAmount) ? formatCurrency(loan.loanAmount) : "—"}</td>
                                 <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle(loan.status)}`}>{loan.status || "—"}</span></td>
                                 <td className="px-4 py-3 text-slate-500">{formatDate(loan.createdAt)}</td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -424,7 +447,7 @@ const FranchiseApplications = () => {
         {confirmApprove && franchise && (
           <ConfirmDialog
             title="Approve franchise application?"
-            message="The backend will create the franchise login ID and set the initial password to the registered mobile. Any credentials returned by the backend will appear on the detail page."
+            message="The backend will create the franchise login ID and set the initial password to the registered PAN. Any credentials returned by the backend will appear on the detail page."
             confirmLabel="Approve application"
             danger={false}
             isSubmitting={actionLoading}
@@ -432,10 +455,23 @@ const FranchiseApplications = () => {
             onCancel={() => setConfirmApprove(false)}
           />
         )}
+        {confirmApprovedReject && franchise && (
+          <ConfirmDialog
+            title="Reject this approved franchise?"
+            message="Rejecting an approved franchise will disable its login, and password reset will no longer be available. Continue only if you intend to revoke its access."
+            confirmLabel="Continue to rejection"
+            isSubmitting={actionLoading}
+            onConfirm={() => {
+              setConfirmApprovedReject(false);
+              setShowReject(true);
+            }}
+            onCancel={() => setConfirmApprovedReject(false)}
+          />
+        )}
         {confirmResetPassword && franchise && (
           <ConfirmDialog
             title="Reset franchise password?"
-            message="The backend will set the password to the franchise's registered mobile number."
+            message="The backend will reset the password to the franchise's registered PAN."
             confirmLabel="Reset password"
             danger={false}
             isSubmitting={actionLoading}
@@ -452,11 +488,12 @@ const FranchiseApplications = () => {
                 autoFocus
                 value={rejectNote}
                 onChange={(event) => setRejectNote(event.target.value)}
-                maxLength={1000}
+                maxLength={500}
                 rows={4}
                 placeholder="Application details require correction"
                 className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-100"
               />
+              <p className="mt-1 text-right text-xs text-slate-400">{rejectNote.length}/500</p>
               <div className="mt-5 flex justify-end gap-2">
                 <button type="button" disabled={actionLoading} onClick={() => setShowReject(false)} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Cancel</button>
                 <button type="submit" disabled={actionLoading} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
@@ -504,14 +541,16 @@ const FranchiseApplications = () => {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-left text-sm">
+              <table className="w-full min-w-[1150px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-5 py-3">Franchise</th>
                     <th className="px-4 py-3">Login ID</th>
                     <th className="px-4 py-3">Contact</th>
                     <th className="px-4 py-3">Location</th>
-                    <th className="px-4 py-3">Registered</th>
+                    <th className="px-4 py-3">Package</th>
+                    <th className="px-4 py-3">PAN</th>
+                    <th className="px-4 py-3">Applied</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3" />
                   </tr>
@@ -524,9 +563,14 @@ const FranchiseApplications = () => {
                         <p className="mt-0.5 text-xs text-slate-400">{item.contactPerson || item.name || item.fullName || " "}</p>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">{item.franchiseId || "—"}</td>
-                      <td className="px-4 py-3 text-slate-600">{item.mobile || item.phone || item.email || "—"}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        <span className="block">{item.mobile || item.phone || "—"}</span>
+                        <span className="text-xs text-slate-400">{item.email || "—"}</span>
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{[item.city, item.state, item.country].filter(Boolean).join(", ") || "—"}</td>
-                      <td className="px-4 py-3 text-slate-500">{formatDate(item.createdAt)}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.package || "—"}</td>
+                      <td className="px-4 py-3 font-mono text-slate-600">{item.panNumber || "—"}</td>
+                      <td className="px-4 py-3 text-slate-500">{formatDate(item.franchiseAppliedAt || item.createdAt)}</td>
                       <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle(item.status)}`}>{statusLabel(item.status)}</span></td>
                       <td className="px-4 py-3"><Link to={`/franchises/${encodeURIComponent(item._id)}`} className="text-xs font-semibold text-sky-700 hover:underline">View details</Link></td>
                     </tr>

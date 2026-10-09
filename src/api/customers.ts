@@ -28,13 +28,23 @@ export { getApiErrorMessage } from "../utils/apiError";
 
 // ── API Calls ────────────────────────────────────────────────────────────────
 
-export const getCustomers = async (search?: string): Promise<Customer[]> => {
+export const getCustomers = async (params?: {
+  search?: string;
+  isActive?: boolean;
+}): Promise<Customer[]> => {
   const res = await axiosInstance.get<{ success?: boolean; customers?: Customer[]; data?: Customer[] }>(
     "/customers",
-    { params: search ? { search } : undefined }
+    { params }
   );
   if (Array.isArray(res.data)) return res.data as Customer[];
   return res.data?.customers ?? res.data?.data ?? [];
+};
+
+export const updateCustomerStatus = async (
+  id: string,
+  isActive: boolean
+): Promise<void> => {
+  await axiosInstance.patch(`/customers/${encodeURIComponent(id)}/status`, { isActive });
 };
 
 export const getCustomer = async (id: string): Promise<Customer> => {
