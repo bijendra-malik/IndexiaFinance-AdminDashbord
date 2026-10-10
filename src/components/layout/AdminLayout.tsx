@@ -176,11 +176,14 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
             { to: "/customers", label: "Customers",  icon: Users },
             { to: "/franchises", label: "Franchises", icon: Building2 },
+            { to: "/franchise-plans", label: "Franchise Plans", icon: Coins },
             { to: "/franchise-customers", label: "Franchise Customers", icon: Users },
             { to: "/franchise-customers/stats", label: "CIBIL Overview", icon: BarChart3 },
           ].map(({ to, label, icon: Icon }) => {
             const isActive = to === "/franchises"
               ? isOnFranchises
+              : to === "/franchise-plans"
+                ? location.pathname === to
               : to === "/franchise-customers"
                 ? isOnFranchiseCustomers && location.pathname !== "/franchise-customers/stats"
                 : location.pathname === to;

@@ -418,7 +418,7 @@ const Dashboard = () => {
                       const meta = BUCKET_META[(app.status as Bucket)] ?? BUCKET_META.Submitted;
                       return (
                         <tr
-                          key={app._id}
+                          key={`${app.slug}:${app._id}`}
                           onClick={() => navigate(`/applications/${app.slug}/${app._id}`)}
                           className="cursor-pointer hover:bg-slate-50 transition"
                         >

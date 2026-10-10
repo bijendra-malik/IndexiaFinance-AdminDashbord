@@ -14,6 +14,7 @@ import CustomersList from "./pages/customers/CustomersList";
 import LocationMasterAdmin from "./pages/masters/LocationMasterAdmin";
 import FranchiseApplications from "./pages/franchises/FranchiseApplications";
 import FranchiseCustomers from "./pages/franchises/FranchiseCustomers";
+import FranchisePlans from "./pages/franchises/FranchisePlans";
 
 function App() {
   return (
@@ -56,6 +57,15 @@ function App() {
               element={
                 <ProtectedRoute>
                   <FranchiseApplications />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/franchise-plans"
+              element={
+                <ProtectedRoute>
+                  <FranchisePlans />
                 </ProtectedRoute>
               }
             />

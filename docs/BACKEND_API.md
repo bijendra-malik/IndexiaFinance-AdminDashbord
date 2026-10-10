@@ -449,3 +449,62 @@ be shared. The admin UI is not the franchise sign-in page: after approval,
 the partner uses those credentials on the separate franchise portal. If a
 rejection reason or credentials are absent from the API response, the frontend
 cannot safely infer them and reports that they were not provided.
+
+## Franchise investment plans — `/franchise-plans`
+
+The admin **Franchise Plans** page uses the admin base URL and JWT. The public
+franchise page reads live plans from `GET /api/franchise/plans`.
+
+| Method | Admin path | Body / behavior |
+|---|---|---|
+| `GET` | `/franchise-plans?active=true\|false` | Omit `active` for all plans; return `{ success, count, plans, bestValueCode, bestValueIsPinned }`. |
+| `POST` | `/franchise-plans` | Create a plan. |
+| `PATCH` | `/franchise-plans/:id` | Update only the supplied fields. |
+| `PATCH` | `/franchise-plans/:id/best-value` | `{ isBestValue }`; only one plan may be pinned. |
+| `PATCH` | `/franchise-plans/:id/status` | `{ isActive }`; reject deactivation of the last live plan. |
+| `DELETE` | `/franchise-plans/:id` | Soft-delete/hide only; never physically remove the plan. |
+
+Plan writes use `code`, `name`, `durationMonths`, `fee` (excluding GST),
+`gstPercent`, `renewalFee` (number or `null`), `renewalNote`, `features`
+(maximum 20 strings, 200 characters each), `sortOrder`, `isBestValue`, and
+`isActive`. The API response must include its server-derived public values:
+`validityLabel`, `gstAmount`, `totalWithGst`, `renewalText`, and
+`effectiveMonthlyCost` (or `null`), plus `_id`, `createdAt`, `updatedAt`,
+`createdBy`, and `updatedBy` when available. The frontend displays those
+derived values and does not recalculate them.
+
+```jsonc
+{
+  "success": true,
+  "plan": {
+    "_id": "…",
+    "code": "3Y",
+    "name": "3-Year Plan",
+    "durationMonths": 36,
+    "validityLabel": "3 Years",
+    "fee": 249000,
+    "gstPercent": 18,
+    "gstAmount": 44820,
+    "totalWithGst": 293820,
+    "renewalFee": 3900,
+    "renewalNote": "As applicable",
+    "renewalText": "₹3,900",
+    "features": ["Franchise access for 3 years"],
+    "sortOrder": 1,
+    "isBestValue": true,
+    "isActive": true,
+    "effectiveMonthlyCost": 6917,
+    "createdAt": "2026-10-09T10:00:00.000Z",
+    "updatedAt": "2026-10-09T10:00:00.000Z",
+    "createdBy": { "name": "Admin" },
+    "updatedBy": { "name": "Admin" }
+  }
+}
+```
+
+Editing `fee` changes the currently published price for new applicants only.
+Applications already submitted must retain their `franchise.plan` price
+snapshot. Return validation as `{ success: false, message, errors: [{ field,
+message }] }`; use `409` for a duplicate code and `400` when the request would
+leave no active plan. DELETE must hide a plan without erasing records referenced
+by applications.
