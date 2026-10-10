@@ -188,19 +188,27 @@ const Dashboard = () => {
       ) : stats ? (
         <>
           {/* ── KPI row ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-4">
             <StatCard
               label="Total Customers"
               value={stats.totalCustomers.toLocaleString("en-IN")}
-              sub="Registered users"
+              sub="Accounts with Customer role"
               icon={Users}
               iconBg="rgba(0,102,153,0.08)"
               iconColor="rgb(0,102,153)"
             />
             <StatCard
+              label="Franchise Accounts"
+              value={stats.totalFranchises.toLocaleString("en-IN")}
+              sub="Franchise login accounts"
+              icon={Handshake}
+              iconBg="rgba(38,174,144,0.1)"
+              iconColor="rgb(20,140,115)"
+            />
+            <StatCard
               label="Franchise Customers"
               value={stats.franchiseCustomerTotal.toLocaleString("en-IN")}
-              sub={stats.franchiseCustomersError ?? "Registered through franchises"}
+              sub={stats.franchiseCustomersError ?? "Customers referred by franchises"}
               icon={Handshake}
               iconBg="rgba(38,174,144,0.1)"
               iconColor="rgb(20,140,115)"
@@ -447,6 +455,101 @@ const Dashboard = () => {
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel
+            className="mt-4"
+            title="Recent Customer & Franchise Accounts"
+            subtitle="Latest account records from the customer and franchise collections"
+            action={
+              <div className="flex gap-3 text-xs font-semibold">
+                <Link to="/customers" className="text-sky-700 hover:underline">Customers</Link>
+                <Link to="/franchises" className="text-sky-700 hover:underline">Franchises</Link>
+              </div>
+            }
+          >
+            {stats.accountsError && (
+              <p className="mx-5 mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="alert">
+                Some account data could not be loaded: {stats.accountsError}
+              </p>
+            )}
+            {stats.recentAccounts.length === 0 ? (
+              <p className="px-5 pb-6 text-sm text-slate-400 italic">
+                {stats.accountsError ? "Account details are unavailable." : "No customer or franchise accounts found."}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1050px] text-sm">
+                  <thead>
+                    <tr className="border-y border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="px-5 py-2.5">Account</th>
+                      <th className="px-4 py-2.5">Role</th>
+                      <th className="px-4 py-2.5">Contact</th>
+                      <th className="px-4 py-2.5">Location / Address</th>
+                      <th className="px-4 py-2.5">PAN / Package</th>
+                      <th className="px-4 py-2.5">Status</th>
+                      <th className="px-4 py-2.5">Last login</th>
+                      <th className="px-4 py-2.5">Registered</th>
+                      <th className="px-5 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {stats.recentAccounts.map((account) => (
+                      <tr key={`${account.role}:${account.id}`} className="hover:bg-slate-50">
+                        <td className="px-5 py-3">
+                          <span className="font-medium text-slate-800">{account.name}</span>
+                          <span className="mt-0.5 block font-mono text-[10px] text-slate-400">{account.id}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            account.role === "Franchise"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-sky-50 text-sky-700"
+                          }`}>{account.role}</span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <span className="block">{account.mobile || "—"}</span>
+                          <span className="text-xs text-slate-400">{account.email || "—"}</span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <span className="block">{account.location || "—"}</span>
+                          {account.address && <span className="block text-xs text-slate-400">{account.address}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <span className="block">{account.panNumber || "—"}</span>
+                          <span className="text-xs text-slate-400">{account.packageName || "—"}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            account.status.toLowerCase() === "active" || account.status.toLowerCase() === "approved"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : account.status.toLowerCase() === "rejected" || account.status.toLowerCase() === "inactive"
+                                ? "bg-red-50 text-red-700"
+                                : "bg-amber-50 text-amber-700"
+                          }`}>{account.status}</span>
+                          <span className="mt-1 block text-[10px] text-slate-400">
+                            {account.isVerified ? "Verified" : "Not verified"}
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            Account {account.isActive ? "active" : "inactive"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">{formatDateTime(account.lastLogin ?? undefined)}</td>
+                        <td className="px-4 py-3 text-slate-500">{formatDate(account.createdAt)}</td>
+                        <td className="px-5 py-3 text-right">
+                          <Link
+                            to={account.role === "Franchise" ? `/franchises/${encodeURIComponent(account.id)}` : "/customers"}
+                            className="text-xs font-semibold text-sky-700 hover:underline"
+                          >
+                            View
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

@@ -35,10 +35,12 @@ The frontend reads it from `VITE_API_BASE_URL` (`src/api/axiosInstance.ts`).
 
 ## 2. Dashboard — `/dashboard`  ⭐ NEW / recommended
 
-The dashboard reads pre-aggregated loan metrics from this endpoint and makes a
-second request to `/franchise-customers/stats` for franchise-customer totals.
-This keeps loan statistics to one request instead of calling every product
-endpoint separately.
+The dashboard reads pre-aggregated loan metrics from this endpoint and makes
+additional requests to `/customers`, `/franchises`, and
+`/franchise-customers/stats`. Customer and franchise account totals/details
+come from their respective account endpoints; franchise-customer totals are
+separate and count customers referred through franchises. This keeps loan
+statistics to one request instead of calling every product endpoint separately.
 
 ### `GET /dashboard/stats`
 
@@ -75,9 +77,18 @@ endpoint separately.
 }
 ```
 
+The dashboard uses the count from `GET /customers` for Customer-role accounts,
+and the `total` field from the paginated `GET /franchises?page=1&limit=10`
+response for Franchise-role accounts. The returned franchise page supplies
+the latest franchise profiles; `/customers` supplies customer profiles. If an
+account endpoint fails, loan statistics still render, the account table
+reports the error, and the customer total falls back to `/dashboard/stats`.
+
 The dashboard also reads `{ stats: { total, byFranchise } }` from
-`GET /franchise-customers/stats`. If that secondary request fails, the loan
-dashboard remains available and the franchise-customer KPI reports the error.
+`GET /franchise-customers/stats`. This is a separate count for customers
+registered through franchises, not a count of franchise login accounts. If
+this endpoint fails, the loan dashboard remains available and the
+franchise-customer KPI reports the error.
 
 ---
 
