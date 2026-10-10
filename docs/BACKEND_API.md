@@ -397,3 +397,44 @@ Extra rules worth enforcing server-side:
 | 5 | No `/masters/type/:type` | Type lookups cost 2 requests (list + detail) instead of 1 | §5, optional |
 | 6 | Location API deployment has not been runtime-verified | Location Master requires the new record/status endpoints | Smoke-test the routes in [LOCATION_API.md](LOCATION_API.md) |
 | 7 | No customer↔application link | Cannot see one customer's full portfolio | `GET /customers/:id/applications` |
+
+## Franchise management — `/franchises`
+
+The admin franchise detail page reads `GET /franchises/:id` and
+`GET /franchises/:id/loans`. Return the franchise profile in a `franchise`
+object (or as `data.franchise`) and include the application rejection
+explanation as `rejectionReason` (or `rejectionNote`) when rejected. The
+frontend also accepts profile fields nested under `businessDetails`,
+`contactDetails`, and `location`; prefer flat fields for a consistent API.
+
+```jsonc
+{
+  "success": true,
+  "franchise": {
+    "_id": "…",
+    "franchiseId": "…",
+    "businessName": "…",
+    "contactPerson": "…",
+    "email": "…",
+    "mobile": "…",
+    "address": "…",
+    "city": "…",
+    "state": "…",
+    "country": "…",
+    "pincode": "…",
+    "panNumber": "…",
+    "package": "…",
+    "status": "Rejected",
+    "rejectionReason": "Please correct the submitted business address."
+  }
+}
+```
+
+Approval uses `PATCH /franchises/:id/approve`; password reset uses
+`PATCH /franchises/:id/reset-password`; rejection uses
+`PATCH /franchises/:id/reject` with `{ "note": "…" }`. Return generated
+credentials as `{ credentials: { loginId, password, note? } }` when they can
+be shared. The admin UI is not the franchise sign-in page: after approval,
+the partner uses those credentials on the separate franchise portal. If a
+rejection reason or credentials are absent from the API response, the frontend
+cannot safely infer them and reports that they were not provided.

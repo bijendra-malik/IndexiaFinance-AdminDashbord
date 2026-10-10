@@ -26,6 +26,7 @@ export interface Franchise {
   franchiseAppliedAt?: string;
   franchiseApprovedAt?: string;
   franchiseRejectedAt?: string;
+  rejectionReason?: string;
   createdAt?: string;
   updatedAt?: string;
   address?: string;
@@ -87,6 +88,9 @@ const firstArray = (...values: unknown[]): unknown[] | undefined =>
 const optionalText = (value: unknown): string | undefined =>
   typeof value === "string" || typeof value === "number" ? String(value) : undefined;
 
+const firstText = (...values: unknown[]): string | undefined =>
+  values.map(optionalText).find((value) => value !== undefined && value.trim() !== "");
+
 const toCredentials = (value: unknown): FranchiseCredentials => {
   const credential = recordOf(value);
   return {
@@ -100,35 +104,53 @@ const toCredentials = (value: unknown): FranchiseCredentials => {
 
 const toFranchise = (value: unknown): Franchise => {
   const item = recordOf(value);
+  const business = recordOf(item.businessDetails ?? item.businessInfo ?? item.business);
+  const contact = recordOf(item.contactDetails ?? item.contactInfo ?? item.contact);
+  const location = recordOf(item.location ?? item.addressDetails);
+  const application = recordOf(item.franchiseApplication ?? item.application);
+  const credentials = item.credentials === null
+    ? null
+    : item.credentials !== undefined
+      ? toCredentials(item.credentials)
+      : undefined;
   return {
     _id: optionalText(item._id ?? item.id) ?? "",
-    franchiseId: optionalText(item.franchiseId),
-    name: optionalText(item.name),
-    fullName: optionalText(item.fullName),
-    businessName: optionalText(item.businessName),
-    contactPerson: optionalText(item.contactPerson),
-    email: optionalText(item.email),
-    mobile: optionalText(item.mobile),
-    phone: optionalText(item.phone),
-    city: optionalText(item.city),
-    state: optionalText(item.state),
-    continent: optionalText(item.continent),
-    country: optionalText(item.country),
-    status: optionalText(item.franchiseStatus ?? item.status),
-    panNumber: optionalText(item.panNumber),
-    package: optionalText(item.package),
+    franchiseId: firstText(item.franchiseId, item.loginId, recordOf(credentials).loginId),
+    name: firstText(item.name, contact.name),
+    fullName: firstText(item.fullName, contact.fullName),
+    businessName: firstText(item.businessName, business.businessName, business.name),
+    contactPerson: firstText(item.contactPerson, contact.contactPerson, contact.name, contact.fullName),
+    email: firstText(item.email, contact.email),
+    mobile: firstText(item.mobile, item.mobileNumber, contact.mobile, contact.mobileNumber),
+    phone: firstText(item.phone, item.phoneNumber, contact.phone, contact.phoneNumber),
+    city: firstText(item.city, location.city),
+    state: firstText(item.state, location.state),
+    continent: firstText(item.continent, location.continent),
+    country: firstText(item.country, location.country),
+    status: firstText(item.franchiseStatus, application.status, item.status),
+    panNumber: firstText(item.panNumber, item.pan, business.panNumber, contact.panNumber),
+    package: firstText(item.package, item.packageName, business.package, business.packageName),
     isVerified: typeof item.isVerified === "boolean" ? item.isVerified : undefined,
     isActive: typeof item.isActive === "boolean" ? item.isActive : undefined,
     lastLogin: optionalText(item.lastLogin),
-    franchiseAppliedAt: optionalText(item.franchiseAppliedAt),
-    franchiseApprovedAt: optionalText(item.franchiseApprovedAt),
-    franchiseRejectedAt: optionalText(item.franchiseRejectedAt),
+    franchiseAppliedAt: firstText(item.franchiseAppliedAt, application.appliedAt),
+    franchiseApprovedAt: firstText(item.franchiseApprovedAt, application.approvedAt),
+    franchiseRejectedAt: firstText(item.franchiseRejectedAt, application.rejectedAt),
+    rejectionReason: firstText(
+      item.rejectionReason,
+      item.rejectionNote,
+      item.rejectedReason,
+      application.rejectionReason,
+      application.rejectionNote,
+      application.reason
+    ),
     createdAt: optionalText(item.createdAt),
     updatedAt: optionalText(item.updatedAt),
-    address: optionalText(item.address),
-    pincode: optionalText(item.pincode),
-    experience: optionalText(item.experience),
+    address: firstText(item.address, location.address, location.fullAddress),
+    pincode: firstText(item.pincode, item.pinCode, location.pincode, location.pinCode),
+    experience: firstText(item.experience, business.experience),
     loanCount: typeof item.loanCount === "number" ? item.loanCount : undefined,
+    credentials,
   };
 };
 

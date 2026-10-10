@@ -299,7 +299,7 @@ const FranchiseApplications = () => {
                   {franchise.franchiseAppliedAt && <p><span className="font-medium text-slate-800">Applied:</span> {formatDate(franchise.franchiseAppliedAt)}</p>}
                   {franchise.franchiseApprovedAt && <p><span className="font-medium text-slate-800">Approved:</span> {formatDate(franchise.franchiseApprovedAt)}</p>}
                   {franchise.franchiseRejectedAt && <p><span className="font-medium text-slate-800">Rejected:</span> {formatDate(franchise.franchiseRejectedAt)}</p>}
-                  {franchise.franchiseId && <p><span className="font-medium text-slate-800">Franchise login ID:</span> {franchise.franchiseId}</p>}
+                  {franchiseLoginId && <p><span className="font-medium text-slate-800">Franchise login ID:</span> {franchiseLoginId}</p>}
                 </div>
               </div>
               {canReject && (
@@ -310,16 +310,30 @@ const FranchiseApplications = () => {
                   >
                     <X size={15} /> Reject
                   </button>
-                  <button onClick={() => setConfirmApprove(true)} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ background: ACTIVE_BACKGROUND }}>
-                    <Check size={15} /> Approve
-                  </button>
+                  {isPending && (
+                    <button onClick={() => setConfirmApprove(true)} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ background: ACTIVE_BACKGROUND }}>
+                      <Check size={15} /> Approve
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
+            {(franchise.status?.toLowerCase() === "rejected" || franchise.rejectionReason) && (
+              <section className="mb-5 rounded-xl border border-red-200 bg-red-50 p-5 shadow-sm">
+                <h2 className="font-semibold text-red-800">Rejection reason</h2>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-red-700">
+                  {franchise.rejectionReason || "No rejection reason was returned by the API."}
+                </p>
+              </section>
+            )}
+
             {isApproved && (
               <section className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
                 <h2 className="font-semibold text-slate-800">Franchise login credentials</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Approve the franchise first, then share the returned login ID and password securely. The franchise partner signs in through the franchise portal, not this admin panel.
+                </p>
                 <button type="button" onClick={() => setConfirmResetPassword(true)} disabled={actionLoading} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">
                   <RefreshCw size={14} /> Reset password to registered PAN
                 </button>
