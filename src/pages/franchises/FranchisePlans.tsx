@@ -221,7 +221,7 @@ const FranchisePlans = () => {
 
   const validateDraft = (): FieldErrors => {
     const next: FieldErrors = {};
-    if (!/^[A-Z0-9_-]{1,20}$/.test(draft.code.trim().toUpperCase())) {
+    if (draft.code.trim() && !/^[A-Z0-9_-]{1,20}$/.test(draft.code.trim().toUpperCase())) {
       next.code = "Use 1–20 letters, numbers, hyphens, or underscores.";
     }
     if (!draft.name.trim()) next.name = "Plan name is required.";
@@ -248,8 +248,9 @@ const FranchisePlans = () => {
   };
 
   const payloadFromDraft = (): FranchisePlanPayload => {
+    const code = draft.code.trim().toUpperCase();
     const all: FranchisePlanPayload = {
-      code: draft.code.trim().toUpperCase(),
+      ...(code ? { code } : {}),
       name: draft.name.trim(),
       durationMonths: Number(draft.durationMonths),
       fee: Number(draft.fee),
@@ -563,9 +564,9 @@ const FranchisePlans = () => {
                 {formError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="text-sm font-medium text-slate-700">
-                    Plan code *
+                    Plan code {editingPlan ? "*" : "(optional)"}
                     <select value={draft.code} onChange={(event) => { setDraft({ ...draft, code: event.target.value }); setFieldErrors({ ...fieldErrors, code: "" }); }} className={inputClass(!!fieldErrors.code)}>
-                      <option value="">Select a plan code</option>
+                      {!editingPlan && <option value="">Auto-generate from duration</option>}
                       {planCodeOptions.map(({ code, isUsed }) => (
                         <option key={code} value={code} disabled={isUsed}>
                           {isUsed ? `${code} (already used)` : code}
@@ -573,6 +574,7 @@ const FranchisePlans = () => {
                       ))}
                     </select>
                     {fieldErrors.code && <span className="mt-1 block text-xs text-red-600">{fieldErrors.code}</span>}
+                    {!editingPlan && <span className="mt-1 block text-xs font-normal text-slate-500">Leave this as-is to generate a unique code from the plan duration.</span>}
                     {editingPlan && <span className="mt-1 block text-xs font-normal text-amber-700">This is a reporting key. Changing the code may affect reports that use it.</span>}
                   </label>
                   <label className="text-sm font-medium text-slate-700">
