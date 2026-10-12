@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { Check, Eye, LoaderCircle, RefreshCw, Search, ToggleLeft, ToggleRight, Trash2, Users, X } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import FilterSelect from "../../components/common/FilterSelect";
+import Pagination from "../../components/common/Pagination";
 import { useToast } from "../../context/ToastContext";
 import {
   deleteCustomer,
@@ -46,6 +48,8 @@ const PRODUCT_SLUGS: Record<string, string> = {
 };
 
 const OPEN_STATUSES = new Set(["Submitted", "Pending"]);
+const PAGE_SIZE = 20;
+const BRAND_GRADIENT = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))";
 
 const formatCurrency = (amount?: number) =>
   amount == null
@@ -64,6 +68,7 @@ const CustomersList = () => {
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [page, setPage] = useState(1);
   const [updatingCustomerId, setUpdatingCustomerId] = useState<string | null>(null);
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const [applicationGroups, setApplicationGroups] = useState<CustomerApplicationGroup[] | null>(null);
@@ -240,6 +245,10 @@ const CustomersList = () => {
     );
   }, [customers, search]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <AdminLayout>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -266,6 +275,7 @@ const CustomersList = () => {
           onSubmit={(event) => {
             event.preventDefault();
             setAppliedSearch(search.trim());
+            setPage(1);
           }}
           className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between"
         >
@@ -278,20 +288,37 @@ const CustomersList = () => {
               className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <select
-              aria-label="Filter customers by account status"
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterSelect
+              label="Filter customers by account status"
               value={activeFilter}
-              onChange={(event) => setActiveFilter(event.target.value as typeof activeFilter)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"
-            >
-              <option value="all">All accounts</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-            <button type="submit" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}>
+              onChange={(value) => {
+                setActiveFilter(value as typeof activeFilter);
+                setPage(1);
+              }}
+              options={[
+                { value: "all", label: "All accounts" },
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+            />
+            <button type="submit" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110" style={{ background: BRAND_GRADIENT }}>
               Search
             </button>
+            {(appliedSearch || activeFilter !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setAppliedSearch("");
+                  setActiveFilter("all");
+                  setPage(1);
+                }}
+                className="rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+              >
+                Clear
+              </button>
+            )}
           </div>
           {customers && !error && (
             <p className="text-xs font-medium text-slate-500">
@@ -319,12 +346,29 @@ const CustomersList = () => {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-sm text-slate-400 italic py-16 text-center">
-            {customers.length === 0 ? "No customers yet." : "No customers match your search."}
-          </p>
+          <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+            <Users size={22} className="text-slate-300" />
+            <p className="text-sm text-slate-500">
+              {customers.length === 0 ? "No customers yet." : "No customers match your filters."}
+            </p>
+            {customers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setAppliedSearch("");
+                  setActiveFilter("all");
+                }}
+                className="mt-1 text-xs font-semibold text-sky-700 hover:underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
         ) : (
+          <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[880px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
                   <th className="px-5 py-3.5">Customer</th>
@@ -332,11 +376,12 @@ const CustomersList = () => {
                   <th className="px-5 py-3.5">Email</th>
                   <th className="px-5 py-3.5">Account status</th>
                   <th className="px-5 py-3.5">Joined</th>
+                  <th className="px-5 py-3.5">Last login</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100/80">
-                {filtered.map((c) => (
+                {paged.map((c) => (
                   <tr key={c._id} className="group transition-colors hover:bg-sky-50/40">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -359,6 +404,11 @@ const CustomersList = () => {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-slate-500">{formatDate(c.createdAt)}</td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <span className={c.lastLogin ? "text-slate-500" : "text-slate-300"}>
+                        {c.lastLogin ? formatDate(c.lastLogin) : "Never"}
+                      </span>
+                    </td>
                     <td className="px-5 py-3.5">
                       <div className="flex justify-end gap-1">
                         <button
@@ -384,6 +434,15 @@ const CustomersList = () => {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={safePage}
+            totalPages={totalPages}
+            total={filtered.length}
+            pageSize={PAGE_SIZE}
+            onPage={setPage}
+            itemLabel="customers"
+          />
+          </>
         )}
       </div>
 
