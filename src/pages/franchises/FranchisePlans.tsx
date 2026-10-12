@@ -184,6 +184,17 @@ const FranchisePlans = () => {
     return [...filtered].sort((left, right) => left.sortOrder - right.sortOrder);
   }, [plans, search]);
 
+  const planCodeOptions = useMemo(() => {
+    const currentCode = editingPlan?.code.toUpperCase();
+    const usedByOtherPlans = new Set(
+      plans
+        .filter((plan) => plan._id !== editingPlan?._id)
+        .map((plan) => plan.code.toUpperCase())
+    );
+    return [...new Set(["6M", "1Y", "2Y", "3Y", "5Y", "10Y", ...plans.map((plan) => plan.code.toUpperCase())])]
+      .map((code) => ({ code, isUsed: usedByOtherPlans.has(code) && code !== currentCode }));
+  }, [editingPlan, plans]);
+
   const openCreate = () => {
     setEditingPlan(null);
     setDraft(emptyDraft());
@@ -553,7 +564,14 @@ const FranchisePlans = () => {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="text-sm font-medium text-slate-700">
                     Plan code *
-                    <input value={draft.code} maxLength={20} onChange={(event) => { setDraft({ ...draft, code: event.target.value.toUpperCase() }); setFieldErrors({ ...fieldErrors, code: "" }); }} className={inputClass(!!fieldErrors.code)} placeholder="3Y" />
+                    <select value={draft.code} onChange={(event) => { setDraft({ ...draft, code: event.target.value }); setFieldErrors({ ...fieldErrors, code: "" }); }} className={inputClass(!!fieldErrors.code)}>
+                      <option value="">Select a plan code</option>
+                      {planCodeOptions.map(({ code, isUsed }) => (
+                        <option key={code} value={code} disabled={isUsed}>
+                          {isUsed ? `${code} (already used)` : code}
+                        </option>
+                      ))}
+                    </select>
                     {fieldErrors.code && <span className="mt-1 block text-xs text-red-600">{fieldErrors.code}</span>}
                     {editingPlan && <span className="mt-1 block text-xs font-normal text-amber-700">This is a reporting key. Changing the code may affect reports that use it.</span>}
                   </label>
@@ -561,11 +579,6 @@ const FranchisePlans = () => {
                     Plan name *
                     <input value={draft.name} maxLength={100} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className={inputClass(!!fieldErrors.name)} placeholder="3-Year Plan" />
                     {fieldErrors.name && <span className="mt-1 block text-xs text-red-600">{fieldErrors.name}</span>}
-                  </label>
-                  <label className="text-sm font-medium text-slate-700">
-                    Validity (months) *
-                    <input type="number" min="1" step="1" value={draft.durationMonths} onChange={(event) => setDraft({ ...draft, durationMonths: event.target.value })} className={inputClass(!!fieldErrors.durationMonths)} placeholder="36" />
-                    {fieldErrors.durationMonths && <span className="mt-1 block text-xs text-red-600">{fieldErrors.durationMonths}</span>}
                   </label>
                   <label className="text-sm font-medium text-slate-700">
                     Fee (excluding GST) *
