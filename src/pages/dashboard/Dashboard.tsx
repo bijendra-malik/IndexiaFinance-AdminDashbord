@@ -1,158 +1,109 @@
-import { useCallback, useEffect, useState, type ComponentType } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowUpRight, CheckCircle2, Clock, FileText,
-  Handshake, IndianRupee, Percent, RefreshCw, Users, XCircle,
+  AlertTriangle, CheckCircle2, Clock, FileText, RefreshCw, XCircle,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { getDashboardStats, type DashboardStats } from "../../api/dashboard";
+import {
+  BRAND, formatCompactCurrency, formatCurrency, formatDateTime, percentOf, type Bucket,
+} from "./dashboardUtils";
+import { ContextStrip, DataWarning, KpiCard, Panel } from "./components/DashboardCards";
+import ProductBars from "./components/ProductBars";
+import StatusDonut from "./components/StatusDonut";
+import { RecentAccountsTable, RecentApplicationsTable } from "./components/DashboardTables";
+import ProductExplorer from "./components/ProductExplorer";
 
-type Bucket = "Submitted" | "Pending" | "Approved" | "Rejected";
+type TabId = "products" | "applications" | "accounts";
 
-const BUCKET_META: Record<Bucket, { bg: string; text: string; color: string }> = {
-  Approved:  { bg: "bg-emerald-50", text: "text-emerald-700", color: "#10b981" },
-  Pending:   { bg: "bg-amber-50",   text: "text-amber-700",   color: "#f59e0b" },
-  Rejected:  { bg: "bg-red-50",     text: "text-red-700",     color: "#ef4444" },
-  Submitted: { bg: "bg-sky-50",     text: "text-sky-700",     color: "#0ea5e9" },
-};
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(amount);
-
-const amountOf = (loan: { loanAmount?: number }) =>
-  typeof loan.loanAmount === "number" && Number.isFinite(loan.loanAmount) ? loan.loanAmount : 0;
-
-const formatDate = (iso?: string) =>
-  iso
-    ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-    : "—";
-
-const formatDateTime = (iso?: string) =>
-  iso
-    ? new Date(iso).toLocaleString("en-IN", {
-        day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-      })
-    : "—";
-
-const shortDate = (iso?: string) => {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const diff = Math.floor((Date.now() - d.getTime()) / 86_400_000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  if (diff > 1 && diff < 30) return `${diff}d ago`;
-  return formatDate(iso);
-};
-
-// ── Small building blocks ─────────────────────────────────────────────────────
-
-interface StatCardProps {
-  label: string;
-  value: string;
-  sub?: string;
-  icon: ComponentType<{ size?: number }>;
-  iconBg: string;
-  iconColor: string;
-}
-
-const StatCard = ({ label, value, sub, icon: Icon, iconBg, iconColor }: StatCardProps) => (
-  <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-3">
-    <div
-      className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0"
-      style={{ background: iconBg, color: iconColor }}
-    >
-      <Icon size={20} />
-    </div>
-    <div className="min-w-0">
-      <p className="text-xs text-slate-500 truncate">{label}</p>
-      <p className="text-xl font-semibold text-slate-800">{value}</p>
-      {sub && <p className="text-[11px] text-slate-400 truncate">{sub}</p>}
-    </div>
-  </div>
-);
-
-const Panel = ({
-  title, subtitle, action, children, className = "",
-}: {
-  title: string;
-  subtitle?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) => (
-  <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden ${className}`}>
-    <div className="p-5 pb-3 flex items-start justify-between gap-3">
-      <div>
-        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
-        {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
-      </div>
-      {action}
-    </div>
-    {children}
-  </div>
-);
-
-// ── Page ──────────────────────────────────────────────────────────────────────
+const TABS: { id: TabId; label: string }[] = [
+  { id: "products", label: "By Product" },
+  { id: "applications", label: "Recent Applications" },
+  { id: "accounts", label: "Recent Accounts" },
+];
 
 const Dashboard = () => {
   const { admin } = useAuth();
-  const navigate = useNavigate();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [tab, setTab] = useState<TabId>("products");
 
-  const load = useCallback(async () => {
+  // No synchronous setState in the effect body — the previous version needed an
+  // eslint-disable comment to get away with exactly that. State only settles
+  // once the request resolves.
+  useEffect(() => {
+    let cancelled = false;
+    getDashboardStats()
+      .then((data) => {
+        if (!cancelled) setStats(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(getApiErrorMessage(err, "Unable to load dashboard data."));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken]);
+
+  const refresh = () => {
     setError("");
     setLoading(true);
-    try {
-      setStats(await getDashboardStats());
-    } catch (err) {
-      setError(getApiErrorMessage(err, "Unable to load dashboard data."));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    setReloadToken((token) => token + 1);
+  };
 
-  useEffect(() => { load(); }, [load]); // eslint-disable-line
+  const tabCount = (id: TabId) => {
+    if (!stats) return 0;
+    if (id === "products") return stats.products.length;
+    if (id === "applications") return stats.recent.length;
+    return stats.recentAccounts.length;
+  };
 
   const buckets: { key: Bucket; count: number }[] = stats
     ? [
-        { key: "Approved",  count: stats.approved },
-        { key: "Pending",   count: stats.pending },
+        { key: "Approved", count: stats.approved },
+        { key: "Pending", count: stats.pending },
         { key: "Submitted", count: stats.submitted },
-        { key: "Rejected",  count: stats.rejected },
+        { key: "Rejected", count: stats.rejected },
       ]
+    : [];
+
+  // The dashboard aggregates four endpoints separately, so a partial failure is
+  // reported without hiding the numbers that did load.
+  const warnings = stats
+    ? [stats.franchiseCustomersError, stats.accountsError].filter(
+        (message): message is string => Boolean(message)
+      )
     : [];
 
   return (
     <AdminLayout>
-      {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-5">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold" style={{ color: "rgb(0, 102, 153)" }}>
-            Welcome, {admin?.name}
+          <h2 className="text-lg font-semibold" style={{ color: BRAND.blue }}>
+            Dashboard
           </h2>
           <p className="text-sm text-slate-500">
-            Live overview across every loan product on the portal.
+            Welcome back, {admin?.name}. Live overview across every loan product.
           </p>
         </div>
         <div className="flex items-center gap-3">
           {stats && (
-            <span className="text-xs text-slate-400 hidden sm:block">
-              Last updated {formatDateTime(stats.generatedAt)}
+            <span className="hidden text-xs text-slate-400 sm:block">
+              Updated {formatDateTime(stats.generatedAt)}
             </span>
           )}
           <button
-            onClick={load}
+            onClick={refresh}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-60 transition"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium transition hover:bg-slate-50 disabled:opacity-60"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Refresh
@@ -160,414 +111,179 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {error ? (
-        <div className="bg-white rounded-xl border border-slate-200 flex flex-col items-center gap-3 py-16 px-6 text-center">
-          <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+      {error && !stats ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
             <AlertTriangle size={22} className="text-red-400" />
           </div>
-          <p className="text-sm text-red-600 font-medium">{error}</p>
+          <p className="text-sm font-medium text-red-600">{error}</p>
           <button
-            onClick={load}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 hover:bg-slate-50 transition"
+            onClick={refresh}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-50"
           >
             <RefreshCw size={14} /> Retry
           </button>
         </div>
       ) : loading && !stats ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-28 animate-pulse rounded-2xl bg-slate-100" />
             ))}
           </div>
-          <div className="grid lg:grid-cols-3 gap-4">
-            <div className="h-72 rounded-xl bg-slate-100 animate-pulse lg:col-span-2" />
-            <div className="h-72 rounded-xl bg-slate-100 animate-pulse" />
+          <div className="h-24 animate-pulse rounded-2xl bg-slate-100" />
+          <div className="grid gap-4 xl:grid-cols-5">
+            <div className="h-80 animate-pulse rounded-2xl bg-slate-100 xl:col-span-3" />
+            <div className="h-80 animate-pulse rounded-2xl bg-slate-100 xl:col-span-2" />
           </div>
+          <div className="h-72 animate-pulse rounded-2xl bg-slate-100" />
         </div>
       ) : stats ? (
         <>
-          {/* ── KPI row ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-4">
-            <StatCard
-              label="Total Customers"
-              value={stats.totalCustomers.toLocaleString("en-IN")}
-              sub="Accounts with Customer role"
-              icon={Users}
-              iconBg="rgba(0,102,153,0.08)"
-              iconColor="rgb(0,102,153)"
-            />
-            <StatCard
-              label="Franchise Accounts"
-              value={stats.totalFranchises.toLocaleString("en-IN")}
-              sub="Franchise login accounts"
-              icon={Handshake}
-              iconBg="rgba(38,174,144,0.1)"
-              iconColor="rgb(20,140,115)"
-            />
-            <StatCard
-              label="Franchise Customers"
-              value={stats.franchiseCustomerTotal.toLocaleString("en-IN")}
-              sub={stats.franchiseCustomersError ?? "Customers referred by franchises"}
-              icon={Handshake}
-              iconBg="rgba(38,174,144,0.1)"
-              iconColor="rgb(20,140,115)"
-            />
-            <StatCard
+          <DataWarning messages={error ? [error, ...warnings] : warnings} />
+
+          {/* ── Headline numbers ─────────────────────────────────────────── */}
+          <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <KpiCard
               label="Total Applications"
               value={stats.totalApplications.toLocaleString("en-IN")}
-              sub={`Across ${stats.products.length} products`}
+              sub={`Across ${stats.products.length} loan product${stats.products.length === 1 ? "" : "s"}`}
               icon={FileText}
-              iconBg="rgba(38,174,144,0.1)"
-              iconColor="rgb(20,140,115)"
+              color="rgb(0, 102, 153)"
+              tint="rgba(0, 102, 153, 0.08)"
             />
-            <StatCard
+            <KpiCard
               label="Pending Review"
               value={stats.pending.toLocaleString("en-IN")}
-              sub={`${stats.submitted} newly submitted`}
+              sub={`${percentOf(stats.pending, stats.totalApplications).toFixed(1)}% awaiting a decision`}
               icon={Clock}
-              iconBg="#fffbeb"
-              iconColor="#b45309"
+              color="#b45309"
+              tint="#fffbeb"
             />
-            <StatCard
+            <KpiCard
               label="Approved"
               value={stats.approved.toLocaleString("en-IN")}
               sub={`${stats.approvalRate.toFixed(1)}% approval rate`}
               icon={CheckCircle2}
-              iconBg="#ecfdf5"
-              iconColor="#047857"
+              color="#047857"
+              tint="#ecfdf5"
             />
-            <StatCard
+            <KpiCard
               label="Rejected"
               value={stats.rejected.toLocaleString("en-IN")}
-              sub="Applications declined"
+              sub={`${percentOf(stats.rejected, stats.totalApplications).toFixed(1)}% of all applications`}
               icon={XCircle}
-              iconBg="#fff1f2"
-              iconColor="#be123c"
+              color="#be123c"
+              tint="#fff1f2"
             />
           </div>
 
-          {/* ── Money row ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-              <p className="text-xs text-slate-500">Requested Value</p>
-              <p className="text-lg font-semibold text-slate-800 mt-0.5">
-                {formatCurrency(stats.requestedAmount)}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                <IndianRupee size={11} /> Sum of all applications
-              </p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-              <p className="text-xs text-slate-500">Approved Value</p>
-              <p className="text-lg font-semibold text-emerald-700 mt-0.5">
-                {formatCurrency(stats.approvedAmount)}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                <CheckCircle2 size={11} /> Sanctioned amount
-              </p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-              <p className="text-xs text-slate-500">Approval Rate</p>
-              <p className="text-lg font-semibold text-slate-800 mt-0.5">
-                {stats.approvalRate.toFixed(1)}%
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                <Percent size={11} /> Approved of total applications
-              </p>
-            </div>
+          {/* ── Context numbers ──────────────────────────────────────────── */}
+          <div className="mb-4">
+            <ContextStrip
+              items={[
+                {
+                  label: "Customers",
+                  value: stats.totalCustomers.toLocaleString("en-IN"),
+                  title: "Accounts with the Customer role",
+                },
+                {
+                  label: "Franchises",
+                  value: stats.totalFranchises.toLocaleString("en-IN"),
+                  title: "Franchise login accounts",
+                },
+                {
+                  label: "Franchise Customers",
+                  value: stats.franchiseCustomerTotal.toLocaleString("en-IN"),
+                  title: "Customers referred by franchises",
+                },
+                {
+                  label: "Requested Value",
+                  value: formatCompactCurrency(stats.requestedAmount),
+                  title: formatCurrency(stats.requestedAmount),
+                },
+                {
+                  label: "Sanctioned Value",
+                  value: formatCompactCurrency(stats.approvedAmount),
+                  title: formatCurrency(stats.approvedAmount),
+                },
+              ]}
+            />
           </div>
 
-          <div className="grid lg:grid-cols-3 gap-4">
-            {/* ── Loan products breakdown ── */}
+          {/* ── Charts ───────────────────────────────────────────────────── */}
+          <div className="mb-4 grid gap-4 xl:grid-cols-5">
             <Panel
-              className="lg:col-span-2"
-              title="Loan Products"
-              subtitle="Application volume and amounts per product"
+              className="xl:col-span-3"
+              title="Applications by Product"
+              subtitle="Volume and decision split for every loan product"
             >
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border-y border-slate-100 bg-slate-50/60">
-                      <th className="px-5 py-2.5">Product</th>
-                      <th className="px-4 py-2.5 text-right">Total</th>
-                      <th className="px-4 py-2.5 text-right">Submitted</th>
-                      <th className="px-4 py-2.5 text-right">Pending</th>
-                      <th className="px-4 py-2.5 text-right">Approved</th>
-                      <th className="px-4 py-2.5 text-right">Rejected</th>
-                      <th className="px-4 py-2.5 text-right">Requested</th>
-                      <th className="px-4 py-2.5 text-right">Approved amount</th>
-                      <th className="px-5 py-2.5" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {stats.products.map((p) => (
-                        <tr
-                          key={p.slug}
-                          onClick={() => navigate(`/applications/${p.slug}`)}
-                          className="group cursor-pointer transition hover:bg-slate-50"
-                        >
-                          <td className="px-5 py-3">
-                            <span className="font-medium text-slate-800">{p.label}</span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-800 tabular-nums">{p.total}</td>
-                          <td className="px-4 py-3 text-right tabular-nums">{p.submitted}</td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {p.pending > 0 ? (
-                              <span className="text-amber-700 font-medium">{p.pending}</span>
-                            ) : (
-                              <span className="text-slate-300">0</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
-                            {p.approved > 0 ? (
-                              <span className="text-emerald-700 font-medium">{p.approved}</span>
-                            ) : (
-                              <span className="text-slate-300">0</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums">{p.rejected}</td>
-                          <td className="px-4 py-3 text-right text-slate-600 tabular-nums">
-                            {p.total > 0 ? formatCurrency(p.requestedAmount) : "—"}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-600 tabular-nums">
-                            {p.approved > 0 ? formatCurrency(p.approvedAmount) : "—"}
-                          </td>
-                          <td className="px-5 py-3 w-8">
-                            <ArrowUpRight size={14} className="text-slate-300 group-hover:text-[rgb(6,106,156)]" />
-                          </td>
-                        </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
+              <ProductBars products={stats.products} />
             </Panel>
-
-            {/* ── Status distribution ── */}
             <Panel
+              className="xl:col-span-2"
               title="Application Status"
-              subtitle={`Across all ${stats.totalApplications} applications`}
+              subtitle={`Across all ${stats.totalApplications.toLocaleString("en-IN")} applications`}
             >
-              <div className="px-5 pb-5">
-                <div className="flex h-2.5 rounded-full overflow-hidden gap-[2px] bg-slate-100 mb-4">
-                  {buckets.map(({ key, count }) => {
-                    if (count === 0) return null;
-                    return (
-                      <div
-                        key={key}
-                        style={{
-                          width: `${(count / stats.totalApplications) * 100}%`,
-                          background: BUCKET_META[key].color,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-2.5">
-                  {buckets.map(({ key, count }) => (
-                    <div key={key} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ background: BUCKET_META[key].color }}
-                        />
-                        <span className="text-slate-600">{key}</span>
-                      </div>
-                      <span className="font-medium text-slate-800 tabular-nums">{count}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {stats.totalApplications === 0 && (
-                  <p className="mt-4 text-xs text-slate-400 flex items-center gap-1.5">
-                    <XCircle size={13} /> No applications returned by the API yet.
-                  </p>
-                )}
-              </div>
+              <StatusDonut slices={buckets} total={stats.totalApplications} />
             </Panel>
           </div>
 
-          {/* ── Recent applications ── */}
-          <Panel
-            className="mt-4"
-            title="Recent Applications"
-            subtitle="Latest submissions across all loan types"
-            action={
-              <span className="text-xs text-slate-400">{stats.recent.length} shown</span>
-            }
-          >
-            {stats.recent.length === 0 ? (
-              <p className="px-5 pb-6 text-sm text-slate-400 italic">No applications yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border-y border-slate-100 bg-slate-50/60">
-                      <th className="px-5 py-2.5">Applicant</th>
-                      <th className="px-5 py-2.5">Loan Type</th>
-                      <th className="px-5 py-2.5">Amount</th>
-                      <th className="px-5 py-2.5">Status</th>
-                      <th className="px-5 py-2.5">Applied</th>
-                      <th className="px-5 py-2.5" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {stats.recent.map((app) => {
-                      const meta = BUCKET_META[(app.status as Bucket)] ?? BUCKET_META.Submitted;
-                      return (
-                        <tr
-                          key={`${app.slug}:${app._id}`}
-                          onClick={() => navigate(`/applications/${app.slug}/${app._id}`)}
-                          className="cursor-pointer hover:bg-slate-50 transition"
-                        >
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                                style={{ background: "linear-gradient(135deg,#066a9c,#26ae90)" }}
-                              >
-                                {(app.fullName ?? "?")[0]?.toUpperCase()}
-                              </div>
-                              <span className="font-medium text-slate-800">
-                                {app.fullName ?? "—"}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-5 py-3 text-slate-600">{app.label}</td>
-                          <td className="px-5 py-3 text-slate-700 font-medium">
-                            {formatCurrency(amountOf(app))}
-                          </td>
-                          <td className="px-5 py-3">
-                            <span
-                              className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${meta.bg} ${meta.text}`}
-                            >
-                              {app.status}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 text-slate-500" title={formatDate(app.createdAt)}>
-                            {shortDate(app.createdAt)}
-                          </td>
-                          <td className="px-5 py-3 w-8">
-                            <ArrowUpRight size={14} className="text-slate-300" />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
+          {/* ── Detail tables ────────────────────────────────────────────── */}
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div
+              role="tablist"
+              aria-label="Dashboard detail tables"
+              className="scrollbar-hidden flex gap-1 overflow-x-auto border-b border-slate-100 bg-slate-50/60 px-3 pt-3"
+            >
+              {TABS.map(({ id, label }) => {
+                const active = tab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    id={`dashboard-tab-${id}`}
+                    aria-selected={active}
+                    aria-controls={`dashboard-panel-${id}`}
+                    onClick={() => setTab(id)}
+                    className={`relative shrink-0 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition ${
+                      active ? "bg-white text-[rgb(6,106,156)]" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {active && (
+                      <span
+                        className="absolute inset-x-0 top-0 h-[2px] rounded-t"
+                        style={{ background: BRAND.gradient }}
+                      />
+                    )}
+                    {label}
+                    <span
+                      className={`ml-2 rounded-full px-2 py-0.5 text-[11px] tabular-nums ${
+                        active
+                          ? "bg-[rgba(6,106,156,0.1)] text-[rgb(6,106,156)]"
+                          : "bg-slate-200/70 text-slate-500"
+                      }`}
+                    >
+                      {tabCount(id)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
-          <Panel
-            className="mt-4"
-            title="Recent Customer & Franchise Accounts"
-            subtitle="Latest account records from the customer and franchise collections"
-            action={
-              <div className="flex gap-3 text-xs font-semibold">
-                <Link to="/customers" className="text-sky-700 hover:underline">Customers</Link>
-                <Link to="/franchises" className="text-sky-700 hover:underline">Franchises</Link>
-              </div>
-            }
-          >
-            {stats.accountsError && (
-              <p className="mx-5 mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="alert">
-                Some account data could not be loaded: {stats.accountsError}
-              </p>
-            )}
-            {stats.recentAccounts.length === 0 ? (
-              <p className="px-5 pb-6 text-sm text-slate-400 italic">
-                {stats.accountsError ? "Account details are unavailable." : "No customer or franchise accounts found."}
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1050px] text-sm">
-                  <thead>
-                    <tr className="border-y border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="px-5 py-2.5">Account</th>
-                      <th className="px-4 py-2.5">Role</th>
-                      <th className="px-4 py-2.5">Contact</th>
-                      <th className="px-4 py-2.5">Location / Address</th>
-                      <th className="px-4 py-2.5">PAN / Package</th>
-                      <th className="px-4 py-2.5">Status</th>
-                      <th className="px-4 py-2.5">Last login</th>
-                      <th className="px-4 py-2.5">Registered</th>
-                      <th className="px-5 py-2.5" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {stats.recentAccounts.map((account) => (
-                      <tr key={`${account.role}:${account.id}`} className="hover:bg-slate-50">
-                        <td className="px-5 py-3">
-                          <span className="font-medium text-slate-800">{account.name}</span>
-                          <span className="mt-0.5 block font-mono text-[10px] text-slate-400">{account.id}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            account.role === "Franchise"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-sky-50 text-sky-700"
-                          }`}>{account.role}</span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          <span className="block">{account.mobile || "—"}</span>
-                          <span className="text-xs text-slate-400">{account.email || "—"}</span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          <span className="block">{account.location || "—"}</span>
-                          {account.address && <span className="block text-xs text-slate-400">{account.address}</span>}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          <span className="block">{account.panNumber || "—"}</span>
-                          <span className="text-xs text-slate-400">{account.packageName || "—"}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            account.status.toLowerCase() === "active" || account.status.toLowerCase() === "approved"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : account.status.toLowerCase() === "rejected" || account.status.toLowerCase() === "inactive"
-                                ? "bg-red-50 text-red-700"
-                                : "bg-amber-50 text-amber-700"
-                          }`}>{account.status}</span>
-                          <span className="mt-1 block text-[10px] text-slate-400">
-                            {account.isVerified ? "Verified" : "Not verified"}
-                          </span>
-                          <span className="block text-[10px] text-slate-400">
-                            Account {account.isActive ? "active" : "inactive"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-500">{formatDateTime(account.lastLogin ?? undefined)}</td>
-                        <td className="px-4 py-3 text-slate-500">{formatDate(account.createdAt)}</td>
-                        <td className="px-5 py-3 text-right">
-                          <Link
-                            to={account.role === "Franchise" ? `/franchises/${encodeURIComponent(account.id)}` : "/customers"}
-                            className="text-xs font-semibold text-sky-700 hover:underline"
-                          >
-                            View
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
+            <div
+              id={`dashboard-panel-${tab}`}
+              role="tabpanel"
+              aria-labelledby={`dashboard-tab-${tab}`}
+            >
+              {tab === "products" && <ProductExplorer products={stats.products} />}
+              {tab === "applications" && <RecentApplicationsTable applications={stats.recent} />}
+              {tab === "accounts" && <RecentAccountsTable accounts={stats.recentAccounts} />}
+            </div>
+          </section>
         </>
       ) : null}
-
-      <Link
-        to="/franchises"
-        className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50/40"
-      >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[rgb(0,102,153)]">
-          <Handshake size={18} />
-        </div>
-        <span className="text-sm font-medium">Manage franchise applications</span>
-        <span className="ml-auto text-xs font-semibold text-[rgb(0,102,153)]">Open management →</span>
-      </Link>
     </AdminLayout>
   );
 };

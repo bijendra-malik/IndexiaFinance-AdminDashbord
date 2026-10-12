@@ -6,7 +6,12 @@ import { getCustomers } from "./customers";
 import { getFranchises } from "./franchises";
 
 export interface ProductStat {
-  slug: string;
+  /**
+   * Optional on purpose: the documented payload includes it, but the live
+   * backend has returned product rows without `slug`. Consumers must not use
+   * it as a React key or an identity — use a label-derived key instead.
+   */
+  slug?: string;
   label: string;
   total: number;
   submitted: number;
@@ -18,7 +23,9 @@ export interface ProductStat {
 }
 
 export interface RecentApplication extends PersonalLoan {
-  slug: string;
+  /** Optional for the same reason as `ProductStat.slug` — this endpoint has
+   *  already been observed omitting slugs, so never link on it blindly. */
+  slug?: string;
   label: string;
 }
 
