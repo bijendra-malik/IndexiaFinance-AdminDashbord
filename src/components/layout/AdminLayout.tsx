@@ -25,6 +25,19 @@ const MASTERS_LINKS = [
   { to: "/masters/locations", label: "Location Master",       icon: Globe },
 ];
 
+// Franchise network: one dropdown instead of four top-level entries.
+const FRANCHISE_LINKS = [
+  { to: "/franchises",                label: "Franchises",          icon: Building2,  match: (path: string) => path.startsWith("/franchises") },
+  { to: "/franchise-plans",           label: "Franchise Plans",     icon: Coins,      match: (path: string) => path === "/franchise-plans" },
+  { to: "/franchise-customers",       label: "Franchise Customers", icon: Users,      match: (path: string) => path.startsWith("/franchise-customers") && path !== "/franchise-customers/stats" },
+  { to: "/franchise-customers/stats", label: "CIBIL Overview",      icon: BarChart3,  match: (path: string) => path === "/franchise-customers/stats" },
+];
+
+const isFranchiseSection = (path: string) =>
+  path.startsWith("/franchises") ||
+  path.startsWith("/franchise-") ||
+  path === "/franchise-plans";
+
 // ── Loan type icon + color map ────────────────────────────────────────────────
 const LOAN_TYPE_CONFIG: Record<string, {
   icon: React.ComponentType<{ size?: number }>;
@@ -139,11 +152,16 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
   const isOnMasters      = location.pathname.startsWith("/masters");
   const isOnApplications = location.pathname.startsWith(APPLICATIONS_BASE);
-  const isOnFranchises   = location.pathname.startsWith("/franchises");
-  const isOnFranchiseCustomers = location.pathname.startsWith("/franchise-customers");
+  const isOnFranchises   = isFranchiseSection(location.pathname);
 
-  const [mastersOpen,      setMastersOpen]      = useState(isOnMasters);
-  const [applicationsOpen, setApplicationsOpen] = useState(isOnApplications);
+  // null = follow the route (a section opens automatically); true/false = the user's own choice.
+  const [mastersOpenChoice,      setMastersOpenChoice]      = useState<boolean | null>(null);
+  const [applicationsOpenChoice, setApplicationsOpenChoice] = useState<boolean | null>(null);
+  const [franchisesOpenChoice,   setFranchisesOpenChoice]   = useState<boolean | null>(null);
+
+  const mastersOpen      = mastersOpenChoice      ?? isOnMasters;
+  const applicationsOpen = applicationsOpenChoice ?? isOnApplications;
+  const franchisesOpen   = franchisesOpenChoice   ?? isOnFranchises;
 
   const handleLogout  = () => { logout(); navigate("/login", { replace: true }); };
   const handleProfile = () => navigate("/profile");
@@ -175,18 +193,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {[
             { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
             { to: "/customers", label: "Customers",  icon: Users },
-            { to: "/franchises", label: "Franchises", icon: Building2 },
-            { to: "/franchise-plans", label: "Franchise Plans", icon: Coins },
-            { to: "/franchise-customers", label: "Franchise Customers", icon: Users },
-            { to: "/franchise-customers/stats", label: "CIBIL Overview", icon: BarChart3 },
           ].map(({ to, label, icon: Icon }) => {
-            const isActive = to === "/franchises"
-              ? isOnFranchises
-              : to === "/franchise-plans"
-                ? location.pathname === to
-              : to === "/franchise-customers"
-                ? isOnFranchiseCustomers && location.pathname !== "/franchise-customers/stats"
-                : location.pathname === to;
+            const isActive = location.pathname === to;
             return (
               <Link key={to} to={to}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
@@ -203,12 +211,54 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
           {/* Section label */}
           <div className="pt-3 pb-1 px-3">
+            <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Franchise network</p>
+          </div>
+
+          {/* Franchises dropdown — Franchises, Plans, Customers and CIBIL in one group */}
+          <div>
+            <button type="button" onClick={() => setFranchisesOpenChoice(!franchisesOpen)}
+              aria-expanded={franchisesOpen}
+              title="Franchises, plans, customers and CIBIL"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={isOnFranchises
+                ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
+                : { color: "rgba(255,255,255,0.75)" }}
+              onMouseEnter={e => hoverOn(e, isOnFranchises)}
+              onMouseLeave={e => hoverOff(e, isOnFranchises)}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isOnFranchises ? "bg-white/20" : "bg-white/10"}`}>
+                <Building2 size={15} />
+              </div>
+              <span className="flex-1 text-left">Franchises</span>
+              <ChevronRight size={14} className={`transition-transform duration-200 opacity-60 ${franchisesOpen ? "rotate-90" : ""}`} />
+            </button>
+            {franchisesOpen && (
+              <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5">
+                {FRANCHISE_LINKS.map(({ to, label, icon: Icon, match }) => {
+                  const isActive = match(location.pathname);
+                  return (
+                    <Link key={to} to={to}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={isActive ? { background: "rgba(255,255,255,0.15)", color: "#fff" } : { color: "rgba(255,255,255,0.65)" }}
+                      onMouseEnter={e => hoverOn(e, isActive)}
+                      onMouseLeave={e => hoverOff(e, isActive)}>
+                      <Icon size={13} className="opacity-70" />
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Section label */}
+          <div className="pt-3 pb-1 px-3">
             <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Management</p>
           </div>
 
           {/* Masters dropdown */}
           <div>
-            <button type="button" onClick={() => setMastersOpen(p => !p)}
+            <button type="button" onClick={() => setMastersOpenChoice(!mastersOpen)}
+              aria-expanded={mastersOpen}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
               style={isOnMasters
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
@@ -242,7 +292,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
           {/* Loan Applications dropdown */}
           <div>
-            <button type="button" onClick={() => setApplicationsOpen(p => !p)}
+            <button type="button" onClick={() => setApplicationsOpenChoice(!applicationsOpen)}
+              aria-expanded={applicationsOpen}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
               style={isOnApplications
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }

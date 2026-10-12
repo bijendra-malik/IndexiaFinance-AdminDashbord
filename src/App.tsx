@@ -12,7 +12,8 @@ import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
 import LoanApplicationDetail from "./pages/applications/LoanApplicationDetail";
 import CustomersList from "./pages/customers/CustomersList";
 import LocationMasterAdmin from "./pages/masters/LocationMasterAdmin";
-import FranchiseApplications from "./pages/franchises/FranchiseApplications";
+import FranchiseList from "./pages/franchises/FranchiseList";
+import FranchiseDetail from "./pages/franchises/FranchiseDetail";
 import FranchiseCustomers from "./pages/franchises/FranchiseCustomers";
 import FranchisePlans from "./pages/franchises/FranchisePlans";
 
@@ -56,7 +57,7 @@ function App() {
               path="/franchises"
               element={
                 <ProtectedRoute>
-                  <FranchiseApplications />
+                  <FranchiseList />
                 </ProtectedRoute>
               }
             />
@@ -74,7 +75,7 @@ function App() {
               path="/franchises/:id"
               element={
                 <ProtectedRoute>
-                  <FranchiseApplications />
+                  <FranchiseDetail />
                 </ProtectedRoute>
               }
             />

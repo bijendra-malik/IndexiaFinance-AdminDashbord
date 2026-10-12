@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import {
-  ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FileText, Gauge,
+  ArrowLeft, CheckCircle2, Clock3, FileText, Gauge,
   LoaderCircle, RefreshCw, Search, ShieldCheck, Users, XCircle,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
@@ -13,6 +13,8 @@ import {
   type FranchiseCibilStats,
   type FranchiseCustomer as FranchiseCustomerRecord,
 } from "../../api/franchiseCustomers";
+import Pagination from "../../components/common/Pagination";
+import FilterSelect from "../../components/common/FilterSelect";
 
 const PAGE_SIZE = 20;
 const ACTIVE_BACKGROUND = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))";
@@ -63,10 +65,14 @@ const FranchiseCustomers = () => {
   const location = useLocation();
   const isStatsPage = location.pathname === "/franchise-customers/stats";
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  // A franchise detail page can deep-link here as /franchise-customers?franchise=<code|id>
+  const franchiseParam = searchParams.get("franchise") ?? "";
+
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
-  const [franchise, setFranchise] = useState("");
-  const [appliedFranchise, setAppliedFranchise] = useState("");
+  const [franchise, setFranchise] = useState(franchiseParam);
+  const [appliedFranchise, setAppliedFranchise] = useState(franchiseParam);
   const [cibilStatus, setCibilStatus] = useState("");
   const [locked, setLocked] = useState("");
   const [page, setPage] = useState(1);
@@ -151,6 +157,27 @@ const FranchiseCustomers = () => {
     setAppliedSearch(search.trim());
     setAppliedFranchise(franchise.trim());
   };
+
+  const clearFilters = () => {
+    setSearch("");
+    setAppliedSearch("");
+    setFranchise("");
+    setAppliedFranchise("");
+    setCibilStatus("");
+    setLocked("");
+    setPage(1);
+    if (franchiseParam) setSearchParams({}, { replace: true });
+  };
+
+  // Keep the deep-linked franchise filter in sync when the URL changes.
+  // Adjusted during render (not in an effect) so the change is applied before the next fetch.
+  const [lastFranchiseParam, setLastFranchiseParam] = useState(franchiseParam);
+  if (lastFranchiseParam !== franchiseParam) {
+    setLastFranchiseParam(franchiseParam);
+    setFranchise(franchiseParam);
+    setAppliedFranchise(franchiseParam);
+    setPage(1);
+  }
 
   const refresh = () => setRefreshKey((key) => key + 1);
 
@@ -336,35 +363,83 @@ const FranchiseCustomers = () => {
   const hasFilters = !!(appliedSearch || appliedFranchise || cibilStatus || locked);
   return (
     <AdminLayout>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Franchise customers</h1>
-          <p className="text-sm text-slate-500">Read-only customer, CIBIL and loan eligibility audit</p>
+      <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm" style={{ background: ACTIVE_BACKGROUND }}>
+            <Users size={19} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">Franchise customers</h1>
+            <p className="mt-0.5 text-sm text-slate-500">Read-only customer, CIBIL and loan eligibility audit.</p>
+          </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 self-start sm:self-auto">
           <Link to="/franchise-customers/stats" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">CIBIL overview</Link>
           <button type="button" onClick={refresh} disabled={!currentList} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw size={14} /> Refresh
           </button>
         </div>
       </div>
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <form onSubmit={submitSearch} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div className="relative xl:col-span-2">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, mobile, PAN, or email" className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-sky-500" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, mobile, PAN, or email" className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100" />
           </div>
-          <input value={franchise} onChange={(event) => setFranchise(event.target.value)} placeholder="Franchise FRN code or ID" className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-500" />
-          <select value={cibilStatus} onChange={(event) => { setCibilStatus(event.target.value); setPage(1); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-500">
-            <option value="">All CIBIL statuses</option><option value="NotChecked">Not checked</option><option value="Checked">Checked</option><option value="Failed">Failed</option>
-          </select>
+          <input value={franchise} onChange={(event) => setFranchise(event.target.value)} placeholder="Franchise FRN code or ID" className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100" />
+          <FilterSelect
+            label="Filter by CIBIL status"
+            value={cibilStatus}
+            onChange={(value) => { setCibilStatus(value); setPage(1); }}
+            options={[
+              { value: "", label: "All CIBIL statuses" },
+              { value: "NotChecked", label: "Not checked" },
+              { value: "Checked", label: "Checked" },
+              { value: "Failed", label: "Failed" },
+            ]}
+          />
           <div className="flex gap-2">
-            <select value={locked} onChange={(event) => { setLocked(event.target.value); setPage(1); }} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-500">
-              <option value="">Any form state</option><option value="false">Unlocked</option><option value="true">Locked</option>
-            </select>
-            <button type="submit" className="rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: ACTIVE_BACKGROUND }}>Apply</button>
+            <FilterSelect
+              label="Filter by loan form state"
+              value={locked}
+              onChange={(value) => { setLocked(value); setPage(1); }}
+              options={[
+                { value: "", label: "Any form state" },
+                { value: "false", label: "Unlocked" },
+                { value: "true", label: "Locked" },
+              ]}
+              className="min-w-0 flex-1"
+            />
+            <button type="submit" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110" style={{ background: ACTIVE_BACKGROUND }}>Apply</button>
           </div>
         </form>
+        {hasFilters && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+            {appliedFranchise && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
+                Franchise: <span className="font-mono">{appliedFranchise}</span>
+              </span>
+            )}
+            {appliedSearch && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                Search: {appliedSearch}
+              </span>
+            )}
+            {cibilStatus && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                CIBIL: {cibilStatus}
+              </span>
+            )}
+            {locked && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                Loan form: {locked === "true" ? "Locked" : "Unlocked"}
+              </span>
+            )}
+            <button type="button" onClick={clearFilters} className="ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
+              Clear filters
+            </button>
+          </div>
+        )}
       </div>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {currentList?.error && <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{currentList.error}</div>}
@@ -399,14 +474,14 @@ const FranchiseCustomers = () => {
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
-              <p className="text-xs text-slate-500">Showing {(result!.page - 1) * result!.limit + 1}–{Math.min(result!.page * result!.limit, result!.total)} of {result!.total} customers</p>
-              <div className="flex items-center gap-2">
-                <button aria-label="Previous page" disabled={result!.page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><ChevronLeft size={17} /></button>
-                <span className="text-xs text-slate-600">Page {result!.page} of {Math.max(1, result!.totalPages)}</span>
-                <button aria-label="Next page" disabled={result!.page >= result!.totalPages} onClick={() => setPage((value) => value + 1)} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><ChevronRight size={17} /></button>
-              </div>
-            </div>
+            <Pagination
+              page={result!.page}
+              totalPages={result!.totalPages}
+              total={result!.total}
+              pageSize={result!.limit}
+              onPage={setPage}
+              itemLabel="customers"
+            />
           </>
         )}
       </section>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  Eye, EyeOff, LoaderCircle, Pencil, Plus, RefreshCw, Search, Star, Trash2, X,
+  Check, Coins, Eye, EyeOff, LoaderCircle, Pencil, Plus, RefreshCw, Search, Star, Trash2, X,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -16,6 +16,8 @@ import {
   type FranchisePlanPayload,
 } from "../../api/franchisePlans";
 import { getApiErrorMessage } from "../../utils/apiError";
+import FilterSelect from "../../components/common/FilterSelect";
+import { BRAND_GRADIENT } from "./franchiseUtils";
 
 type StatusFilter = "all" | "live" | "hidden";
 type PlanDraft = {
@@ -138,6 +140,8 @@ const FranchisePlans = () => {
   const [feeConfirmOpen, setFeeConfirmOpen] = useState(false);
   const [actionPlanId, setActionPlanId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<PlanAction | null>(null);
+  // Cards are the default (responsive: columns on wide screens, stacked rows on phones).
+  const [view, setView] = useState<"cards" | "table">("cards");
 
   useEffect(() => {
     let cancelled = false;
@@ -415,15 +419,113 @@ const FranchisePlans = () => {
           }
         : null;
 
+  // Shared between the card grid and the table so actions never drift apart.
+  const renderPinButton = (plan: FranchisePlan) => (
+    <button
+      type="button"
+      aria-label={`${plan.isBestValue ? "Unpin" : "Pin"} ${plan.name} as Best Value`}
+      aria-pressed={plan.isBestValue}
+      disabled={actionPlanId === plan._id}
+      onClick={() => void toggleBestValue(plan)}
+      className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${plan.isBestValue ? "bg-amber-50 text-amber-700" : "text-slate-500 hover:bg-slate-100"}`}
+    >
+      <Star size={14} className={plan.isBestValue ? "fill-amber-400 text-amber-500" : ""} />
+      {plan.isBestValue ? "Pinned" : "Pin"}
+    </button>
+  );
+
+  const renderPlanActions = (plan: FranchisePlan) => {
+    const isBusy = actionPlanId === plan._id;
+    const cannotHideLastLivePlan = plan.isActive && activeCount <= 1;
+    return (
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => openEdit(plan)} aria-label={`Edit ${plan.name}`} title="Edit" className="rounded-md p-2 text-slate-500 hover:bg-sky-50 hover:text-sky-700"><Pencil size={15} /></button>
+        {plan.isActive ? (
+          <button type="button" disabled={isBusy || cannotHideLastLivePlan} onClick={() => setConfirmAction({ kind: "hide", plan })} aria-label={`Hide ${plan.name}`} title={cannotHideLastLivePlan ? "At least one plan must stay live" : "Hide"} className="rounded-md p-2 text-slate-500 hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-30"><EyeOff size={15} /></button>
+        ) : (
+          <button type="button" disabled={isBusy} onClick={() => setConfirmAction({ kind: "show", plan })} aria-label={`Show ${plan.name}`} title="Show" className="rounded-md p-2 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50"><Eye size={15} /></button>
+        )}
+        <button type="button" disabled={isBusy || !plan.isActive || cannotHideLastLivePlan} onClick={() => setConfirmAction({ kind: "delete", plan })} aria-label={`Delete ${plan.name}`} title="Soft delete (hide from website)" className="rounded-md p-2 text-slate-500 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={15} /></button>
+      </div>
+    );
+  };
+
+  const renderPlanCard = (plan: FranchisePlan) => (
+    <article
+      key={plan._id}
+      className={`flex flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        plan.isBestValue ? "border-amber-300 ring-1 ring-amber-200/70" : "border-slate-200"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-mono text-[11px] text-slate-400">{plan.code}</p>
+          <h3 className="truncate text-base font-bold text-slate-800">{plan.name}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">{plan.validityLabel || `${plan.durationMonths} months`}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${plan.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{plan.isActive ? "Live" : "Hidden"}</span>
+      </div>
+
+      <div className="mt-3 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/70 p-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Total (incl. GST)</p>
+        <p className="mt-0.5 text-2xl font-extrabold tracking-tight text-slate-900">{money(plan.totalWithGst)}</p>
+        <p className="mt-1 text-xs text-slate-500">{money(plan.fee)} + {plan.gstPercent}% GST ({money(plan.gstAmount)})</p>
+        {plan.effectiveMonthlyCost != null && (
+          <p className="mt-1 text-xs font-semibold text-[rgb(6,106,156)]">≈ {money(plan.effectiveMonthlyCost)}/mo</p>
+        )}
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+          <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Renewal</dt>
+          <dd className="mt-0.5 font-medium text-slate-700">{plan.renewalText || (plan.renewalFee != null ? money(plan.renewalFee) : plan.renewalNote || "As applicable")}</dd>
+        </div>
+        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+          <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Order / franchises</dt>
+          <dd className="mt-0.5 font-medium tabular-nums text-slate-700">{plan.sortOrder} · {plan.franchiseCount ?? 0}</dd>
+        </div>
+      </dl>
+
+      {plan.features.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {plan.features.slice(0, 3).map((feature) => (
+            <li key={feature} className="flex gap-2 text-xs text-slate-600">
+              <Check size={13} className="mt-0.5 shrink-0 text-emerald-600" />
+              <span className="min-w-0">{feature}</span>
+            </li>
+          ))}
+          {plan.features.length > 3 && (
+            <li className="text-xs font-medium text-slate-400">+{plan.features.length - 3} more</li>
+          )}
+        </ul>
+      )}
+
+      <div className="mt-auto flex flex-wrap items-end justify-between gap-2 border-t border-slate-100 pt-3">
+        <p className="min-w-0 text-[11px] leading-snug text-slate-400">
+          {actorName(plan.updatedBy || plan.createdBy)}
+          <span className="block">{dateTime(plan.updatedAt || plan.createdAt)}</span>
+        </p>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {renderPinButton(plan)}
+          {renderPlanActions(plan)}
+        </div>
+      </div>
+    </article>
+  );
+
   return (
     <AdminLayout>
-      <header className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Franchise settings</p>
-          <h1 className="mt-1 text-xl font-bold text-slate-800">Franchise Investment Plans</h1>
-          <p className="text-sm text-slate-500">Published on indexia-finance-web /franchise page.</p>
+      <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm" style={{ background: BRAND_GRADIENT }}>
+            <Coins size={19} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">Franchise Investment Plans</h1>
+            <p className="mt-0.5 text-sm text-slate-500">Plans shown on the website /franchise page. Fee changes apply to new applicants only.</p>
+          </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 self-start sm:self-auto">
           <button type="button" onClick={() => setRefreshKey((key) => key + 1)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
           </button>
@@ -431,22 +533,44 @@ const FranchisePlans = () => {
             <Plus size={16} /> New Plan
           </button>
         </div>
-      </header>
+      </div>
 
-      <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row">
-        <label className="relative flex-1">
+      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+        <label className="relative min-w-0 flex-1">
           <span className="sr-only">Search plans by code or name</span>
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by plan code or name" className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-sky-500" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by plan code or name" className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100" />
         </label>
-        <label>
-          <span className="sr-only">Filter plans by status</span>
-          <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-500 sm:w-auto">
-            <option value="all">All plans</option>
-            <option value="live">Live</option>
-            <option value="hidden">Hidden</option>
-          </select>
-        </label>
+        <FilterSelect
+          label="Filter plans by status"
+          value={status}
+          onChange={(value) => setStatus(value as StatusFilter)}
+          options={[
+            { value: "all", label: "All plans" },
+            { value: "live", label: "Live" },
+            { value: "hidden", label: "Hidden" },
+          ]}
+          className="sm:w-48"
+        />
+        <div role="group" aria-label="Choose plan view" className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-1">
+          {(["cards", "table"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={view === option}
+              onClick={() => setView(option)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition ${
+                view === option ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        <span className="shrink-0 text-xs font-medium text-slate-500">
+          Showing <span className="font-bold text-slate-700">{visiblePlans.length}</span> of{" "}
+          <span className="font-bold text-slate-700">{plans.length}</span> plans
+        </span>
       </div>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -470,6 +594,10 @@ const FranchisePlans = () => {
             </p>
             {!plans.length && <button type="button" onClick={openCreate} className="mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}><Plus size={15} /> New Plan</button>}
           </div>
+        ) : view === "cards" ? (
+          <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            {visiblePlans.map((plan) => renderPlanCard(plan))}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1320px] text-left text-sm">
@@ -490,10 +618,7 @@ const FranchisePlans = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visiblePlans.map((plan) => {
-                  const isBusy = actionPlanId === plan._id;
-                  const cannotHideLastLivePlan = plan.isActive && activeCount <= 1;
-                  return (
+                {visiblePlans.map((plan) => (
                     <tr key={plan._id} className="hover:bg-slate-50/70">
                       <td className="px-4 py-3 tabular-nums text-slate-600">{plan.sortOrder}</td>
                       <td className="px-4 py-3">
@@ -511,12 +636,7 @@ const FranchisePlans = () => {
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">{money(plan.totalWithGst)}</td>
                       <td className="px-4 py-3 text-slate-600">{plan.renewalText || (plan.renewalFee != null ? money(plan.renewalFee) : plan.renewalNote || "As applicable")}</td>
-                      <td className="px-4 py-3">
-                        <button type="button" aria-label={`${plan.isBestValue ? "Unpin" : "Pin"} ${plan.name} as Best Value`} aria-pressed={plan.isBestValue} disabled={isBusy} onClick={() => void toggleBestValue(plan)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${plan.isBestValue ? "bg-amber-50 text-amber-700" : "text-slate-500 hover:bg-slate-100"}`}>
-                          <Star size={14} className={plan.isBestValue ? "fill-amber-400 text-amber-500" : ""} />
-                          {plan.isBestValue ? "Pinned" : "Pin"}
-                        </button>
-                      </td>
+                      <td className="px-4 py-3">{renderPinButton(plan)}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${plan.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{plan.isActive ? "Live" : "Hidden"}</span>
                       </td>
@@ -524,20 +644,9 @@ const FranchisePlans = () => {
                         <span className="block">{actorName(plan.updatedBy || plan.createdBy)}</span>
                         <span>{dateTime(plan.updatedAt || plan.createdAt)}</span>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => openEdit(plan)} aria-label={`Edit ${plan.name}`} title="Edit" className="rounded-md p-2 text-slate-500 hover:bg-sky-50 hover:text-sky-700"><Pencil size={15} /></button>
-                          {plan.isActive ? (
-                            <button type="button" disabled={isBusy || cannotHideLastLivePlan} onClick={() => setConfirmAction({ kind: "hide", plan })} aria-label={`Hide ${plan.name}`} title={cannotHideLastLivePlan ? "At least one plan must stay live" : "Hide"} className="rounded-md p-2 text-slate-500 hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-30"><EyeOff size={15} /></button>
-                          ) : (
-                            <button type="button" disabled={isBusy} onClick={() => setConfirmAction({ kind: "show", plan })} aria-label={`Show ${plan.name}`} title="Show" className="rounded-md p-2 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50"><Eye size={15} /></button>
-                          )}
-                          <button type="button" disabled={isBusy || !plan.isActive || cannotHideLastLivePlan} onClick={() => setConfirmAction({ kind: "delete", plan })} aria-label={`Delete ${plan.name}`} title="Soft delete (hide from website)" className="rounded-md p-2 text-slate-500 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={15} /></button>
-                        </div>
-                      </td>
+                      <td className="px-4 py-3">{renderPlanActions(plan)}</td>
                     </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
             <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
