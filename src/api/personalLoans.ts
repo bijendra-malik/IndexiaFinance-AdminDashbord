@@ -24,6 +24,11 @@ export interface PersonalLoan {
   pincode?: string;
   residenceStatus?: string;
 
+  // ── Credit eligibility snapshot captured when the application is submitted
+  creditScore?: number | null;
+  creditEligible?: boolean;
+  creditScoreCheckedAt?: string | null;
+
   // ── Employment / salary fields ────────────────────────────────────────────
   employmentType?: string;
   companyName?: string;
@@ -191,6 +196,24 @@ const SLUG_ENDPOINT: Record<string, string> = {
 
 /** All slugs that have a live backend endpoint */
 export const SUPPORTED_LOAN_SLUGS = new Set(Object.keys(SLUG_ENDPOINT));
+
+/**
+ * Reverse index: backend `resource` name → admin slug (`vehicle-loans` →
+ * `car-loan`). The map values carry a leading slash, the payload does not, so
+ * it is stripped while building the index.
+ */
+const RESOURCE_TO_SLUG: Record<string, string> = Object.fromEntries(
+  Object.entries(SLUG_ENDPOINT).map(([slug, resource]) => [resource.replace(/^\//, ""), slug])
+);
+
+/**
+ * Translate a backend `resource` field (e.g. `vehicle-loans`, the value the
+ * endpoint builds its URL from) into the slugs the admin routes use
+ * (`/applications/car-loan`). Unknown resources return `undefined` so
+ * callers can render plain text instead of a broken link.
+ */
+export const resourceToSlug = (resource?: string): string | undefined =>
+  resource ? RESOURCE_TO_SLUG[resource] : undefined;
 
 // ── API calls ─────────────────────────────────────────────────────────────────
 

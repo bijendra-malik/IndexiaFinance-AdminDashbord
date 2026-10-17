@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Eye, LoaderCircle, RefreshCw, Search, ToggleLeft, ToggleRight, Trash2, Users, X } from "lucide-react";
+import { Check, Eye, Gauge, LoaderCircle, RefreshCw, Search, ToggleLeft, ToggleRight, Trash2, Users, X } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import FilterSelect from "../../components/common/FilterSelect";
@@ -126,6 +126,31 @@ const CustomersList = () => {
 
   const applications = applicationGroups?.flatMap((group) => group.applications) ?? [];
   const openApplications = applications.filter((application) => OPEN_STATUSES.has(application.status));
+
+  /**
+   * Newest first: product groups are ordered by their most recent application,
+   * and inside each group the applications run latest → oldest, so the freshest
+   * application always sits at the top of the modal.
+   */
+  const sortedApplicationGroups = useMemo(() => {
+    if (!applicationGroups) return null;
+
+    const createdAtMs = (application?: PersonalLoan) => {
+      const time = application?.createdAt ? new Date(application.createdAt).getTime() : NaN;
+      return Number.isNaN(time) ? 0 : time;
+    };
+    const newestFirst = (left: PersonalLoan, right: PersonalLoan) =>
+      createdAtMs(right) - createdAtMs(left);
+
+    return applicationGroups
+      .map((group) => ({
+        ...group,
+        applications: [...group.applications].sort(newestFirst),
+      }))
+      .sort((left, right) =>
+        createdAtMs(right.applications[0]) - createdAtMs(left.applications[0])
+      );
+  }, [applicationGroups]);
   const canDeleteCustomer =
     applicationGroups !== null && !applicationsError && openApplications.length === 0 && !isLoadingApplications;
 
@@ -458,7 +483,7 @@ const CustomersList = () => {
             className="flex max-h-[min(90vh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/50 bg-[#f7f9fc] shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <header className="relative overflow-hidden border-b border-slate-200 bg-white">
+            <header className="relative shrink-0 overflow-hidden border-b border-slate-200 bg-white">
               <div className="absolute inset-x-0 top-0 h-1"
                 style={{ background: "linear-gradient(90deg,rgb(6,106,156),rgb(38,174,144))" }} />
               <div className="relative flex items-start justify-between gap-4 px-6 pb-5 pt-7">
@@ -475,6 +500,14 @@ const CustomersList = () => {
                       <span className="truncate">{viewingCustomer.email}</span>
                       <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:block" />
                       <span>{viewingCustomer.mobile}</span>
+                      {typeof viewingCustomer.creditScore === "number" && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                          <Gauge size={12} /> Credit score {viewingCustomer.creditScore}/900
+                          <span className={viewingCustomer.creditEligible ? "text-emerald-700" : "text-red-600"}>
+                            · {viewingCustomer.creditEligible ? "Eligible" : "Not eligible"}
+                          </span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -489,7 +522,7 @@ const CustomersList = () => {
               </div>
             </header>
 
-            <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
               {isLoadingApplications ? (
                 <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-16 text-sm text-slate-500 shadow-sm">
                   <LoaderCircle size={24} className="animate-spin text-sky-600" />
@@ -506,7 +539,7 @@ const CustomersList = () => {
                     <RefreshCw size={13} /> Try again
                   </button>
                 </div>
-              ) : applicationGroups?.length ? (
+              ) : sortedApplicationGroups?.length ? (
                 <>
                   <div className={`rounded-2xl border p-4 shadow-sm sm:p-5 ${
                     openApplications.length
@@ -549,7 +582,7 @@ const CustomersList = () => {
                     </div>
                   </div>
 
-                  {applicationGroups.map((group) => (
+                  {sortedApplicationGroups.map((group) => (
                     <section key={group.product} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)]">
                       <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-white to-slate-50 px-4 py-3.5 sm:px-5">
                         <div className="flex min-w-0 items-center gap-3">
@@ -684,7 +717,7 @@ const CustomersList = () => {
               )}
             </div>
 
-            <footer className="flex flex-col gap-3 border-t border-slate-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <footer className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-slate-500">
                 {canDeleteCustomer
                   ? "Delete permanently removes this customer and all their closed application records."

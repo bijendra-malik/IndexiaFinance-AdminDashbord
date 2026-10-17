@@ -136,10 +136,15 @@ const toFranchise = (value: unknown): Franchise => {
     franchiseAppliedAt: firstText(item.franchiseAppliedAt, application.appliedAt),
     franchiseApprovedAt: firstText(item.franchiseApprovedAt, application.approvedAt),
     franchiseRejectedAt: firstText(item.franchiseRejectedAt, application.rejectedAt),
+    // The admin reject flow stores its note in `businessDetails.adminNote` —
+    // read it too, otherwise a saved rejection reason looks "not provided".
     rejectionReason: firstText(
       item.rejectionReason,
       item.rejectionNote,
       item.rejectedReason,
+      item.adminNote,
+      business.adminNote,
+      business.rejectionReason,
       application.rejectionReason,
       application.rejectionNote,
       application.reason

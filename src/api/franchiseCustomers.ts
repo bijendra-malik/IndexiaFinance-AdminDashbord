@@ -45,28 +45,38 @@ export interface FranchiseCustomerPage {
   totalPages: number;
 }
 
-export interface FranchiseCibilStats {
-  threshold: number;
+/**
+ * Per-franchise row of `GET /franchise-customers/stats`.
+ *
+ * The live backend returns `{ franchise, total }` only — the CIBIL funnel
+ * columns were dropped from the payload, so they stay optional here and the UI
+ * renders them only when the response actually supplies them.
+ */
+export interface FranchiseCustomerStatRow {
+  franchise: FranchiseSummary | null;
   total: number;
-  consented: number;
-  notChecked: number;
-  checked: number;
-  failed: number;
-  eligible: number;
-  locked: number;
-  checkedLocked: number;
-  byStatus: Record<string, number>;
-  byFranchise: Array<{
-    franchise: FranchiseSummary | null;
-    total: number;
-    consented: number;
-    notChecked: number;
-    checked: number;
-    failed: number;
-    eligible: number;
-    locked: number;
-    checkedLocked: number;
-  }>;
+  consented?: number;
+  notChecked?: number;
+  checked?: number;
+  failed?: number;
+  eligible?: number;
+  locked?: number;
+  checkedLocked?: number;
+}
+
+export interface FranchiseCustomerStats {
+  total: number;
+  byFranchise: FranchiseCustomerStatRow[];
+  /** Legacy CIBIL aggregate — only sent by older backend deployments. */
+  threshold?: number;
+  consented?: number;
+  notChecked?: number;
+  checked?: number;
+  failed?: number;
+  eligible?: number;
+  locked?: number;
+  checkedLocked?: number;
+  byStatus?: Record<string, number>;
 }
 
 export interface FranchiseCustomerLoan {
@@ -103,9 +113,14 @@ export const getFranchiseCustomers = async (params: {
   return response.data;
 };
 
-export const getFranchiseCibilStats = async (): Promise<FranchiseCibilStats> => {
-  const response = await axiosInstance.get<{ stats: FranchiseCibilStats }>("/franchise-customers/stats");
-  return response.data.stats;
+/** GET /franchise-customers/stats — network-wide count, franchise by franchise. */
+export const getFranchiseCustomerStats = async (): Promise<FranchiseCustomerStats> => {
+  const response = await axiosInstance.get<{ stats?: FranchiseCustomerStats }>("/franchise-customers/stats");
+  const stats = response.data.stats;
+  if (!stats || !Array.isArray(stats.byFranchise)) {
+    throw new Error("Unexpected response from GET /franchise-customers/stats");
+  }
+  return stats;
 };
 
 export const getFranchiseCustomer = async (id: string): Promise<{

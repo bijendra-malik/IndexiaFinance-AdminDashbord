@@ -7,14 +7,13 @@ import {
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getApiErrorMessage,
-  getFranchiseCibilStats,
   getFranchiseCustomer,
   getFranchiseCustomers,
-  type FranchiseCibilStats,
+  getFranchiseCustomerStats,
+  type FranchiseCustomerStats,
   type FranchiseCustomer as FranchiseCustomerRecord,
 } from "../../api/franchiseCustomers";
 import Pagination from "../../components/common/Pagination";
-import FilterSelect from "../../components/common/FilterSelect";
 
 const PAGE_SIZE = 20;
 const ACTIVE_BACKGROUND = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))";
@@ -60,6 +59,30 @@ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
+/**
+ * Aggregated funnel columns the stats endpoint USED to return. Every column is
+ * optional in the payload now, so the overview only renders the ones the live
+ * response actually carries (`total` is the only guaranteed number).
+ */
+type FunnelColumnKey =
+  | "consented"
+  | "notChecked"
+  | "checked"
+  | "failed"
+  | "eligible"
+  | "locked"
+  | "checkedLocked";
+
+const FUNNEL_COLUMNS: { key: FunnelColumnKey; label: string }[] = [
+  { key: "consented", label: "Consented" },
+  { key: "notChecked", label: "Not checked" },
+  { key: "checked", label: "Checked" },
+  { key: "failed", label: "Failed" },
+  { key: "eligible", label: "Eligible" },
+  { key: "locked", label: "Locked" },
+  { key: "checkedLocked", label: "Checked locked" },
+];
+
 const FranchiseCustomers = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
@@ -73,8 +96,6 @@ const FranchiseCustomers = () => {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [franchise, setFranchise] = useState(franchiseParam);
   const [appliedFranchise, setAppliedFranchise] = useState(franchiseParam);
-  const [cibilStatus, setCibilStatus] = useState("");
-  const [locked, setLocked] = useState("");
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -83,7 +104,7 @@ const FranchiseCustomers = () => {
     result: Awaited<ReturnType<typeof getFranchiseCustomers>> | null;
     error: string;
   } | null>(null);
-  const [stats, setStats] = useState<{ key: number; data: FranchiseCibilStats | null; error: string }>({
+  const [stats, setStats] = useState<{ key: number; data: FranchiseCustomerStats | null; error: string }>({
     key: -1, data: null, error: "",
   });
   const [detail, setDetail] = useState<{
@@ -92,7 +113,7 @@ const FranchiseCustomers = () => {
     error: string;
   } | null>(null);
 
-  const listKey = `${appliedSearch}:${appliedFranchise}:${cibilStatus}:${locked}:${page}:${refreshKey}`;
+  const listKey = `${appliedSearch}:${appliedFranchise}:${page}:${refreshKey}`;
 
   useEffect(() => {
     if (id || isStatsPage) return;
@@ -100,8 +121,6 @@ const FranchiseCustomers = () => {
     getFranchiseCustomers({
       search: appliedSearch || undefined,
       franchise: appliedFranchise || undefined,
-      cibilStatus: cibilStatus || undefined,
-      locked: locked || undefined,
       page,
       limit: PAGE_SIZE,
     }).then((result) => {
@@ -114,12 +133,12 @@ const FranchiseCustomers = () => {
       });
     });
     return () => { cancelled = true; };
-  }, [appliedFranchise, appliedSearch, cibilStatus, id, isStatsPage, listKey, locked, page, refreshKey]);
+  }, [appliedFranchise, appliedSearch, id, isStatsPage, listKey, page, refreshKey]);
 
   useEffect(() => {
     if (!isStatsPage) return;
     let cancelled = false;
-    getFranchiseCibilStats().then((data) => {
+    getFranchiseCustomerStats().then((data) => {
       if (!cancelled) setStats({ key: refreshKey, data, error: "" });
     }).catch((error: unknown) => {
       if (!cancelled) setStats({
@@ -163,8 +182,6 @@ const FranchiseCustomers = () => {
     setAppliedSearch("");
     setFranchise("");
     setAppliedFranchise("");
-    setCibilStatus("");
-    setLocked("");
     setPage(1);
     if (franchiseParam) setSearchParams({}, { replace: true });
   };
@@ -207,12 +224,18 @@ const FranchiseCustomers = () => {
                 <h1 className="text-xl font-bold text-slate-800">{record.fullName || "Franchise customer"}</h1>
                 <p className="mt-1 text-sm text-slate-500">{record.mobile || "—"}{record.email ? ` · ${record.email}` : ""}</p>
               </div>
-              <div className="flex flex-wrap items-start gap-2">
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(cibil?.status)}`}>{titleCase(cibil?.status)}</span>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${record.loanForm?.locked ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
-                  {record.loanForm?.locked ? "Loan form locked" : "Loan form unlocked"}
-                </span>
-              </div>
+              {(cibil?.status || record.loanForm) && (
+                <div className="flex flex-wrap items-start gap-2">
+                  {cibil?.status && (
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(cibil.status)}`}>{titleCase(cibil.status)}</span>
+                  )}
+                  {record.loanForm && (
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${record.loanForm.locked ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+                      {record.loanForm.locked ? "Loan form locked" : "Loan form unlocked"}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-5 xl:grid-cols-2">
@@ -224,13 +247,14 @@ const FranchiseCustomers = () => {
                   <Field label="Email">{record.email}</Field>
                   <Field label="PAN">{record.panNumber}</Field>
                   <Field label="Date of birth">{formatDate(record.dob)}</Field>
-                  <Field label="Consent recorded">{formatDate(record.cibilConsentAt)}</Field>
+                  {record.cibilConsentAt && <Field label="Consent recorded">{formatDate(record.cibilConsentAt)}</Field>}
                   <Field label="Franchise">{owner?.name}</Field>
                   <Field label="Franchise code">{owner?.franchiseId || record.franchiseCode}</Field>
                   <Field label="Franchise status">{owner?.franchiseStatus}</Field>
                 </dl>
               </section>
 
+              {record.cibil && (
               <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-800"><Gauge size={17} className="text-sky-700" /> CIBIL report</h2>
                 <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
@@ -250,6 +274,7 @@ const FranchiseCustomers = () => {
                 )}
                 <p className="mt-4 text-xs text-slate-400">Read-only audit view. CIBIL checks cannot be initiated here.</p>
               </section>
+              )}
             </div>
 
             <section className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -295,35 +320,64 @@ const FranchiseCustomers = () => {
     const statsLoading = stats.key !== refreshKey;
     const data = statsLoading ? null : stats.data;
     const statsError = statsLoading ? "" : stats.error;
+    // Funnel aggregates are optional in the payload now — render only the
+    // columns the live response actually carries instead of empty cells.
+    const funnelColumns = FUNNEL_COLUMNS.filter(({ key }) =>
+      Boolean(data && data.byFranchise.some((row) => typeof row[key] === "number"))
+    );
+    const metrics: { label: string; value: number | string; icon: typeof Users; tone: string }[] = data
+      ? [
+          { label: "Total customers", value: data.total, icon: Users, tone: "bg-sky-50 text-sky-700" },
+          { label: "Franchises covered", value: data.byFranchise.length, icon: FileText, tone: "bg-violet-50 text-violet-700" },
+          ...(typeof data.consented === "number"
+            ? [{ label: "Consent recorded", value: data.consented, icon: ShieldCheck, tone: "bg-violet-50 text-violet-700" }]
+            : []),
+          ...(typeof data.checked === "number"
+            ? [{ label: "Reports checked", value: data.checked, icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-700" }]
+            : []),
+          ...(typeof data.eligible === "number"
+            ? [{ label: "Eligible / unlocked", value: data.eligible, icon: Gauge, tone: "bg-teal-50 text-teal-700" }]
+            : []),
+          ...(typeof data.notChecked === "number"
+            ? [{ label: "Not checked", value: data.notChecked, icon: Clock3, tone: "bg-slate-100 text-slate-600" }]
+            : []),
+          ...(typeof data.failed === "number"
+            ? [{ label: "Failed checks", value: data.failed, icon: XCircle, tone: "bg-red-50 text-red-700" }]
+            : []),
+          ...(typeof data.locked === "number"
+            ? [{ label: "Locked", value: data.locked, icon: ShieldCheck, tone: "bg-amber-50 text-amber-700" }]
+            : []),
+          ...(typeof data.checkedLocked === "number"
+            ? [{ label: "Checked but locked", value: data.checkedLocked, icon: Gauge, tone: "bg-orange-50 text-orange-700" }]
+            : []),
+        ]
+      : [];
     return (
       <AdminLayout>
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold text-slate-800">Franchise CIBIL overview</h1>
-            <p className="text-sm text-slate-500">Network-wide eligibility and report audit funnel</p>
+            <h1 className="text-xl font-bold text-slate-800">Franchise customer overview</h1>
+            <p className="text-sm text-slate-500">Network-wide customer count, franchise by franchise</p>
           </div>
           <button type="button" onClick={refresh} disabled={statsLoading} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw size={14} className={statsLoading ? "animate-spin" : ""} /> Refresh
           </button>
         </div>
         {statsError && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{statsError}</div>}
-        {statsLoading && <div className="flex items-center justify-center gap-2 py-12 text-slate-500"><LoaderCircle size={18} className="animate-spin" /> Loading CIBIL statistics...</div>}
+        {statsLoading && <div className="flex items-center justify-center gap-2 py-12 text-slate-500"><LoaderCircle size={18} className="animate-spin" /> Loading customer statistics...</div>}
         {data && (
           <>
             <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Metric label="Total customers" value={data.total} icon={Users} tone="bg-sky-50 text-sky-700" />
-              <Metric label="Consent recorded" value={data.consented} icon={ShieldCheck} tone="bg-violet-50 text-violet-700" />
-              <Metric label="Reports checked" value={data.checked} icon={CheckCircle2} tone="bg-emerald-50 text-emerald-700" />
-              <Metric label="Eligible / unlocked" value={data.eligible} icon={Gauge} tone="bg-teal-50 text-teal-700" />
-              <Metric label="Not checked" value={data.notChecked} icon={Clock3} tone="bg-slate-100 text-slate-600" />
-              <Metric label="Failed checks" value={data.failed} icon={XCircle} tone="bg-red-50 text-red-700" />
-              <Metric label="Locked" value={data.locked} icon={ShieldCheck} tone="bg-amber-50 text-amber-700" />
-              <Metric label="Checked but locked" value={data.checkedLocked} icon={Gauge} tone="bg-orange-50 text-orange-700" />
+              {metrics.map((metric) => (
+                <Metric key={metric.label} {...metric} />
+              ))}
             </div>
-            <p className="mb-4 text-xs text-slate-500">Loan eligibility threshold: {data.threshold}</p>
+            {typeof data.threshold === "number" && (
+              <p className="mb-4 text-xs text-slate-500">Loan eligibility threshold: {data.threshold}</p>
+            )}
             <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
-                <h2 className="font-semibold text-slate-800">Franchise-wise CIBIL funnel</h2>
+                <h2 className="font-semibold text-slate-800">Franchise-wise customer count</h2>
               </div>
               {!data.byFranchise.length ? (
                 <p className="p-8 text-center text-sm text-slate-500">No franchise customers found.</p>
@@ -331,7 +385,7 @@ const FranchiseCustomers = () => {
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1000px] text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                      <tr>{["Franchise", "Total", "Consented", "Not checked", "Checked", "Failed", "Eligible", "Locked", "Checked locked"].map((label) => <th key={label} className="px-4 py-3">{label}</th>)}</tr>
+                      <tr>{["Franchise", "Customers", "Share", ...funnelColumns.map((column) => column.label)].map((label) => <th key={label} className="px-4 py-3">{label}</th>)}</tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {data.byFranchise.map((row, index) => (
@@ -344,7 +398,12 @@ const FranchiseCustomers = () => {
                             ) : "Franchise deleted"}
                             {row.franchise?.franchiseId && <p className="mt-0.5 text-xs text-slate-400">{row.franchise.franchiseId}</p>}
                           </td>
-                          {[row.total, row.consented, row.notChecked, row.checked, row.failed, row.eligible, row.locked, row.checkedLocked].map((count, i) => <td key={i} className="px-4 py-3 text-slate-600">{count}</td>)}
+                          <td className="px-4 py-3 font-semibold text-slate-700">{row.total}</td>
+                          <td className="px-4 py-3 text-slate-600">{data.total > 0 ? `${((row.total / data.total) * 100).toFixed(1)}%` : "—"}</td>
+                          {funnelColumns.map(({ key }) => {
+                            const count = row[key];
+                            return <td key={key} className="px-4 py-3 text-slate-600">{typeof count === "number" ? count : "—"}</td>;
+                          })}
                         </tr>
                       ))}
                     </tbody>
@@ -360,7 +419,11 @@ const FranchiseCustomers = () => {
 
   const result = currentList?.result;
   const customers: FranchiseCustomerRecord[] = result?.customers ?? [];
-  const hasFilters = !!(appliedSearch || appliedFranchise || cibilStatus || locked);
+  // The live payload has dropped CIBIL / loan-form state — show those columns
+  // only when the response actually carries them.
+  const showCibil = customers.some((customer) => Boolean(customer.cibil));
+  const showLoanForm = customers.some((customer) => Boolean(customer.loanForm));
+  const hasFilters = !!(appliedSearch || appliedFranchise);
   return (
     <AdminLayout>
       <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -374,7 +437,7 @@ const FranchiseCustomers = () => {
           </div>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
-          <Link to="/franchise-customers/stats" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">CIBIL overview</Link>
+          <Link to="/franchise-customers/stats" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Customer stats</Link>
           <button type="button" onClick={refresh} disabled={!currentList} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw size={14} /> Refresh
           </button>
@@ -387,29 +450,7 @@ const FranchiseCustomers = () => {
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, mobile, PAN, or email" className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100" />
           </div>
           <input value={franchise} onChange={(event) => setFranchise(event.target.value)} placeholder="Franchise FRN code or ID" className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100" />
-          <FilterSelect
-            label="Filter by CIBIL status"
-            value={cibilStatus}
-            onChange={(value) => { setCibilStatus(value); setPage(1); }}
-            options={[
-              { value: "", label: "All CIBIL statuses" },
-              { value: "NotChecked", label: "Not checked" },
-              { value: "Checked", label: "Checked" },
-              { value: "Failed", label: "Failed" },
-            ]}
-          />
-          <div className="flex gap-2">
-            <FilterSelect
-              label="Filter by loan form state"
-              value={locked}
-              onChange={(value) => { setLocked(value); setPage(1); }}
-              options={[
-                { value: "", label: "Any form state" },
-                { value: "false", label: "Unlocked" },
-                { value: "true", label: "Locked" },
-              ]}
-              className="min-w-0 flex-1"
-            />
+          <div className="flex justify-end">
             <button type="submit" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110" style={{ background: ACTIVE_BACKGROUND }}>Apply</button>
           </div>
         </form>
@@ -423,16 +464,6 @@ const FranchiseCustomers = () => {
             {appliedSearch && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
                 Search: {appliedSearch}
-              </span>
-            )}
-            {cibilStatus && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                CIBIL: {cibilStatus}
-              </span>
-            )}
-            {locked && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                Loan form: {locked === "true" ? "Locked" : "Unlocked"}
               </span>
             )}
             <button type="button" onClick={clearFilters} className="ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
@@ -452,7 +483,7 @@ const FranchiseCustomers = () => {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1050px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>{["Customer", "Franchise", "PAN", "CIBIL", "Score", "Loan form", "Loans", "Last applied", ""].map((label, index) => <th key={`${label}-${index}`} className="px-4 py-3">{label}</th>)}</tr>
+                  <tr>{["Customer", "Franchise", "PAN", ...(showCibil ? ["CIBIL", "Score"] : []), ...(showLoanForm ? ["Loan form"] : []), "Loans", "Last applied", ""].map((label, index) => <th key={`${label}-${index}`} className="px-4 py-3">{label}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {customers.map((customer) => (
@@ -463,9 +494,9 @@ const FranchiseCustomers = () => {
                       </td>
                       <td className="px-4 py-3 text-slate-600">{customer.franchise?.name || customer.franchise?.franchiseId || "Franchise deleted"}<p className="mt-0.5 text-xs text-slate-400">{customer.franchise?.franchiseId || customer.franchiseCode || ""}</p></td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">{customer.panNumber || "—"}</td>
-                      <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(customer.cibil?.status)}`}>{titleCase(customer.cibil?.status)}</span></td>
-                      <td className="px-4 py-3 text-slate-600">{customer.cibil?.score ?? "—"}</td>
-                      <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${customer.loanForm?.locked ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{customer.loanForm?.locked ? "Locked" : "Unlocked"}</span></td>
+                      {showCibil && <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(customer.cibil?.status)}`}>{titleCase(customer.cibil?.status)}</span></td>}
+                      {showCibil && <td className="px-4 py-3 text-slate-600">{customer.cibil?.score ?? "—"}</td>}
+                      {showLoanForm && <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${customer.loanForm?.locked ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{customer.loanForm?.locked ? "Locked" : "Unlocked"}</span></td>}
                       <td className="px-4 py-3 text-slate-600">{customer.loans?.count ?? 0}</td>
                       <td className="px-4 py-3 text-slate-500">{formatDate(customer.loans?.lastAppliedAt)}</td>
                       <td className="px-4 py-3"><Link to={`/franchise-customers/${encodeURIComponent(customer._id)}`} className="text-xs font-semibold text-sky-700 hover:underline">Audit</Link></td>

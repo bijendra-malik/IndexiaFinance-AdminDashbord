@@ -25,6 +25,13 @@ export interface Customer {
   franchiseAppliedAt?: string | null;
   franchiseApprovedAt?: string | null;
   franchiseRejectedAt?: string | null;
+  /** Self-declared score, stored on the customer account (300–900; null = never checked). */
+  creditScore?: number | null;
+  creditScoreCheckedAt?: string | null;
+  /** Backend rule: creditScore >= 650. */
+  creditEligible?: boolean;
+  /** 24-hour application window that opens when a qualifying score is submitted. */
+  creditEligibilityExpiresAt?: string | null;
 }
 
 export interface CustomerApplicationGroup {
@@ -71,6 +78,10 @@ const toCustomer = (value: unknown): Customer => {
     franchiseAppliedAt: optionalText(item.franchiseAppliedAt) ?? null,
     franchiseApprovedAt: optionalText(item.franchiseApprovedAt) ?? null,
     franchiseRejectedAt: optionalText(item.franchiseRejectedAt) ?? null,
+    creditScore: typeof item.creditScore === "number" ? item.creditScore : null,
+    creditScoreCheckedAt: optionalText(item.creditScoreCheckedAt) ?? null,
+    creditEligible: item.creditEligible === true,
+    creditEligibilityExpiresAt: optionalText(item.creditEligibilityExpiresAt) ?? null,
   };
 };
 

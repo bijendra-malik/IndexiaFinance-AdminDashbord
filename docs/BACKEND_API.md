@@ -49,6 +49,7 @@ statistics to one request instead of calling every product endpoint separately.
   "success": true,
   "stats": {
     "totalCustomers": 128,
+    "totalFranchises": 7,          // new: franchise count straight from the API
     "totalApplications": 342,
     "submitted": 40,
     "pending": 120,
@@ -56,26 +57,44 @@ statistics to one request instead of calling every product endpoint separately.
     "rejected": 32,
     "requestedAmount": 187500000,
     "approvedAmount": 92500000,
-    "approvalRate": 43.9,          // percent, 0–100
+    "approvalRate": 43.9,          // percent, 0–100, decided applications only
     "products": [
       {
-        "slug": "personal-loan",
-        "label": "Personal Loan",
+        "resource": "personal-loans",   // URL segment, NOT the admin slug
+        "label": "Personal loan",
         "total": 90,
-        "submitted": 5,
-        "pending": 30,
-        "approved": 45,
-        "rejected": 10,
+        "Submitted": 5,                  // NOTE: capitalised status keys
+        "Pending": 30,
+        "Approved": 45,
+        "Rejected": 10,
         "requestedAmount": 45000000,
         "approvedAmount": 22500000
       }
     ],
-    "recent": [ /* up to 10 latest applications, each the full loan document
-                    plus { slug, label } */ ],
+    "recent": [
+      {
+        "_id": "6ad33ae5c0c6d4799cf56f1d",
+        "resource": "education-loans",
+        "product": "Education loan",     // the display label
+        "applicantName": "Sita",         // NOT fullName
+        "mobile": "9876543210",
+        "loanType": "Education Loan",
+        "status": "Submitted",
+        "loanAmount": 1000000,
+        "createdAt": "2026-10-17T09:07:49.023Z"
+      }
+    ],
     "generatedAt": "2026-09-29T10:00:00.000Z"
   }
 }
 ```
+
+**Frontend normalisation.** The dashboard keeps reading the shapes above
+capitalised/undetailed job-free: `src/api/dashboard.ts` converts `Submitted` /
+`Pending` / `Approved` / `Rejected` to the lowercase `ProductStat` fields,
+maps `resource` → the admin slug (`resourceToSlug`, e.g. `/vehicle-loans` →
+`car-loan`), and turns `applicantName` / `product` into `fullName` / `label`.
+New fields belong in that mapper, not in the components.
 
 The dashboard uses the count from `GET /customers` for Customer-role accounts,
 and the `total` field from the paginated `GET /franchises?page=1&limit=10`
@@ -152,6 +171,15 @@ typing the last 8 characters of the application id).
 
 List response: `{ "success": true, "loans": [ ...documents ] }`
 Detail response: `{ "success": true, "loan": { ...document, user, status } }`
+
+Each application document must snapshot the applicant's credit data at submission
+using `creditScore` (number or `null`), `creditEligible` (boolean), and
+`creditScoreCheckedAt` (ISO timestamp or `null`). These fields represent the
+values used for that specific application and must not be rewritten when the
+customer's account score is checked or updated later. The application detail
+screen reads only this snapshot; it does not substitute the customer's current
+score. For older applications without a snapshot, the credit fields display as
+not captured.
 
 **Recommended query parameters** (the UI already filters/paginates client-side;
 moving it server-side keeps the payload small as volume grows):
@@ -443,7 +471,11 @@ frontend also accepts profile fields nested under `businessDetails`,
 
 Approval uses `PATCH /franchises/:id/approve`; password reset uses
 `PATCH /franchises/:id/reset-password`; rejection uses
-`PATCH /franchises/:id/reject` with `{ "note": "…" }`. Return generated
+`PATCH /franchises/:id/reject` with `{ "note": "…" }`. The reject note is
+persisted on the document as `businessDetails.adminNote`, so the detail payload
+carries the reason there — the admin UI reads it as `rejectionReason`
+(`src/api/franchises.ts`) along with `rejectionReason` / `rejectionNote`.
+Return generated
 credentials as `{ credentials: { loginId, password, note? } }` when they can
 be shared. The admin UI is not the franchise sign-in page: after approval,
 the partner uses those credentials on the separate franchise portal. If a

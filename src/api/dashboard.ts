@@ -1,9 +1,9 @@
 import axiosInstance from "./axiosInstance";
-import type { PersonalLoan } from "./personalLoans";
-import { getFranchiseCibilStats } from "./franchiseCustomers";
+import { getFranchiseCustomerStats } from "./franchiseCustomers";
 import { getApiErrorMessage } from "../utils/apiError";
 import { getCustomers } from "./customers";
 import { getFranchises } from "./franchises";
+import { resourceToSlug } from "./personalLoans";
 
 export interface ProductStat {
   /**
@@ -22,12 +22,92 @@ export interface ProductStat {
   approvedAmount: number;
 }
 
-export interface RecentApplication extends PersonalLoan {
-  /** Optional for the same reason as `ProductStat.slug` — this endpoint has
-   *  already been observed omitting slugs, so never link on it blindly. */
+/** One row of the "Recent Applications" table, already normalised. */
+export interface RecentApplication {
+  _id: string;
+  /** Product slug, derived from `resource` when the payload carries no slug. */
   slug?: string;
   label: string;
+  fullName?: string;
+  mobile?: string;
+  loanType?: string;
+  status: string;
+  loanAmount?: number;
+  createdAt: string;
 }
+
+/**
+ * `/dashboard/stats` keys as the backend actually sends them:
+ * product rows carry the decision counts capitalised (`Submitted`, `Pending`,
+ * …) plus a `resource` path instead of a `slug`, and recent rows carry
+ * `applicantName` / `product` / `resource` instead of `fullName` / `label` /
+ * `slug`. They are converted below, so the UI only ever sees the shapes this
+ * file declares.
+ */
+interface RawProductStat {
+  resource?: string;
+  slug?: string;
+  label?: string;
+  total?: number;
+  submitted?: number;
+  pending?: number;
+  approved?: number;
+  rejected?: number;
+  Submitted?: number;
+  Pending?: number;
+  Approved?: number;
+  Rejected?: number;
+  requestedAmount?: number;
+  approvedAmount?: number;
+}
+
+interface RawRecentApplication {
+  _id?: string;
+  resource?: string;
+  slug?: string;
+  product?: string;
+  label?: string;
+  applicantName?: string;
+  fullName?: string;
+  mobile?: string;
+  loanType?: string;
+  status?: string;
+  loanAmount?: number | null;
+  createdAt?: string;
+}
+
+const toCount = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+const toProductStat = (raw: RawProductStat): ProductStat => {
+  const slug = raw.slug ?? resourceToSlug(raw.resource);
+  return {
+    ...(slug ? { slug } : {}),
+    label: raw.label ?? raw.resource ?? "Loan product",
+    total: toCount(raw.total),
+    submitted: toCount(raw.submitted ?? raw.Submitted),
+    pending: toCount(raw.pending ?? raw.Pending),
+    approved: toCount(raw.approved ?? raw.Approved),
+    rejected: toCount(raw.rejected ?? raw.Rejected),
+    requestedAmount: toCount(raw.requestedAmount),
+    approvedAmount: toCount(raw.approvedAmount),
+  };
+};
+
+const toRecentApplication = (raw: RawRecentApplication): RecentApplication => {
+  const slug = raw.slug ?? resourceToSlug(raw.resource);
+  return {
+    _id: raw._id ?? "",
+    ...(slug ? { slug } : {}),
+    label: raw.label ?? raw.product ?? raw.loanType ?? "Loan application",
+    fullName: raw.fullName ?? raw.applicantName ?? "",
+    mobile: raw.mobile ?? "",
+    loanType: raw.loanType ?? "",
+    status: raw.status ?? "Submitted",
+    ...(typeof raw.loanAmount === "number" ? { loanAmount: raw.loanAmount } : {}),
+    createdAt: raw.createdAt ?? "",
+  };
+};
 
 export interface DashboardAccount {
   id: string;
@@ -68,20 +148,27 @@ export interface DashboardStats {
 
 interface DashboardStatsResponse {
   success: boolean;
-  stats: Omit<
-    DashboardStats,
-    | "franchiseCustomerTotal"
-    | "franchiseCustomersError"
-    | "totalFranchises"
-    | "recentAccounts"
-    | "accountsError"
-  >;
+  stats: {
+    totalCustomers: number;
+    totalFranchises?: number;
+    totalApplications: number;
+    submitted: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    requestedAmount: number;
+    approvedAmount: number;
+    approvalRate: number;
+    products: RawProductStat[];
+    recent: RawRecentApplication[];
+    generatedAt: string;
+  };
 }
 
 export const getDashboardStats = async (): Promise<DashboardStats> => {
   const [dashboardResult, franchiseCustomersResult, customersResult, franchisesResult] = await Promise.allSettled([
     axiosInstance.get<DashboardStatsResponse>("/dashboard/stats"),
-    getFranchiseCibilStats(),
+    getFranchiseCustomerStats(),
     getCustomers(),
     getFranchises({ page: 1, limit: 10 }),
   ]);
@@ -94,6 +181,10 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   if (!stats || !Array.isArray(stats.products) || !Array.isArray(stats.recent)) {
     throw new Error("Unexpected response while loading dashboard statistics.");
   }
+
+  // Backend rows → the shapes the dashboard renders (see RawProductStat).
+  const products = stats.products.map(toProductStat);
+  const recent = stats.recent.map(toRecentApplication);
 
   const customers = customersResult.status === "fulfilled"
     ? customersResult.value.filter((customer) => customer.role.toLowerCase() === "customer")
@@ -152,12 +243,14 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
 
   return {
     ...stats,
+    products,
+    recent,
     totalCustomers: customersResult.status === "fulfilled"
       ? customers.length
       : stats.totalCustomers,
     totalFranchises: franchisesResult.status === "fulfilled"
       ? franchisesResult.value.total
-      : 0,
+      : stats.totalFranchises ?? 0,
     recentAccounts,
     accountsError: accountErrors.join(" "),
     franchiseCustomerTotal:

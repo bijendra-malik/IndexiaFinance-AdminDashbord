@@ -238,6 +238,14 @@ const LoanApplicationDetail = () => {
   };
   useEffect(() => { load(); }, [id, loanType]); // eslint-disable-line
 
+  const creditScore = loan?.creditScore ?? null;
+  const creditScoreText = creditScore == null ? "Not captured" : `${creditScore} / 900`;
+  const creditEligibilityText = creditScore == null
+    ? "Not captured"
+    : (loan?.creditEligible ?? creditScore >= 650)
+      ? "Eligible (minimum 650)"
+      : "Not eligible (below 650)";
+
   const copyId = async () => {
     if (!loan) return;
     try {
@@ -637,6 +645,9 @@ const LoanApplicationDetail = () => {
           <DataField label="State"             value={V(loan!.state)} />
           <DataField label="City"              value={V(loan!.city)} />
           <DataField label="Pincode"           value={V(loan!.pincode)} mono />
+          <DataField label="Credit Score"       value={creditScoreText} highlight />
+          <DataField label="Credit Eligibility" value={creditEligibilityText} />
+          <DataField label="Score Checked On"   value={DT(loan!.creditScoreCheckedAt)} />
         </InfoSection>
 
         {/* ════════════ EMPLOYMENT — adapts to employmentType ══════════════ */}
