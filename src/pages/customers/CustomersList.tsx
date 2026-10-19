@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Eye, Gauge, LoaderCircle, RefreshCw, Search, ToggleLeft, ToggleRight, Trash2, Users, X } from "lucide-react";
+import { Check, Eye, LoaderCircle, RefreshCw, Search, ToggleLeft, ToggleRight, Trash2, Users, X } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import FilterSelect from "../../components/common/FilterSelect";
@@ -517,14 +517,6 @@ const CustomersList = () => {
                       <span className="truncate">{viewingCustomer.email}</span>
                       <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:block" />
                       <span>{viewingCustomer.mobile}</span>
-                      {typeof viewingCustomer.creditScore === "number" && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
-                          <Gauge size={12} /> Credit score {viewingCustomer.creditScore}/900
-                          <span className={viewingCustomer.creditEligible ? "text-emerald-700" : "text-red-600"}>
-                            · {viewingCustomer.creditEligible ? "Eligible" : "Not eligible"}
-                          </span>
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -550,7 +542,10 @@ const CustomersList = () => {
               )}
               {customerDetail && (
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                  <h3 className="mb-4 text-sm font-bold text-slate-800">Customer details</h3>
+                  <h3 className="text-sm font-bold text-slate-800">Customer details</h3>
+                  <p className="mb-4 mt-1 text-[11px] text-slate-400">
+                    Credit score is captured per application at submit time — see each application card below.
+                  </p>
                   <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Customer ID</dt><dd className="mt-1 break-all font-mono text-xs text-slate-700">{customerDetail.customerId || customerDetail._id}</dd></div>
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Full name</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.name || "—"}</dd></div>
@@ -560,7 +555,6 @@ const CustomersList = () => {
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Location</dt><dd className="mt-1 text-sm text-slate-700">{[customerDetail.city, customerDetail.state, customerDetail.country, customerDetail.pincode].filter(Boolean).join(", ") || "—"}</dd></div>
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Account</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.role} · {customerDetail.isActive ? "Active" : "Inactive"} · {customerDetail.isVerified ? "Verified" : "Unverified"}</dd></div>
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Package</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.package || "—"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Credit eligibility</dt><dd className="mt-1 text-sm text-slate-700">{typeof customerDetail.creditScore === "number" ? `${customerDetail.creditScore}/900 · ${customerDetail.creditEligible ? "Eligible" : "Not eligible"}` : "Not checked"}</dd></div>
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Created</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.createdAt)}</dd></div>
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Last login</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.lastLogin)}</dd></div>
                   </dl>
@@ -676,7 +670,7 @@ const CustomersList = () => {
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                              <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 px-3 py-2.5 sm:grid-cols-3">
                                 <div>
                                   <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Tenure</p>
                                   <p className="mt-1 text-xs font-semibold text-slate-700">
@@ -689,7 +683,15 @@ const CustomersList = () => {
                                     {application.createdAt ? formatDate(application.createdAt) : "—"}
                                   </p>
                                 </div>
-                                <div className="col-span-2 min-w-0 border-t border-slate-200/80 pt-2">
+                                <div>
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Credit score at apply</p>
+                                  <p className="mt-1 text-xs font-semibold text-slate-700">
+                                    {typeof application.creditScore === "number"
+                                      ? `${application.creditScore}/900 · ${(application.creditEligible ?? application.creditScore >= 650) ? "Eligible" : "Not eligible"}`
+                                      : "Not recorded"}
+                                  </p>
+                                </div>
+                                <div className="col-span-2 min-w-0 border-t border-slate-200/80 pt-2 sm:col-span-3">
                                   <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Application ID</p>
                                   {SUPPORTED_LOAN_SLUGS.has(slug) ? (
                                     <Link

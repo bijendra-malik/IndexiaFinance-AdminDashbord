@@ -238,10 +238,15 @@ const LoanApplicationDetail = () => {
   };
   useEffect(() => { load(); }, [id, loanType]); // eslint-disable-line
 
+  /*
+  Score snapshot stored ON THIS APPLICATION at submit time. Not the customer's
+  current account score: a re-check for a later loan updates the account and
+  must never rewrite this application's score.
+  */
   const creditScore = loan?.creditScore ?? null;
-  const creditScoreText = creditScore == null ? "Not captured" : `${creditScore} / 900`;
+  const creditScoreText = creditScore == null ? "Not recorded for this application" : `${creditScore} / 900`;
   const creditEligibilityText = creditScore == null
-    ? "Not captured"
+    ? "Not recorded for this application"
     : (loan?.creditEligible ?? creditScore >= 650)
       ? "Eligible (minimum 650)"
       : "Not eligible (below 650)";
@@ -645,9 +650,9 @@ const LoanApplicationDetail = () => {
           <DataField label="State"             value={V(loan!.state)} />
           <DataField label="City"              value={V(loan!.city)} />
           <DataField label="Pincode"           value={V(loan!.pincode)} mono />
-          <DataField label="Credit Score"       value={creditScoreText} highlight />
-          <DataField label="Credit Eligibility" value={creditEligibilityText} />
-          <DataField label="Score Checked On"   value={DT(loan!.creditScoreCheckedAt)} />
+          <DataField label="Credit Score (at apply)" value={creditScoreText} highlight />
+          <DataField label="Credit Eligibility"      value={creditEligibilityText} />
+          <DataField label="Score Checked On"        value={DT(loan!.creditScoreCheckedAt)} />
         </InfoSection>
 
         {/* ════════════ EMPLOYMENT — adapts to employmentType ══════════════ */}
