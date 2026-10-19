@@ -23,13 +23,6 @@ export interface Customer {
   pincode?: string;
   panNumber?: string;
   package?: string;
-  /** Self-declared score, stored on the customer account (300–900; null = never checked). */
-  creditScore?: number | null;
-  creditScoreCheckedAt?: string | null;
-  /** Backend rule: creditScore >= 650. */
-  creditEligible?: boolean;
-  /** 24-hour application window that opens when a qualifying score is submitted. */
-  creditEligibilityExpiresAt?: string | null;
 }
 
 export interface CustomerApplicationGroup {
@@ -73,10 +66,6 @@ const toCustomer = (value: unknown): Customer => {
     pincode: optionalText(item.pincode ?? item.pinCode),
     panNumber: optionalText(item.panNumber ?? item.pan),
     package: optionalText(item.package ?? item.packageName),
-    creditScore: typeof item.creditScore === "number" ? item.creditScore : null,
-    creditScoreCheckedAt: optionalText(item.creditScoreCheckedAt) ?? null,
-    creditEligible: item.creditEligible === true,
-    creditEligibilityExpiresAt: optionalText(item.creditEligibilityExpiresAt) ?? null,
   };
 };
 
