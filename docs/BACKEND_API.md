@@ -173,13 +173,18 @@ List response: `{ "success": true, "loans": [ ...documents ] }`
 Detail response: `{ "success": true, "loan": { ...document, user, status } }`
 
 Each application document must snapshot the applicant's credit data at submission
-using `creditScore` (number or `null`), `creditEligible` (boolean), and
-`creditScoreCheckedAt` (ISO timestamp or `null`). These fields represent the
-values used for that specific application and must not be rewritten when the
+using `creditScore` (number or `null`), `creditEligible` (boolean),
+`creditScoreCheckedAt` (ISO timestamp or `null`), and
+`creditEligibilityExpiresAt` (ISO timestamp or `null`). These fields represent
+the values used for that specific application and must not be rewritten when the
 customer's account score is checked or updated later. The application detail
 screen reads only this snapshot; it does not substitute the customer's current
-score. For older applications without a snapshot, the credit fields display as
-not captured.
+score. The customer profile screen also shows only per-application snapshots —
+the account's latest score is never displayed as an application's score. For
+older applications without a snapshot, the credit fields display as "Not
+recorded for this application". The current eligibility threshold is 600:
+scores of 600 or higher are eligible. The backend must use this same threshold
+when creating the snapshot's `creditEligible` value.
 
 **Recommended query parameters** (the UI already filters/paginates client-side;
 moving it server-side keeps the payload small as volume grows):
