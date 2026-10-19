@@ -9,6 +9,7 @@ import { useToast } from "../../context/ToastContext";
 import {
   deleteCustomer,
   getApiErrorMessage,
+  getCustomer,
   getCustomerApplications,
   getCustomers,
   updateCustomerStatus,
@@ -71,6 +72,8 @@ const CustomersList = () => {
   const [page, setPage] = useState(1);
   const [updatingCustomerId, setUpdatingCustomerId] = useState<string | null>(null);
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
+  const [customerDetail, setCustomerDetail] = useState<Customer | null>(null);
+  const [customerDetailError, setCustomerDetailError] = useState("");
   const [applicationGroups, setApplicationGroups] = useState<CustomerApplicationGroup[] | null>(null);
   const [applicationsError, setApplicationsError] = useState("");
   const [isLoadingApplications, setIsLoadingApplications] = useState(false);
@@ -106,18 +109,23 @@ const CustomersList = () => {
     if (!viewingCustomerId) return;
 
     let cancelled = false;
-    getCustomerApplications(viewingCustomerId)
-      .then((groups) => {
-        if (!cancelled) setApplicationGroups(groups);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setApplicationsError(getApiErrorMessage(err, "Unable to load this customer's applications."));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingApplications(false);
-      });
+    Promise.allSettled([
+      getCustomer(viewingCustomerId),
+      getCustomerApplications(viewingCustomerId),
+    ]).then(([customerResult, applicationsResult]) => {
+      if (cancelled) return;
+      if (customerResult.status === "fulfilled") {
+        setCustomerDetail(customerResult.value);
+      } else {
+        setCustomerDetailError(getApiErrorMessage(customerResult.reason, "Unable to load this customer's details."));
+      }
+      if (applicationsResult.status === "fulfilled") {
+        setApplicationGroups(applicationsResult.value);
+      } else {
+        setApplicationsError(getApiErrorMessage(applicationsResult.reason, "Unable to load this customer's applications."));
+      }
+      setIsLoadingApplications(false);
+    });
 
     return () => {
       cancelled = true;
@@ -155,6 +163,8 @@ const CustomersList = () => {
     applicationGroups !== null && !applicationsError && openApplications.length === 0 && !isLoadingApplications;
 
   const openCustomerDetails = (customer: Customer) => {
+    setCustomerDetail(null);
+    setCustomerDetailError("");
     setApplicationGroups(null);
     setApplicationsError("");
     setIsLoadingApplications(true);
@@ -164,12 +174,16 @@ const CustomersList = () => {
   const closeCustomerDetails = () => {
     if (isDeleting || updatingApplicationId) return;
     setViewingCustomer(null);
+    setCustomerDetail(null);
+    setCustomerDetailError("");
     setApplicationGroups(null);
     setApplicationsError("");
     setIsLoadingApplications(false);
   };
 
   const retryApplications = () => {
+    setCustomerDetail(null);
+    setCustomerDetailError("");
     setApplicationGroups(null);
     setApplicationsError("");
     setIsLoadingApplications(true);
@@ -413,7 +427,10 @@ const CustomersList = () => {
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-100 to-emerald-100 text-xs font-extrabold text-sky-800 ring-1 ring-white">
                           {c.name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?"}
                         </div>
-                        <span className="font-semibold text-slate-800">{c.name}</span>
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-slate-800">{c.name}</span>
+                          <span className="block font-mono text-[10px] text-slate-400">{c.customerId || c._id}</span>
+                        </span>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-slate-600">{c.mobile}</td>
@@ -523,6 +540,33 @@ const CustomersList = () => {
             </header>
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+              {customerDetailError && (
+                <div className="rounded-xl border border-red-200 bg-white p-4 text-sm text-red-700">
+                  Customer details could not be loaded: {customerDetailError}
+                  <button onClick={retryApplications} className="ml-3 inline-flex items-center gap-1.5 font-semibold underline">
+                    <RefreshCw size={13} /> Retry
+                  </button>
+                </div>
+              )}
+              {customerDetail && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <h3 className="mb-4 text-sm font-bold text-slate-800">Customer details</h3>
+                  <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Customer ID</dt><dd className="mt-1 break-all font-mono text-xs text-slate-700">{customerDetail.customerId || customerDetail._id}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Full name</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.name || "—"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-sm text-slate-700">{customerDetail.email || "—"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Mobile</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.mobile || "—"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">PAN</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.panNumber || "—"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Location</dt><dd className="mt-1 text-sm text-slate-700">{[customerDetail.city, customerDetail.state, customerDetail.country, customerDetail.pincode].filter(Boolean).join(", ") || "—"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Account</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.role} · {customerDetail.isActive ? "Active" : "Inactive"} · {customerDetail.isVerified ? "Verified" : "Unverified"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Package</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.package || "—"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Credit eligibility</dt><dd className="mt-1 text-sm text-slate-700">{typeof customerDetail.creditScore === "number" ? `${customerDetail.creditScore}/900 · ${customerDetail.creditEligible ? "Eligible" : "Not eligible"}` : "Not checked"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Created</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.createdAt)}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Last login</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.lastLogin)}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Franchise status</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.franchiseStatus || "—"}</dd></div>
+                  </dl>
+                </section>
+              )}
               {isLoadingApplications ? (
                 <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-16 text-sm text-slate-500 shadow-sm">
                   <LoaderCircle size={24} className="animate-spin text-sky-600" />

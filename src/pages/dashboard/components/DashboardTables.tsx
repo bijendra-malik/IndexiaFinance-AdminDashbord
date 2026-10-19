@@ -143,7 +143,7 @@ export const RecentAccountsTable = ({ accounts }: { accounts: DashboardAccount[]
                         {account.name}
                       </span>
                       <span className="block font-mono text-[10px] text-slate-400">
-                        {account.id}
+                        {account.displayId || account.id}
                       </span>
                     </span>
                   </div>

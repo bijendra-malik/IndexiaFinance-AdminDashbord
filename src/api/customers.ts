@@ -5,6 +5,8 @@ import type { PersonalLoan } from "./personalLoans";
 
 export interface Customer {
   _id: string;
+  /** Human-facing customer number (for example CUST000046); `_id` remains the API lookup key. */
+  customerId?: string;
   name: string;
   mobile: string;
   email: string;
@@ -58,6 +60,7 @@ const toCustomer = (value: unknown): Customer => {
   const item = recordOf(value);
   return {
     _id: optionalText(item._id ?? item.id) ?? "",
+    customerId: optionalText(item.customerId ?? item.customer_id),
     name: optionalText(item.name ?? item.fullName) ?? "",
     mobile: optionalText(item.mobile ?? item.phone) ?? "",
     email: optionalText(item.email) ?? "",
@@ -113,7 +116,7 @@ export const getCustomer = async (id: string): Promise<Customer> => {
   const res = await axiosInstance.get<unknown>(`/customers/${encodeURIComponent(id)}`);
   const root = recordOf(res.data);
   const nested = recordOf(root.data);
-  const item = root.customer ?? nested.customer ?? root.data ?? res.data;
+  const item = root.customer ?? root.user ?? nested.customer ?? nested.user ?? root.data ?? res.data;
   const customer = toCustomer(item);
   if (!customer._id) throw new Error("Unexpected response while loading customer details.");
   return customer;
@@ -126,7 +129,7 @@ export const getCustomerApplications = async (
   const res = await axiosInstance.get<{
     success?: boolean;
     data?: CustomerApplicationGroup[];
-  }>(`/customers/${id}/applications`);
+  }>(`/customers/${encodeURIComponent(id)}/applications`);
   if (!Array.isArray(res.data?.data)) {
     throw new Error("Unexpected response while loading customer applications.");
   }

@@ -111,6 +111,7 @@ const toRecentApplication = (raw: RawRecentApplication): RecentApplication => {
 
 export interface DashboardAccount {
   id: string;
+  displayId?: string;
   role: "Customer" | "Franchise";
   name: string;
   email: string;
@@ -195,6 +196,7 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   const recentAccounts: DashboardAccount[] = [
     ...customers.map((customer): DashboardAccount => ({
       id: customer._id,
+      displayId: customer.customerId || customer._id,
       role: "Customer",
       name: customer.name || "Customer",
       email: customer.email,
