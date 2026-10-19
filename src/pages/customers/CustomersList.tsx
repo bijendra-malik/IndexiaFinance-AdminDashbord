@@ -17,6 +17,7 @@ import {
   type CustomerApplicationGroup,
 } from "../../api/customers";
 import {
+  MINIMUM_CREDIT_SCORE,
   SUPPORTED_LOAN_SLUGS,
   updateLoanStatusBySlug,
   type LoanStatus,
@@ -687,7 +688,7 @@ const CustomersList = () => {
                                   <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Credit score at apply</p>
                                   <p className="mt-1 text-xs font-semibold text-slate-700">
                                     {typeof application.creditScore === "number"
-                                      ? `${application.creditScore}/900 · ${(application.creditEligible ?? application.creditScore >= 650) ? "Eligible" : "Not eligible"}`
+                                      ? `${application.creditScore}/900 · ${(application.creditEligible ?? application.creditScore >= MINIMUM_CREDIT_SCORE) ? "Eligible" : "Not eligible"}`
                                       : "Not recorded"}
                                   </p>
                                 </div>

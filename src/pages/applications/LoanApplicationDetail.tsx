@@ -15,6 +15,7 @@ import {
   deleteLoanBySlug,
   getLoanBySlug,
   getApiErrorMessage,
+  MINIMUM_CREDIT_SCORE,
   updateLoanStatusBySlug,
   type LoanStatus,
   type PersonalLoan,
@@ -247,9 +248,9 @@ const LoanApplicationDetail = () => {
   const creditScoreText = creditScore == null ? "Not recorded for this application" : `${creditScore} / 900`;
   const creditEligibilityText = creditScore == null
     ? "Not recorded for this application"
-    : (loan?.creditEligible ?? creditScore >= 650)
-      ? "Eligible (minimum 650)"
-      : "Not eligible (below 650)";
+    : (loan?.creditEligible ?? creditScore >= MINIMUM_CREDIT_SCORE)
+      ? `Eligible (minimum ${MINIMUM_CREDIT_SCORE})`
+      : `Not eligible (below ${MINIMUM_CREDIT_SCORE})`;
 
   const copyId = async () => {
     if (!loan) return;

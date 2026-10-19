@@ -6,6 +6,8 @@ export { getApiErrorMessage } from "../utils/apiError";
 
 export type LoanStatus = "Pending" | "Approved" | "Rejected" | "Submitted";
 
+export const MINIMUM_CREDIT_SCORE = 600;
+
 export interface PersonalLoan {
   _id: string;
   user: string;
