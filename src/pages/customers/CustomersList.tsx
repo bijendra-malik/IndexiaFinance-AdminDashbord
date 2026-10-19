@@ -563,7 +563,6 @@ const CustomersList = () => {
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Credit eligibility</dt><dd className="mt-1 text-sm text-slate-700">{typeof customerDetail.creditScore === "number" ? `${customerDetail.creditScore}/900 · ${customerDetail.creditEligible ? "Eligible" : "Not eligible"}` : "Not checked"}</dd></div>
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Created</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.createdAt)}</dd></div>
                     <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Last login</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.lastLogin)}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Franchise status</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.franchiseStatus || "—"}</dd></div>
                   </dl>
                 </section>
               )}

@@ -23,10 +23,6 @@ export interface Customer {
   pincode?: string;
   panNumber?: string;
   package?: string;
-  franchiseStatus?: string;
-  franchiseAppliedAt?: string | null;
-  franchiseApprovedAt?: string | null;
-  franchiseRejectedAt?: string | null;
   /** Self-declared score, stored on the customer account (300–900; null = never checked). */
   creditScore?: number | null;
   creditScoreCheckedAt?: string | null;
@@ -77,10 +73,6 @@ const toCustomer = (value: unknown): Customer => {
     pincode: optionalText(item.pincode ?? item.pinCode),
     panNumber: optionalText(item.panNumber ?? item.pan),
     package: optionalText(item.package ?? item.packageName),
-    franchiseStatus: optionalText(item.franchiseStatus),
-    franchiseAppliedAt: optionalText(item.franchiseAppliedAt) ?? null,
-    franchiseApprovedAt: optionalText(item.franchiseApprovedAt) ?? null,
-    franchiseRejectedAt: optionalText(item.franchiseRejectedAt) ?? null,
     creditScore: typeof item.creditScore === "number" ? item.creditScore : null,
     creditScoreCheckedAt: optionalText(item.creditScoreCheckedAt) ?? null,
     creditEligible: item.creditEligible === true,
