@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, Clock3, Mail, Phone, MapPin, XCircle } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
