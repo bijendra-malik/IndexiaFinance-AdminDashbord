@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Eye, LoaderCircle, RefreshCw, Search, ToggleLeft, ToggleRight, Trash2, Users, X } from "lucide-react";
+import {
+  Check, Eye, LoaderCircle, RefreshCw, Search,
+  ToggleLeft, ToggleRight, Trash2, Users, X,
+  UserCheck, UserX, TrendingUp, ChevronRight,
+  Mail, Phone, MapPin, Calendar, Clock, Shield,
+  AlertCircle, FileText, BadgeCheck, Banknote,
+} from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import FilterSelect from "../../components/common/FilterSelect";
@@ -25,8 +31,25 @@ import {
 } from "../../api/personalLoans";
 import { getLoanTypeLabel } from "../../constants/loanTypes";
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 const formatDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  iso
+    ? new Date(iso).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
+
+const formatCurrency = (amount?: number) =>
+  amount == null
+    ? "Amount not provided"
+    : new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        maximumFractionDigits: 0,
+      }).format(amount);
 
 const PRODUCT_SLUGS: Record<string, string> = {
   personal: "personal-loan",
@@ -53,15 +76,51 @@ const OPEN_STATUSES = new Set(["Submitted", "Pending"]);
 const PAGE_SIZE = 20;
 const BRAND_GRADIENT = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))";
 
-const formatCurrency = (amount?: number) =>
-  amount == null
-    ? "Amount not provided"
-    : new Intl.NumberFormat("en-IN", {
-        style: "currency",
-        currency: "INR",
-        maximumFractionDigits: 0,
-      }).format(amount);
+const statusConfig = {
+  Approved: { dot: "bg-emerald-500", badge: "border-emerald-100 bg-emerald-50 text-emerald-700" },
+  Rejected: { dot: "bg-red-500", badge: "border-red-100 bg-red-50 text-red-700" },
+  Pending: { dot: "bg-amber-500", badge: "border-amber-100 bg-amber-50 text-amber-700" },
+  Submitted: { dot: "bg-sky-500", badge: "border-sky-100 bg-sky-50 text-sky-700" },
+};
 
+const getStatusConfig = (status: string) =>
+  statusConfig[status as keyof typeof statusConfig] ?? statusConfig.Submitted;
+
+// ── Stat Card ─────────────────────────────────────────────────────────────────
+const StatCard = ({
+  label,
+  value,
+  icon: Icon,
+  tone,
+  subtext,
+}: {
+  label: string;
+  value: number | string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  tone: { bg: string; icon: string; text: string };
+  subtext?: string;
+}) => (
+  <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${tone.bg}`}>
+      <Icon size={20} className={tone.icon} />
+    </div>
+    <div className="min-w-0">
+      <p className="text-2xl font-extrabold leading-none text-slate-900">{value}</p>
+      <p className={`mt-1 text-xs font-semibold ${tone.text}`}>{label}</p>
+      {subtext && <p className="mt-0.5 text-[10px] text-slate-400">{subtext}</p>}
+    </div>
+  </div>
+);
+
+// ── Customer avatar initials ──────────────────────────────────────────────────
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("") || "?";
+
+// ── Component ─────────────────────────────────────────────────────────────────
 const CustomersList = () => {
   const { showToast } = useToast();
 
@@ -75,7 +134,9 @@ const CustomersList = () => {
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const [customerDetail, setCustomerDetail] = useState<Customer | null>(null);
   const [customerDetailError, setCustomerDetailError] = useState("");
-  const [applicationGroups, setApplicationGroups] = useState<CustomerApplicationGroup[] | null>(null);
+  const [applicationGroups, setApplicationGroups] = useState<CustomerApplicationGroup[] | null>(
+    null
+  );
   const [applicationsError, setApplicationsError] = useState("");
   const [isLoadingApplications, setIsLoadingApplications] = useState(false);
   const [applicationsRefreshKey, setApplicationsRefreshKey] = useState(0);
@@ -102,13 +163,15 @@ const CustomersList = () => {
     }
   };
 
-  useEffect(() => { void load(); }, [appliedSearch, activeFilter]); // eslint-disable-line
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void load();
+  }, [appliedSearch, activeFilter]);
 
   const viewingCustomerId = viewingCustomer?._id;
 
   useEffect(() => {
     if (!viewingCustomerId) return;
-
     let cancelled = false;
     Promise.allSettled([
       getCustomer(viewingCustomerId),
@@ -118,50 +181,52 @@ const CustomersList = () => {
       if (customerResult.status === "fulfilled") {
         setCustomerDetail(customerResult.value);
       } else {
-        setCustomerDetailError(getApiErrorMessage(customerResult.reason, "Unable to load this customer's details."));
+        setCustomerDetailError(
+          getApiErrorMessage(
+            customerResult.reason,
+            "Unable to load this customer's details."
+          )
+        );
       }
       if (applicationsResult.status === "fulfilled") {
         setApplicationGroups(applicationsResult.value);
       } else {
-        setApplicationsError(getApiErrorMessage(applicationsResult.reason, "Unable to load this customer's applications."));
+        setApplicationsError(
+          getApiErrorMessage(
+            applicationsResult.reason,
+            "Unable to load this customer's applications."
+          )
+        );
       }
       setIsLoadingApplications(false);
     });
-
     return () => {
       cancelled = true;
     };
   }, [viewingCustomerId, applicationsRefreshKey]);
 
-  const applications = applicationGroups?.flatMap((group) => group.applications) ?? [];
-  const openApplications = applications.filter((application) => OPEN_STATUSES.has(application.status));
+  const applications = applicationGroups?.flatMap((g) => g.applications) ?? [];
+  const openApplications = applications.filter((a) => OPEN_STATUSES.has(a.status));
 
-  /**
-   * Newest first: product groups are ordered by their most recent application,
-   * and inside each group the applications run latest → oldest, so the freshest
-   * application always sits at the top of the modal.
-   */
   const sortedApplicationGroups = useMemo(() => {
     if (!applicationGroups) return null;
-
-    const createdAtMs = (application?: PersonalLoan) => {
-      const time = application?.createdAt ? new Date(application.createdAt).getTime() : NaN;
-      return Number.isNaN(time) ? 0 : time;
+    const createdAtMs = (a?: PersonalLoan) => {
+      const t = a?.createdAt ? new Date(a.createdAt).getTime() : NaN;
+      return Number.isNaN(t) ? 0 : t;
     };
-    const newestFirst = (left: PersonalLoan, right: PersonalLoan) =>
-      createdAtMs(right) - createdAtMs(left);
-
+    const newestFirst = (l: PersonalLoan, r: PersonalLoan) => createdAtMs(r) - createdAtMs(l);
     return applicationGroups
-      .map((group) => ({
-        ...group,
-        applications: [...group.applications].sort(newestFirst),
-      }))
-      .sort((left, right) =>
-        createdAtMs(right.applications[0]) - createdAtMs(left.applications[0])
+      .map((g) => ({ ...g, applications: [...g.applications].sort(newestFirst) }))
+      .sort(
+        (l, r) => createdAtMs(r.applications[0]) - createdAtMs(l.applications[0])
       );
   }, [applicationGroups]);
+
   const canDeleteCustomer =
-    applicationGroups !== null && !applicationsError && openApplications.length === 0 && !isLoadingApplications;
+    applicationGroups !== null &&
+    !applicationsError &&
+    openApplications.length === 0 &&
+    !isLoadingApplications;
 
   const openCustomerDetails = (customer: Customer) => {
     setCustomerDetail(null);
@@ -188,10 +253,9 @@ const CustomersList = () => {
     setApplicationGroups(null);
     setApplicationsError("");
     setIsLoadingApplications(true);
-    setApplicationsRefreshKey((key) => key + 1);
+    setApplicationsRefreshKey((k) => k + 1);
   };
 
-  // ── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = async () => {
     if (!pendingDelete) return;
     setIsDeleting(true);
@@ -222,16 +286,20 @@ const CustomersList = () => {
     setUpdatingCustomerId(customer._id);
     try {
       await updateCustomerStatus(customer._id, isActive);
-      setCustomers((current) =>
-        current?.flatMap((item) => {
-          if (item._id !== customer._id) return [item];
-          if (activeFilter !== "all" && (activeFilter === "active") !== isActive) return [];
-          return [{ ...item, isActive }];
-        }) ?? current
+      setCustomers(
+        (current) =>
+          current?.flatMap((item) => {
+            if (item._id !== customer._id) return [item];
+            if (activeFilter !== "all" && (activeFilter === "active") !== isActive) return [];
+            return [{ ...item, isActive }];
+          }) ?? current
       );
       showToast(`Customer ${isActive ? "activated" : "deactivated"}.`, "success");
     } catch (err) {
-      showToast(getApiErrorMessage(err, "Unable to update this customer's account status."), "error");
+      showToast(
+        getApiErrorMessage(err, "Unable to update this customer's account status."),
+        "error"
+      );
     } finally {
       setUpdatingCustomerId(null);
     }
@@ -248,26 +316,24 @@ const CustomersList = () => {
       showToast(`Cannot determine the loan type for application ${application._id}.`, "error");
       return;
     }
-
     setUpdatingApplicationId(application._id);
     try {
-      const updatedApplication = await updateLoanStatusBySlug(
-        slug,
-        application._id,
-        status,
-        note.trim()
-      );
-      setApplicationGroups((current) =>
-        current?.map((currentGroup) => ({
-          ...currentGroup,
-          applications: currentGroup.applications.map((item) =>
-            item._id === updatedApplication._id ? updatedApplication : item
-          ),
-        })) ?? current
+      const updated = await updateLoanStatusBySlug(slug, application._id, status, note.trim());
+      setApplicationGroups(
+        (current) =>
+          current?.map((g) => ({
+            ...g,
+            applications: g.applications.map((item) =>
+              item._id === updated._id ? updated : item
+            ),
+          })) ?? current
       );
       showToast(`Application marked ${status.toLowerCase()}.`, "success");
     } catch (err) {
-      showToast(getApiErrorMessage(err, `Unable to ${status.toLowerCase()} this application.`), "error");
+      showToast(
+        getApiErrorMessage(err, `Unable to ${status.toLowerCase()} this application.`),
+        "error"
+      );
     } finally {
       setUpdatingApplicationId(null);
     }
@@ -285,111 +351,200 @@ const CustomersList = () => {
     );
   }, [customers, search]);
 
+  // Derived stats
+  const totalActive = customers?.filter((c) => c.isActive).length ?? 0;
+  const totalInactive = (customers?.length ?? 0) - totalActive;
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <AdminLayout>
+      {/* ── Page header ──────────────────────────────────────────────────── */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-white shadow-sm"
-            style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}>
-            <Users size={19} />
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-md"
+            style={{ background: BRAND_GRADIENT }}
+          >
+            <Users size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Customers</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Manage customer accounts and review their loan applications.</p>
+            <h1 className="text-xl font-bold text-slate-900">Customers</h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Manage customer accounts and review their loan applications.
+            </p>
           </div>
         </div>
-        {customers && (
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            {customers.length} registered customer{customers.length === 1 ? "" : "s"}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={customers === null && !error}
+          className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
+        >
+          <RefreshCw size={14} className={customers === null && !error ? "animate-spin" : ""} />
+          Refresh
+        </button>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setAppliedSearch(search.trim());
-            setPage(1);
-          }}
-          className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div className="relative w-full sm:max-w-sm">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customers..."
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <FilterSelect
-              label="Filter customers by account status"
-              value={activeFilter}
-              onChange={(value) => {
-                setActiveFilter(value as typeof activeFilter);
-                setPage(1);
-              }}
-              options={[
-                { value: "all", label: "All accounts" },
-                { value: "active", label: "Active" },
-                { value: "inactive", label: "Inactive" },
-              ]}
-            />
-            <button type="submit" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110" style={{ background: BRAND_GRADIENT }}>
-              Search
-            </button>
-            {(appliedSearch || activeFilter !== "all") && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch("");
-                  setAppliedSearch("");
-                  setActiveFilter("all");
+      {/* ── Stat cards ───────────────────────────────────────────────────── */}
+      {customers !== null && (
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Total Customers"
+            value={customers.length}
+            icon={Users}
+            tone={{ bg: "bg-sky-50", icon: "text-sky-600", text: "text-sky-700" }}
+            subtext="All registered accounts"
+          />
+          <StatCard
+            label="Active Accounts"
+            value={totalActive}
+            icon={UserCheck}
+            tone={{ bg: "bg-emerald-50", icon: "text-emerald-600", text: "text-emerald-700" }}
+            subtext="Can log in and apply"
+          />
+          <StatCard
+            label="Inactive Accounts"
+            value={totalInactive}
+            icon={UserX}
+            tone={{ bg: "bg-red-50", icon: "text-red-600", text: "text-red-700" }}
+            subtext="Temporarily disabled"
+          />
+          <StatCard
+            label="Open Applications"
+            value={customers.length > 0 ? "—" : "0"}
+            icon={TrendingUp}
+            tone={{ bg: "bg-amber-50", icon: "text-amber-600", text: "text-amber-700" }}
+            subtext="Across all customers"
+          />
+        </div>
+      )}
+
+      {/* ── Table card ───────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* Filter bar */}
+        <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3.5">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setAppliedSearch(search.trim());
+              setPage(1);
+            }}
+            className="flex flex-col gap-3 sm:flex-row sm:items-center"
+          >
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">Search customers</span>
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email or mobile…"
+                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+              />
+              {search && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setSearch("");
+                    setAppliedSearch("");
+                    setPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </label>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterSelect
+                label="Filter customers by account status"
+                value={activeFilter}
+                onChange={(v) => {
+                  setActiveFilter(v as typeof activeFilter);
                   setPage(1);
                 }}
-                className="rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                options={[
+                  { value: "all", label: "All accounts" },
+                  { value: "active", label: "Active only" },
+                  { value: "inactive", label: "Inactive only" },
+                ]}
+                className="w-40"
+              />
+              <button
+                type="submit"
+                className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
+                style={{ background: BRAND_GRADIENT }}
               >
-                Clear
+                Search
               </button>
-            )}
-          </div>
-          {customers && !error && (
-            <p className="text-xs font-medium text-slate-500">
-              Showing <span className="font-bold text-slate-700">{filtered.length}</span> of{" "}
-              <span className="font-bold text-slate-700">{customers.length}</span>
-            </p>
-          )}
-        </form>
+              {(appliedSearch || activeFilter !== "all") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setAppliedSearch("");
+                    setActiveFilter("all");
+                    setPage(1);
+                  }}
+                  className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
 
+            {customers && !error && (
+              <p className="shrink-0 text-xs font-medium text-slate-500">
+                <span className="font-bold text-slate-700">{filtered.length}</span> /{" "}
+                <span className="font-bold text-slate-700">{customers.length}</span> customers
+              </p>
+            )}
+          </form>
+        </div>
+
+        {/* Table body states */}
         {error ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 px-6 text-center">
-            <p className="text-sm text-red-600">{error}</p>
+          <div className="flex flex-col items-center justify-center gap-3 px-6 py-20 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50">
+              <AlertCircle size={24} className="text-red-500" />
+            </div>
+            <p className="text-sm font-medium text-red-600">{error}</p>
             <button
-              onClick={load}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md border border-slate-300 hover:bg-slate-50 transition"
+              onClick={() => void load()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-50"
             >
-              <RefreshCw size={14} />
-              Retry
+              <RefreshCw size={14} /> Retry
             </button>
           </div>
         ) : customers === null ? (
-          <div className="p-4 space-y-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-14 rounded-xl bg-slate-100 animate-pulse" />
+          <div className="space-y-2.5 p-4">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-[62px] animate-pulse rounded-xl bg-slate-100"
+                style={{ opacity: 1 - i * 0.1 }}
+              />
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-            <Users size={22} className="text-slate-300" />
+          <div className="flex flex-col items-center gap-3 px-6 py-20 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+              <Users size={22} className="text-slate-400" />
+            </div>
+            <p className="font-semibold text-slate-700">
+              {customers.length === 0 ? "No customers yet" : "No customers match your filters"}
+            </p>
             <p className="text-sm text-slate-500">
-              {customers.length === 0 ? "No customers yet." : "No customers match your filters."}
+              {customers.length === 0
+                ? "Customers will appear here once they register."
+                : "Try adjusting your search or removing the filter."}
             </p>
             {customers.length > 0 && (
               <button
@@ -399,7 +554,7 @@ const CustomersList = () => {
                   setAppliedSearch("");
                   setActiveFilter("all");
                 }}
-                className="mt-1 text-xs font-semibold text-sky-700 hover:underline"
+                className="mt-1 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50"
               >
                 Clear filters
               </button>
@@ -407,117 +562,217 @@ const CustomersList = () => {
           </div>
         ) : (
           <>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                  <th className="px-5 py-3.5">Customer</th>
-                  <th className="px-5 py-3.5">Mobile</th>
-                  <th className="px-5 py-3.5">Email</th>
-                  <th className="px-5 py-3.5">Account status</th>
-                  <th className="px-5 py-3.5">Joined</th>
-                  <th className="px-5 py-3.5">Last login</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/80">
-                {paged.map((c) => (
-                  <tr key={c._id} className="group transition-colors hover:bg-sky-50/40">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-100 to-emerald-100 text-xs font-extrabold text-sky-800 ring-1 ring-white">
-                          {c.name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?"}
-                        </div>
-                        <span className="min-w-0">
-                          <span className="block font-semibold text-slate-800">{c.name}</span>
-                          <span className="block font-mono text-[10px] text-slate-400">{c.customerId || c._id}</span>
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap text-slate-600">{c.mobile}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{c.email}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                          c.isActive ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
-                        }`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${c.isActive ? "bg-emerald-500" : "bg-slate-400"}`} />
-                        {c.isActive ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap text-slate-500">{formatDate(c.createdAt)}</td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <span className={c.lastLogin ? "text-slate-500" : "text-slate-300"}>
-                        {c.lastLogin ? formatDate(c.lastLogin) : "Never"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          onClick={() => openCustomerDetails(c)}
-                          aria-label={`View ${c.name} and review applications`}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
-                        >
-                          <Eye size={14} /> View
-                        </button>
-                        <button
-                          onClick={() => void handleToggleCustomer(c)}
-                          disabled={updatingCustomerId === c._id}
-                          aria-label={`${c.isActive ? "Deactivate" : "Activate"} ${c.name}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-500 transition hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50"
-                        >
-                          {c.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                          {c.isActive ? "Disable" : "Enable"}
-                        </button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/80 text-left">
+                    <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                      Customer
+                    </th>
+                    <th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                      Contact
+                    </th>
+                    <th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                      Status
+                    </th>
+                    <th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                      Joined
+                    </th>
+                    <th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                      Last login
+                    </th>
+                    <th className="px-5 py-3.5 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Pagination
-            page={safePage}
-            totalPages={totalPages}
-            total={filtered.length}
-            pageSize={PAGE_SIZE}
-            onPage={setPage}
-            itemLabel="customers"
-          />
+                </thead>
+                <tbody className="divide-y divide-slate-100/80">
+                  {paged.map((c) => (
+                    <tr key={c._id} className="group transition-colors hover:bg-sky-50/30">
+                      {/* Customer identity */}
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold text-white shadow-sm"
+                            style={{ background: BRAND_GRADIENT }}
+                          >
+                            {initials(c.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="block font-semibold text-slate-800 group-hover:text-sky-700 transition-colors">
+                              {c.name}
+                            </span>
+                            <span className="mt-0.5 flex items-center gap-1.5">
+                              <span className="font-mono text-[10px] text-slate-400">
+                                {c.customerId || c._id.slice(-8)}
+                              </span>
+                              {c.isVerified && (
+                                <BadgeCheck size={12} className="text-emerald-500" />
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Contact */}
+                      <td className="px-4 py-3.5">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="flex items-center gap-1.5 text-slate-600">
+                            <Phone size={11} className="shrink-0 text-slate-400" />
+                            {c.mobile}
+                          </span>
+                          <span className="flex items-center gap-1.5 truncate text-xs text-slate-400">
+                            <Mail size={11} className="shrink-0" />
+                            {c.email}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3.5">
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+                            c.isActive
+                              ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                              : "border-slate-200 bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              c.isActive ? "bg-emerald-500" : "bg-slate-400"
+                            }`}
+                          />
+                          {c.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+
+                      {/* Joined */}
+                      <td className="px-4 py-3.5">
+                        <span className="flex items-center gap-1.5 whitespace-nowrap text-slate-500">
+                          <Calendar size={12} className="text-slate-400" />
+                          {formatDate(c.createdAt)}
+                        </span>
+                      </td>
+
+                      {/* Last login */}
+                      <td className="px-4 py-3.5">
+                        <span
+                          className={`flex items-center gap-1.5 whitespace-nowrap ${
+                            c.lastLogin ? "text-slate-500" : "text-slate-300"
+                          }`}
+                        >
+                          <Clock size={12} className="text-slate-400" />
+                          {c.lastLogin ? formatDate(c.lastLogin) : "Never"}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => openCustomerDetails(c)}
+                            aria-label={`View ${c.name}`}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                          >
+                            <Eye size={13} /> View
+                          </button>
+                          <button
+                            onClick={() => void handleToggleCustomer(c)}
+                            disabled={updatingCustomerId === c._id}
+                            aria-label={`${c.isActive ? "Deactivate" : "Activate"} ${c.name}`}
+                            title={c.isActive ? "Deactivate account" : "Activate account"}
+                            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+                              c.isActive
+                                ? "text-slate-500 hover:bg-amber-50 hover:text-amber-700"
+                                : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+                            }`}
+                          >
+                            {updatingCustomerId === c._id ? (
+                              <LoaderCircle size={14} className="animate-spin" />
+                            ) : c.isActive ? (
+                              <ToggleRight size={15} />
+                            ) : (
+                              <ToggleLeft size={15} />
+                            )}
+                            {c.isActive ? "Disable" : "Enable"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={safePage}
+              totalPages={totalPages}
+              total={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPage={setPage}
+              itemLabel="customers"
+            />
           </>
         )}
       </div>
 
+      {/* ── Customer detail drawer ───────────────────────────────────────── */}
       {viewingCustomer && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[2px] sm:p-6"
+          className="fixed inset-0 z-40 flex items-start justify-end bg-slate-950/40 backdrop-blur-[2px]"
           onClick={closeCustomerDetails}
         >
           <section
             role="dialog"
             aria-modal="true"
-            aria-labelledby="customer-applications-title"
-            className="flex max-h-[min(90vh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/50 bg-[#f7f9fc] shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
+            aria-labelledby="customer-drawer-title"
+            className="flex h-full w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl"
+            style={{ borderLeft: "1px solid #e2e8f0" }}
+            onClick={(e) => e.stopPropagation()}
           >
+            {/* Drawer header */}
             <header className="relative shrink-0 overflow-hidden border-b border-slate-200 bg-white">
-              <div className="absolute inset-x-0 top-0 h-1"
-                style={{ background: "linear-gradient(90deg,rgb(6,106,156),rgb(38,174,144))" }} />
-              <div className="relative flex items-start justify-between gap-4 px-6 pb-5 pt-7">
+              <div
+                className="absolute inset-x-0 top-0 h-1"
+                style={{ background: BRAND_GRADIENT }}
+              />
+              <div className="flex items-start justify-between gap-4 px-6 pb-5 pt-6">
                 <div className="flex min-w-0 items-center gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-700 to-emerald-500 text-lg font-extrabold text-white shadow-lg shadow-sky-900/15">
-                    {viewingCustomer.name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?"}
+                  <div
+                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-xl font-extrabold text-white shadow-md"
+                    style={{ background: BRAND_GRADIENT }}
+                  >
+                    {initials(viewingCustomer.name)}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Customer profile</p>
-                    <h2 id="customer-applications-title" className="mt-1 truncate text-xl font-bold text-slate-900">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                      Customer profile
+                    </p>
+                    <h2
+                      id="customer-drawer-title"
+                      className="mt-1 truncate text-xl font-bold text-slate-900"
+                    >
                       {viewingCustomer.name}
                     </h2>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                      <span className="truncate">{viewingCustomer.email}</span>
-                      <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:block" />
-                      <span>{viewingCustomer.mobile}</span>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                          viewingCustomer.isActive
+                            ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            viewingCustomer.isActive ? "bg-emerald-500" : "bg-slate-400"
+                          }`}
+                        />
+                        {viewingCustomer.isActive ? "Active" : "Inactive"}
+                      </span>
+                      {viewingCustomer.isVerified && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">
+                          <BadgeCheck size={11} /> Verified
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -525,195 +780,331 @@ const CustomersList = () => {
                   onClick={closeCustomerDetails}
                   disabled={isDeleting || Boolean(updatingApplicationId)}
                   aria-label="Close customer details"
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-800 disabled:opacity-50"
+                  className="mt-1 rounded-xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-100 disabled:opacity-50"
                 >
                   <X size={18} />
                 </button>
               </div>
             </header>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+            {/* Drawer body */}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 p-5 space-y-4">
+              {/* Customer detail error */}
               {customerDetailError && (
-                <div className="rounded-xl border border-red-200 bg-white p-4 text-sm text-red-700">
-                  Customer details could not be loaded: {customerDetailError}
-                  <button onClick={retryApplications} className="ml-3 inline-flex items-center gap-1.5 font-semibold underline">
-                    <RefreshCw size={13} /> Retry
-                  </button>
+                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-500" />
+                  <div>
+                    <p className="font-semibold">Could not load customer details</p>
+                    <p className="mt-0.5 text-red-600/80">{customerDetailError}</p>
+                    <button
+                      onClick={retryApplications}
+                      className="mt-2 inline-flex items-center gap-1.5 font-semibold underline"
+                    >
+                      <RefreshCw size={12} /> Retry
+                    </button>
+                  </div>
                 </div>
               )}
+
+              {/* Customer info grid */}
               {customerDetail && (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                  <h3 className="text-sm font-bold text-slate-800">Customer details</h3>
-                  <p className="mb-4 mt-1 text-[11px] text-slate-400">
-                    Credit score is captured per application at submit time — see each application card below.
-                  </p>
-                  <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Customer ID</dt><dd className="mt-1 break-all font-mono text-xs text-slate-700">{customerDetail.customerId || customerDetail._id}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Full name</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.name || "—"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-sm text-slate-700">{customerDetail.email || "—"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Mobile</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.mobile || "—"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">PAN</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.panNumber || "—"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Location</dt><dd className="mt-1 text-sm text-slate-700">{[customerDetail.city, customerDetail.state, customerDetail.country, customerDetail.pincode].filter(Boolean).join(", ") || "—"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Account</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.role} · {customerDetail.isActive ? "Active" : "Inactive"} · {customerDetail.isVerified ? "Verified" : "Unverified"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Package</dt><dd className="mt-1 text-sm text-slate-700">{customerDetail.package || "—"}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Created</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.createdAt)}</dd></div>
-                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Last login</dt><dd className="mt-1 text-sm text-slate-700">{formatDate(customerDetail.lastLogin)}</dd></div>
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                      <Shield size={15} className="text-sky-600" />
+                      Customer details
+                    </h3>
+                  </div>
+                  <dl className="grid gap-x-4 gap-y-4 p-4 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Customer ID
+                      </dt>
+                      <dd className="mt-1 font-mono text-xs text-slate-700">
+                        {customerDetail.customerId || customerDetail._id}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        PAN
+                      </dt>
+                      <dd className="mt-1 font-mono text-xs text-slate-700">
+                        {customerDetail.panNumber || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Mobile
+                      </dt>
+                      <dd className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
+                        <Phone size={12} className="text-slate-400" />
+                        {customerDetail.mobile || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Email
+                      </dt>
+                      <dd className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
+                        <Mail size={12} className="text-slate-400" />
+                        {customerDetail.email || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Location
+                      </dt>
+                      <dd className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
+                        <MapPin size={12} className="text-slate-400" />
+                        {[
+                          customerDetail.city,
+                          customerDetail.state,
+                          customerDetail.country,
+                          customerDetail.pincode,
+                        ]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Account
+                      </dt>
+                      <dd className="mt-1 text-sm text-slate-700">
+                        {customerDetail.role} · {customerDetail.isActive ? "Active" : "Inactive"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Registered
+                      </dt>
+                      <dd className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
+                        <Calendar size={12} className="text-slate-400" />
+                        {formatDate(customerDetail.createdAt)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Last login
+                      </dt>
+                      <dd className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
+                        <Clock size={12} className="text-slate-400" />
+                        {formatDate(customerDetail.lastLogin)}
+                      </dd>
+                    </div>
+                    {customerDetail.package && (
+                      <div className="col-span-2">
+                        <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          Package
+                        </dt>
+                        <dd className="mt-1 text-sm text-slate-700">{customerDetail.package}</dd>
+                      </div>
+                    )}
                   </dl>
-                </section>
+                </div>
               )}
+
+              {/* Applications section */}
               {isLoadingApplications ? (
-                <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-16 text-sm text-slate-500 shadow-sm">
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white py-16 text-slate-500 shadow-sm">
                   <LoaderCircle size={24} className="animate-spin text-sky-600" />
-                  <span>Loading customer applications...</span>
+                  <span className="text-sm">Loading applications…</span>
                 </div>
               ) : applicationsError ? (
-                <div className="rounded-2xl border border-red-200 bg-white p-5 text-sm text-red-700 shadow-sm">
-                  <p className="font-semibold">Could not load applications</p>
-                  <p className="mt-1 text-red-600/90">{applicationsError}</p>
+                <div className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm">
+                  <p className="flex items-center gap-2 font-semibold text-red-700">
+                    <AlertCircle size={16} /> Could not load applications
+                  </p>
+                  <p className="mt-1 text-sm text-red-600/90">{applicationsError}</p>
                   <button
                     onClick={retryApplications}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 font-semibold transition hover:bg-red-50"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
                   >
                     <RefreshCw size={13} /> Try again
                   </button>
                 </div>
               ) : sortedApplicationGroups?.length ? (
                 <>
-                  <div className={`rounded-2xl border p-4 shadow-sm sm:p-5 ${
-                    openApplications.length
-                      ? "border-amber-200 bg-gradient-to-br from-amber-50 to-white text-amber-950"
-                      : "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white text-emerald-950"
-                  }`}>
+                  {/* Applications summary banner */}
+                  <div
+                    className={`rounded-2xl border p-4 shadow-sm ${
+                      openApplications.length
+                        ? "border-amber-200 bg-gradient-to-br from-amber-50 to-white"
+                        : "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white"
+                    }`}
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] opacity-60">Application review</p>
-                        <p className="mt-1 font-bold">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                          Application review
+                        </p>
+                        <p className="mt-1 font-bold text-slate-800">
                           {openApplications.length
                             ? `${openApplications.length} application${openApplications.length === 1 ? "" : "s"} awaiting decision`
-                            : "All applications have been decided"}
+                            : "All applications decided"}
                         </p>
-                        <p className="mt-1 text-xs opacity-75">
+                        <p className="mt-0.5 text-xs text-slate-500">
                           {openApplications.length
-                            ? "Review the details and record a decision for each open application."
+                            ? "Review and record a decision for each open application."
                             : "Customer deletion is now available."}
                         </p>
                       </div>
-                      <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                        openApplications.length ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-                      }`}>
+                      <span
+                        className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                          openApplications.length
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
                         {openApplications.length ? "Action required" : "Ready to delete"}
                       </span>
                     </div>
                     <div className="mt-4 grid grid-cols-3 gap-2 border-t border-current/10 pt-4">
-                      <div>
-                        <p className="text-lg font-extrabold leading-none">{applications.length}</p>
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide opacity-60">Total</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-extrabold leading-none">{openApplications.length}</p>
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide opacity-60">Open</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-extrabold leading-none">{applications.length - openApplications.length}</p>
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide opacity-60">Decided</p>
-                      </div>
+                      {[
+                        { label: "Total", value: applications.length },
+                        { label: "Open", value: openApplications.length },
+                        { label: "Decided", value: applications.length - openApplications.length },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="text-center">
+                          <p className="text-xl font-extrabold leading-none text-slate-800">
+                            {value}
+                          </p>
+                          <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            {label}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
+                  {/* Application groups */}
                   {sortedApplicationGroups.map((group) => (
-                    <section key={group.product} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)]">
-                      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-white to-slate-50 px-4 py-3.5 sm:px-5">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-100">
-                            <Users size={16} />
+                    <section
+                      key={group.product}
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                    >
+                      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 ring-1 ring-sky-100">
+                            <FileText size={15} className="text-sky-600" />
                           </div>
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-bold text-slate-800">
-                              {getLoanTypeLabel(PRODUCT_SLUGS[group.product] ?? group.product)}
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-800">
+                              {getLoanTypeLabel(
+                                PRODUCT_SLUGS[group.product] ?? group.product
+                              )}
                             </h3>
-                            <p className="mt-0.5 text-[11px] text-slate-400">Loan applications</p>
+                            <p className="text-[10px] text-slate-400">Loan applications</p>
                           </div>
                         </div>
-                        <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm">
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600">
                           {group.count}
                         </span>
                       </div>
-                      <div className="space-y-3 p-3 sm:p-4">
+
+                      <div className="space-y-3 p-3">
                         {group.applications.map((application) => {
                           const isOpen = OPEN_STATUSES.has(application.status);
-                          const slug = PRODUCT_SLUGS[group.product] ?? application.loanType;
+                          const slug =
+                            PRODUCT_SLUGS[group.product] ?? application.loanType;
                           const canReview = isOpen && SUPPORTED_LOAN_SLUGS.has(slug);
+                          const cfg = getStatusConfig(application.status);
 
                           return (
-                            <article key={application._id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm">
+                            <article
+                              key={application._id}
+                              className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm"
+                            >
+                              {/* Amount + status */}
                               <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Requested amount</p>
-                                  <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-900">
+                                <div>
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                    Requested amount
+                                  </p>
+                                  <p className="mt-1 flex items-center gap-1.5 text-lg font-extrabold text-slate-900">
+                                    <Banknote size={16} className="text-slate-400" />
                                     {formatCurrency(application.loanAmount)}
                                   </p>
                                 </div>
-                                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
-                                  application.status === "Approved"
-                                    ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                                    : application.status === "Rejected"
-                                      ? "border-red-100 bg-red-50 text-red-700"
-                                      : application.status === "Pending"
-                                        ? "border-amber-100 bg-amber-50 text-amber-700"
-                                        : "border-sky-100 bg-sky-50 text-sky-700"
-                                }`}>
-                                  <span className={`h-1.5 w-1.5 rounded-full ${
-                                    application.status === "Approved" ? "bg-emerald-500"
-                                      : application.status === "Rejected" ? "bg-red-500"
-                                        : application.status === "Pending" ? "bg-amber-500" : "bg-sky-500"
-                                  }`} />
+                                <span
+                                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${cfg.badge}`}
+                                >
+                                  <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
                                   {application.status}
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 px-3 py-2.5 sm:grid-cols-3">
+                              {/* Meta info grid */}
+                              <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 px-3 py-2.5 sm:grid-cols-3">
                                 <div>
-                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Tenure</p>
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                    Tenure
+                                  </p>
                                   <p className="mt-1 text-xs font-semibold text-slate-700">
-                                    {application.loanTenure ? `${application.loanTenure} months` : "Not provided"}
+                                    {application.loanTenure
+                                      ? `${application.loanTenure} months`
+                                      : "—"}
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Applied on</p>
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                    Applied
+                                  </p>
                                   <p className="mt-1 text-xs font-semibold text-slate-700">
-                                    {application.createdAt ? formatDate(application.createdAt) : "—"}
+                                    {application.createdAt
+                                      ? formatDate(application.createdAt)
+                                      : "—"}
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Credit score at apply</p>
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                    Credit score
+                                  </p>
                                   <p className="mt-1 text-xs font-semibold text-slate-700">
                                     {typeof application.creditScore === "number"
-                                      ? `${application.creditScore}/900 · ${(application.creditEligible ?? application.creditScore >= MINIMUM_CREDIT_SCORE) ? "Eligible" : "Not eligible"}`
-                                      : "Not recorded"}
+                                      ? `${application.creditScore}/900 · ${
+                                          (application.creditEligible ??
+                                            application.creditScore >= MINIMUM_CREDIT_SCORE)
+                                            ? "Eligible"
+                                            : "Not eligible"
+                                        }`
+                                      : "—"}
                                   </p>
                                 </div>
-                                <div className="col-span-2 min-w-0 border-t border-slate-200/80 pt-2 sm:col-span-3">
-                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Application ID</p>
+                                <div className="col-span-2 border-t border-slate-200/80 pt-2 sm:col-span-3">
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                    Application ID
+                                  </p>
                                   {SUPPORTED_LOAN_SLUGS.has(slug) ? (
                                     <Link
                                       to={`/applications/${slug}/${application._id}`}
-                                      className="mt-1 block break-all font-mono text-[10px] text-sky-700 hover:underline"
+                                      className="mt-1 flex items-center gap-1 font-mono text-[10px] text-sky-700 hover:underline"
                                     >
-                                      {application._id} · Open application
+                                      {application._id}
+                                      <ChevronRight size={11} />
                                     </Link>
                                   ) : (
-                                    <p className="mt-1 break-all font-mono text-[10px] text-slate-600">{application._id}</p>
+                                    <p className="mt-1 font-mono text-[10px] text-slate-600">
+                                      {application._id}
+                                    </p>
                                   )}
                                 </div>
                               </div>
 
+                              {/* Action buttons */}
                               {isOpen && canReview ? (
                                 <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
                                   {application.status === "Submitted" && (
                                     <button
-                                      onClick={() => setPendingDecision({ group, application, status: "Pending" })}
+                                      onClick={() =>
+                                        setPendingDecision({
+                                          group,
+                                          application,
+                                          status: "Pending",
+                                        })
+                                      }
                                       disabled={Boolean(updatingApplicationId)}
-                                      className="rounded-lg border border-amber-200 bg-white px-3.5 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      className="rounded-xl border border-amber-200 bg-white px-3.5 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-50"
                                     >
                                       Mark Pending
                                     </button>
@@ -721,32 +1112,45 @@ const CustomersList = () => {
                                   <button
                                     onClick={() => {
                                       setDecisionNote("");
-                                      setPendingDecision({ group, application, status: "Rejected" });
+                                      setPendingDecision({
+                                        group,
+                                        application,
+                                        status: "Rejected",
+                                      });
                                     }}
                                     disabled={Boolean(updatingApplicationId)}
-                                    className="rounded-lg border border-red-200 bg-white px-3.5 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                                   >
                                     Reject
                                   </button>
                                   <button
-                                    onClick={() => setPendingDecision({ group, application, status: "Approved" })}
+                                    onClick={() =>
+                                      setPendingDecision({
+                                        group,
+                                        application,
+                                        status: "Approved",
+                                      })
+                                    }
                                     disabled={Boolean(updatingApplicationId)}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm shadow-emerald-900/10 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
                                   >
-                                    {updatingApplicationId === application._id
-                                      ? <LoaderCircle size={13} className="animate-spin" />
-                                      : <Check size={13} />}
+                                    {updatingApplicationId === application._id ? (
+                                      <LoaderCircle size={13} className="animate-spin" />
+                                    ) : (
+                                      <Check size={13} />
+                                    )}
                                     Approve
                                   </button>
                                 </div>
                               ) : isOpen ? (
                                 <p className="text-xs text-amber-700">
-                                  This product does not have a configured status endpoint, so it cannot be reviewed here.
+                                  This product does not have a configured status endpoint.
                                 </p>
                               ) : null}
+
                               {updatingApplicationId === application._id && (
                                 <p className="flex items-center justify-end gap-1.5 text-xs font-medium text-slate-500">
-                                  <LoaderCircle size={12} className="animate-spin" /> Saving decision...
+                                  <LoaderCircle size={12} className="animate-spin" /> Saving…
                                 </p>
                               )}
                             </article>
@@ -756,31 +1160,44 @@ const CustomersList = () => {
                     </section>
                   ))}
                 </>
-              ) : (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-                  No loan applications found. This customer can be deleted.
+              ) : applicationGroups !== null ? (
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100">
+                    <FileText size={20} className="text-emerald-600" />
+                  </div>
+                  <p className="font-semibold text-emerald-800">No loan applications</p>
+                  <p className="text-sm text-emerald-700">
+                    This customer has not applied for any loans yet. They can be deleted safely.
+                  </p>
                 </div>
-              )}
+              ) : null}
             </div>
 
-            <footer className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-slate-500">
-                {canDeleteCustomer
-                  ? "Delete permanently removes this customer and all their closed application records."
-                  : "Customer deletion stays disabled until every application is Approved or Rejected."}
-              </p>
-              <button
-                onClick={() => setPendingDelete(viewingCustomer)}
-                disabled={!canDeleteCustomer || isDeleting || Boolean(updatingApplicationId)}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Trash2 size={15} /> Delete customer
-              </button>
+            {/* Drawer footer */}
+            <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">
+                  {canDeleteCustomer
+                    ? "Permanently removes this customer and all their closed application records."
+                    : "Deletion is disabled until every application is Approved or Rejected."}
+                </p>
+                <button
+                  onClick={() => setPendingDelete(viewingCustomer)}
+                  disabled={
+                    !canDeleteCustomer || isDeleting || Boolean(updatingApplicationId)
+                  }
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 size={15} />
+                  {isDeleting ? "Deleting…" : "Delete customer"}
+                </button>
+              </div>
             </footer>
           </section>
         </div>
       )}
 
+      {/* ── Confirm delete ───────────────────────────────────────────────── */}
       {pendingDelete && (
         <ConfirmDialog
           title={`Delete "${pendingDelete.name}"?`}
@@ -793,12 +1210,13 @@ const CustomersList = () => {
         />
       )}
 
-      {pendingDecision && (
-        pendingDecision.status === "Rejected" ? (
+      {/* ── Pending decision modals ──────────────────────────────────────── */}
+      {pendingDecision &&
+        (pendingDecision.status === "Rejected" ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
             <form
-              onSubmit={(event) => {
-                event.preventDefault();
+              onSubmit={(e) => {
+                e.preventDefault();
                 void handleApplicationDecision(
                   pendingDecision.group,
                   pendingDecision.application,
@@ -807,33 +1225,37 @@ const CustomersList = () => {
                 );
                 setPendingDecision(null);
               }}
-              className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl"
+              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
             >
-              <h2 className="text-lg font-semibold text-slate-800">Reject this application?</h2>
-              <p className="mt-1 text-sm text-slate-500">This decision is final. Add an optional note.</p>
+              <h2 className="text-lg font-bold text-slate-800">Reject this application?</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                This decision is final. Add an optional note for the customer.
+              </p>
               <textarea
                 autoFocus
                 value={decisionNote}
-                onChange={(event) => setDecisionNote(event.target.value)}
+                onChange={(e) => setDecisionNote(e.target.value)}
                 maxLength={500}
                 rows={4}
-                placeholder="Reason for rejection (optional)"
-                className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                placeholder="Reason for rejection (optional, shown to customer)"
+                className="mt-4 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-100"
               />
-              <p className="mt-1 text-right text-xs text-slate-400">{decisionNote.length}/500</p>
+              <p className="mt-1 text-right text-xs text-slate-400">
+                {decisionNote.length}/500
+              </p>
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
                   disabled={Boolean(updatingApplicationId)}
                   onClick={() => setPendingDecision(null)}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                  className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={Boolean(updatingApplicationId)}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
                 >
                   Reject application
                 </button>
@@ -842,24 +1264,33 @@ const CustomersList = () => {
           </div>
         ) : (
           <ConfirmDialog
-            title={pendingDecision.status === "Pending" ? "Move this application to pending?" : "Approve this application?"}
+            title={
+              pendingDecision.status === "Pending"
+                ? "Move to pending?"
+                : "Approve this application?"
+            }
             message={
               pendingDecision.status === "Pending"
-                ? "The application will remain in the action queue and can later be approved or rejected."
-                : "This will permanently mark this application as approved. The decision cannot be changed later."
+                ? "The application stays in the action queue and can be approved or rejected later."
+                : "This permanently marks the application as approved. The decision cannot be changed."
             }
-            confirmLabel={pendingDecision.status === "Pending" ? "Mark Pending" : "Approve"}
+            confirmLabel={
+              pendingDecision.status === "Pending" ? "Mark Pending" : "Approve"
+            }
             danger={false}
             isSubmitting={Boolean(updatingApplicationId)}
             onConfirm={() => {
               const decision = pendingDecision;
               setPendingDecision(null);
-              void handleApplicationDecision(decision.group, decision.application, decision.status);
+              void handleApplicationDecision(
+                decision.group,
+                decision.application,
+                decision.status
+              );
             }}
             onCancel={() => setPendingDecision(null)}
           />
-        )
-      )}
+        ))}
     </AdminLayout>
   );
 };
