@@ -5,12 +5,13 @@ import {
   LoaderCircle, RefreshCw, Search, ShieldCheck, Users, XCircle,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PageHeader from "../../components/common/PageHeader";
+import StatCard from "../../components/common/StatCard";
+import StatusBadge from "../../components/common/StatusBadge";
+import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import {
-  getApiErrorMessage,
-  getFranchiseCustomer,
-  getFranchiseCustomers,
-  getFranchiseCustomerStats,
-  type FranchiseCustomerStats,
+  getApiErrorMessage, getFranchiseCustomer, getFranchiseCustomers,
+  getFranchiseCustomerStats, type FranchiseCustomerStats,
   type FranchiseCustomer as FranchiseCustomerRecord,
 } from "../../api/franchiseCustomers";
 import Pagination from "../../components/common/Pagination";
@@ -21,8 +22,7 @@ const ACTIVE_BACKGROUND = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144)
 const formatDate = (value?: string | null) => {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "—"
+  return Number.isNaN(date.getTime()) ? "—"
     : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 };
 
@@ -32,25 +32,10 @@ const titleCase = (value?: string) =>
 const statusClass = (status?: string) => {
   switch (status) {
     case "Checked": return "bg-emerald-50 text-emerald-700";
-    case "Failed": return "bg-red-50 text-red-700";
-    default: return "bg-slate-100 text-slate-600";
+    case "Failed":  return "bg-red-50 text-red-700";
+    default:        return "bg-slate-100 text-slate-600";
   }
 };
-
-const Metric = ({ label, value, icon: Icon, tone }: {
-  label: string;
-  value: number | string;
-  icon: typeof Users;
-  tone: string;
-}) => (
-  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-    <div className="flex items-center justify-between gap-3">
-      <p className="text-sm text-slate-500">{label}</p>
-      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${tone}`}><Icon size={17} /></span>
-    </div>
-    <p className="mt-3 text-2xl font-bold text-slate-800">{value}</p>
-  </div>
-);
 
 const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   <div>
@@ -325,51 +310,30 @@ const FranchiseCustomers = () => {
     const funnelColumns = FUNNEL_COLUMNS.filter(({ key }) =>
       Boolean(data && data.byFranchise.some((row) => typeof row[key] === "number"))
     );
-    const metrics: { label: string; value: number | string; icon: typeof Users; tone: string }[] = data
+    const metrics: { label: string; value: number | string; icon: typeof Users; bgClass: string; iconClass: string; labelClass: string }[] = data
       ? [
-          { label: "Total customers", value: data.total, icon: Users, tone: "bg-sky-50 text-sky-700" },
-          { label: "Franchises covered", value: data.byFranchise.length, icon: FileText, tone: "bg-violet-50 text-violet-700" },
-          ...(typeof data.consented === "number"
-            ? [{ label: "Consent recorded", value: data.consented, icon: ShieldCheck, tone: "bg-violet-50 text-violet-700" }]
-            : []),
-          ...(typeof data.checked === "number"
-            ? [{ label: "Reports checked", value: data.checked, icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-700" }]
-            : []),
-          ...(typeof data.eligible === "number"
-            ? [{ label: "Eligible / unlocked", value: data.eligible, icon: Gauge, tone: "bg-teal-50 text-teal-700" }]
-            : []),
-          ...(typeof data.notChecked === "number"
-            ? [{ label: "Not checked", value: data.notChecked, icon: Clock3, tone: "bg-slate-100 text-slate-600" }]
-            : []),
-          ...(typeof data.failed === "number"
-            ? [{ label: "Failed checks", value: data.failed, icon: XCircle, tone: "bg-red-50 text-red-700" }]
-            : []),
-          ...(typeof data.locked === "number"
-            ? [{ label: "Locked", value: data.locked, icon: ShieldCheck, tone: "bg-amber-50 text-amber-700" }]
-            : []),
-          ...(typeof data.checkedLocked === "number"
-            ? [{ label: "Checked but locked", value: data.checkedLocked, icon: Gauge, tone: "bg-orange-50 text-orange-700" }]
-            : []),
+          { label: "Total customers",    value: data.total,               icon: Users,        bgClass: "bg-sky-50",     iconClass: "text-sky-600",     labelClass: "text-sky-700"     },
+          { label: "Franchises covered", value: data.byFranchise.length,  icon: FileText,     bgClass: "bg-violet-50",  iconClass: "text-violet-600",  labelClass: "text-violet-700"  },
+          ...(typeof data.consented  === "number" ? [{ label: "Consent recorded",   value: data.consented,  icon: ShieldCheck,  bgClass: "bg-violet-50",  iconClass: "text-violet-600",  labelClass: "text-violet-700"  }] : []),
+          ...(typeof data.checked    === "number" ? [{ label: "Reports checked",    value: data.checked,    icon: CheckCircle2, bgClass: "bg-emerald-50", iconClass: "text-emerald-600", labelClass: "text-emerald-700" }] : []),
+          ...(typeof data.eligible   === "number" ? [{ label: "Eligible / unlocked",value: data.eligible,   icon: Gauge,        bgClass: "bg-teal-50",    iconClass: "text-teal-600",    labelClass: "text-teal-700"    }] : []),
+          ...(typeof data.notChecked === "number" ? [{ label: "Not checked",        value: data.notChecked, icon: Clock3,       bgClass: "bg-slate-100",  iconClass: "text-slate-500",   labelClass: "text-slate-600"   }] : []),
+          ...(typeof data.failed     === "number" ? [{ label: "Failed checks",      value: data.failed,     icon: XCircle,      bgClass: "bg-red-50",     iconClass: "text-red-600",     labelClass: "text-red-700"     }] : []),
+          ...(typeof data.locked     === "number" ? [{ label: "Locked",             value: data.locked,     icon: ShieldCheck,  bgClass: "bg-amber-50",   iconClass: "text-amber-600",   labelClass: "text-amber-700"   }] : []),
+          ...(typeof data.checkedLocked === "number" ? [{ label: "Checked but locked", value: data.checkedLocked, icon: Gauge, bgClass: "bg-orange-50",  iconClass: "text-orange-600",  labelClass: "text-orange-700"  }] : []),
         ]
       : [];
     return (
       <AdminLayout>
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">Franchise customer overview</h1>
-            <p className="text-sm text-slate-500">Network-wide customer count, franchise by franchise</p>
-          </div>
-          <button type="button" onClick={refresh} disabled={statsLoading} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-            <RefreshCw size={14} className={statsLoading ? "animate-spin" : ""} /> Refresh
-          </button>
-        </div>
-        {statsError && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{statsError}</div>}
+        <PageHeader icon={Users} title="Franchise customer overview" subtitle="Network-wide customer count, franchise by franchise"
+          onRefresh={refresh} refreshing={statsLoading} />
+        {statsError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{statsError}</div>}
         {statsLoading && <div className="flex items-center justify-center gap-2 py-12 text-slate-500"><LoaderCircle size={18} className="animate-spin" /> Loading customer statistics...</div>}
         {data && (
           <>
             <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {metrics.map((metric) => (
-                <Metric key={metric.label} {...metric} />
+              {metrics.map((m) => (
+                <StatCard key={m.label} label={m.label} value={m.value} icon={m.icon} bgClass={m.bgClass} iconClass={m.iconClass} labelClass={m.labelClass} />
               ))}
             </div>
             {typeof data.threshold === "number" && (
@@ -419,30 +383,22 @@ const FranchiseCustomers = () => {
 
   const result = currentList?.result;
   const customers: FranchiseCustomerRecord[] = result?.customers ?? [];
-  // The live payload has dropped CIBIL / loan-form state — show those columns
-  // only when the response actually carries them.
-  const showCibil = customers.some((customer) => Boolean(customer.cibil));
-  const showLoanForm = customers.some((customer) => Boolean(customer.loanForm));
-  const hasFilters = !!(appliedSearch || appliedFranchise);
+  const showCibil    = customers.some((c) => Boolean(c.cibil));
+  const showLoanForm = customers.some((c) => Boolean(c.loanForm));
+  const hasFilters   = !!(appliedSearch || appliedFranchise);
   return (
     <AdminLayout>
-      <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm" style={{ background: ACTIVE_BACKGROUND }}>
-            <Users size={19} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Franchise customers</h1>
-            <p className="mt-0.5 text-sm text-slate-500">Read-only customer, CIBIL and loan eligibility audit.</p>
-          </div>
-        </div>
-        <div className="flex gap-2 self-start sm:self-auto">
-          <Link to="/franchise-customers/stats" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Customer stats</Link>
-          <button type="button" onClick={refresh} disabled={!currentList} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-            <RefreshCw size={14} /> Refresh
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        icon={Users} title="Franchise customers"
+        subtitle="Read-only customer, CIBIL and loan eligibility audit."
+        onRefresh={refresh} refreshing={!currentList}
+        actions={
+          <Link to="/franchise-customers/stats"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+            Customer stats
+          </Link>
+        }
+      />
       <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <form onSubmit={submitSearch} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div className="relative xl:col-span-2">
