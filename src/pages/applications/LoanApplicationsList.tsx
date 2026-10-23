@@ -64,6 +64,7 @@ const LoanApplicationsList = () => {
       const matchSearch = !q ||
         (l.fullName ?? "").toLowerCase().includes(q) ||
         (l.mobile ?? "").includes(q) ||
+        (l.applicationNo ?? "").toLowerCase().includes(q) ||
         l._id.toLowerCase().includes(q);
       const matchStatus = statusFilter === "All" ||
         (l.status ?? "").toLowerCase() === statusFilter.toLowerCase();
@@ -169,7 +170,7 @@ const LoanApplicationsList = () => {
                       <td className="px-5 py-4 text-xs text-slate-300 font-mono tabular-nums">{(safePage - 1) * PAGE_SIZE + i + 1}</td>
                       <td className="px-5 py-4">
                         <span className="inline-block font-mono text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg group-hover:bg-sky-50 group-hover:text-sky-700 transition-colors">
-                          #{loan._id.slice(-8).toUpperCase()}
+                          {loan.applicationNo ?? `#${loan._id.slice(-8).toUpperCase()}`}
                         </span>
                       </td>
                       <td className="px-5 py-4">

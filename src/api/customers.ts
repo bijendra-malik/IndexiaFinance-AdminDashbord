@@ -16,6 +16,7 @@ export interface Customer {
   lastLogin: string | null;
   createdAt: string;
   updatedAt: string;
+  dob?: string;
   continent?: string;
   country?: string;
   state?: string;
@@ -59,6 +60,7 @@ const toCustomer = (value: unknown): Customer => {
     lastLogin: optionalText(item.lastLogin) ?? null,
     createdAt: optionalText(item.createdAt) ?? "",
     updatedAt: optionalText(item.updatedAt) ?? "",
+    dob: optionalText(item.dob),
     continent: optionalText(item.continent),
     country: optionalText(item.country),
     state: optionalText(item.state),

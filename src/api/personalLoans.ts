@@ -30,6 +30,20 @@ export interface PersonalLoan {
   creditScore?: number | null;
   creditEligible?: boolean;
   creditScoreCheckedAt?: string | null;
+  /** 24-hour eligibility window end (null when the score was not eligible). */
+  creditEligibilityExpiresAt?: string | null;
+
+  // ── Review metadata stamped by PATCH /{resource}/:id/status ──────────────
+  /** Public application number (e.g. LOAN000001); older records may lack it. */
+  applicationNo?: string | null;
+  /** Source channel — `franchise`/`franchiseCode` present = franchise sale, absent = direct customer. */
+  franchise?: string | null;
+  franchiseCode?: string | null;
+  /** Rejection / review note saved with the last status change (max 500 chars). */
+  adminNote?: string;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
 
   // ── Employment / salary fields ────────────────────────────────────────────
   employmentType?: string;

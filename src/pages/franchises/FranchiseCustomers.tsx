@@ -7,8 +7,6 @@ import {
 import AdminLayout from "../../components/layout/AdminLayout";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
-import StatusBadge from "../../components/common/StatusBadge";
-import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import {
   getApiErrorMessage, getFranchiseCustomer, getFranchiseCustomers,
   getFranchiseCustomerStats, type FranchiseCustomerStats,

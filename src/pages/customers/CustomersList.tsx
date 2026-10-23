@@ -395,6 +395,7 @@ const CustomersList = () => {
                     {[
                       { label: "Customer ID", value: customerDetail.customerId || customerDetail._id, mono: true },
                       { label: "PAN",         value: customerDetail.panNumber || "—",                 mono: true },
+                      { label: "Date of birth", value: fmtDate(customerDetail.dob ?? null) },
                       { label: "Mobile",      value: customerDetail.mobile || "—" },
                       { label: "Email",       value: customerDetail.email  || "—" },
                       { label: "Location",    value: [customerDetail.city, customerDetail.state, customerDetail.country, customerDetail.pincode].filter(Boolean).join(", ") || "—" },
