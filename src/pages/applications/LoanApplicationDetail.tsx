@@ -246,11 +246,39 @@ const LoanApplicationDetail = () => {
   */
   const creditScore = loan?.creditScore ?? null;
   const creditScoreText = creditScore == null ? "Not recorded for this application" : `${creditScore} / 900`;
+  const isCreditEligible = creditScore != null &&
+    Boolean(loan?.creditEligible ?? creditScore >= MINIMUM_CREDIT_SCORE);
   const creditEligibilityText = creditScore == null
     ? "Not recorded for this application"
-    : (loan?.creditEligible ?? creditScore >= MINIMUM_CREDIT_SCORE)
+    : isCreditEligible
       ? `Eligible (minimum ${MINIMUM_CREDIT_SCORE})`
       : `Not eligible (below ${MINIMUM_CREDIT_SCORE})`;
+
+  /*
+  Backend runs a 24-hour eligibility window from the score check
+  (`creditEligibilityExpiresAt` on the snapshot). Ineligible scores and very
+  old snapshots have no window, so fall back to an explicit text.
+  */
+  const creditExpiryText = creditScore == null
+    ? "Not recorded for this application"
+    : loan?.creditEligibilityExpiresAt
+      ? DT(loan.creditEligibilityExpiresAt)
+      : isCreditEligible
+        ? "Not recorded for this application"
+        : `Not applicable — below ${MINIMUM_CREDIT_SCORE}`;
+
+  /* Source channel: franchise sale (FRN code) vs direct customer. */
+  const channelText = loan?.franchiseCode
+    ? `Franchise — ${loan.franchiseCode}`
+    : loan?.franchise
+      ? "Franchise"
+      : "Direct customer";
+
+  /* Decision stamp — approvedAt for approvals, rejectedAt for rejections. */
+  const decidedAt = loan?.approvedAt ?? loan?.rejectedAt ?? null;
+  const applicationNo = loan
+    ? (loan.applicationNo ?? `#${loan._id.slice(-8).toUpperCase()}`)
+    : "";
 
   const copyId = async () => {
     if (!loan) return;
@@ -351,6 +379,9 @@ const LoanApplicationDetail = () => {
   const displayedFields = new Set([
     "_id", "user", "__v", "loanType", "loanAmount", "loanTenure", "status", "createdAt", "updatedAt",
     "fullName", "mobile", "email", "dob", "panNumber", "state", "city", "pincode", "residenceStatus",
+    // Curated above (credit block, channel, timeline) — keep them out of "Additional".
+    "creditScore", "creditEligible", "creditScoreCheckedAt", "creditEligibilityExpiresAt",
+    "applicationNo", "franchise", "franchiseCode", "adminNote", "approvedBy", "approvedAt", "rejectedAt",
     ...(sectionFlags.salaried ? [
       "employmentType", "companyName", "companyType", "monthlySalary", "salaryReceivedAs", "salaryBankName",
       ...(loan?.companyType === "Other" ? ["companyTypeOther"] : []),
@@ -654,6 +685,9 @@ const LoanApplicationDetail = () => {
           <DataField label="Credit Score (at apply)" value={creditScoreText} highlight />
           <DataField label="Credit Eligibility"      value={creditEligibilityText} />
           <DataField label="Score Checked On"        value={DT(loan!.creditScoreCheckedAt)} />
+          <DataField label="Eligibility Valid Until" value={creditExpiryText} />
+          <DataField label="Application Source"      value={channelText} />
+          <DataField label="Application No"          value={applicationNo} mono />
         </InfoSection>
 
         {/* ════════════ EMPLOYMENT — adapts to employmentType ══════════════ */}
@@ -831,8 +865,10 @@ const LoanApplicationDetail = () => {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-slate-100">
             {[
+              { icon: Hash,       label: "Application No", value: applicationNo,                    mono: true  },
               { icon: Hash,       label: "Application ID", value: loan!._id,                  mono: true  },
               { icon: Calendar,   label: "Applied On",     value: DT(loan!.createdAt) ?? "—", mono: false },
+              ...(decidedAt ? [{ icon: StatusIcon, label: "Decision On", value: DT(decidedAt) ?? "—", mono: false }] : []),
               { icon: RefreshCw,  label: "Last Updated",   value: DT(loan!.updatedAt) ?? "—", mono: false },
               { icon: StatusIcon, label: "Current Status", value: loan!.status,               mono: false },
             ].map(({ icon: Icon, label: l, value: v, mono }) => (
@@ -847,6 +883,14 @@ const LoanApplicationDetail = () => {
               </div>
             ))}
           </div>
+          {V(loan!.adminNote) && (
+            <div className="border-t border-slate-100 px-6 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                {loan!.status === "Rejected" ? "Rejection note" : "Review note"}
+              </p>
+              <p className="text-sm text-slate-700 leading-relaxed">{loan!.adminNote}</p>
+            </div>
+          )}
         </div>
 
         {/* ════════════ DANGER ZONE ═════════════════════════════════════════ */}
