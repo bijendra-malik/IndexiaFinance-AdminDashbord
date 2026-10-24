@@ -118,16 +118,21 @@ franchise-customer KPI reports the error.
 | `GET` | `/customers?search=&isActive=` | `{ success, customers: Customer[] }`. `search` matches name / email / mobile; `isActive` filters active accounts. |
 | `GET` | `/customers/:id` | `{ success, customer }` |
 
-`Customer` = `{ _id, name, mobile, email, isVerified, isActive, role, lastLogin, createdAt, updatedAt }`.
+Also live (all consumed by the admin Customers page):
 
-Recommended additions so the dashboard can grow:
-
-| Method | Path | Purpose |
+| Method | Path | Notes |
 |---|---|---|
-| `DELETE` | `/customers/:id` | Delete a customer account. **Required now** — the admin Customers page ships a delete action (type-to-confirm) that calls this. Return `404` for an unknown id, `409` if the customer still has open applications. |
-| `GET` | `/customers?page=&limit=&isActive=` | Server-side pagination + filters (list is unbounded today). |
-| `PATCH` | `/customers/:id/status` | Activate / deactivate a customer. |
-| `GET` | `/customers/:id/applications` | All loan applications belonging to one customer. |
+| `DELETE` | `/customers/:id` | `404` unknown id; `409` while the customer still has `Submitted`/`Pending` applications (message includes the open count). Otherwise the account + its closed application archive are removed together. |
+| `GET` | `/customers?page=&limit=&isActive=` | Server-side pagination + filters (`limit` capped at 100; omitted → full list, which is what the UI uses for client-side paging today). |
+| `PATCH` | `/customers/:id/status` | `{ isActive: true\|false }` — activate / deactivate. |
+| `GET` | `/customers/:id/applications` | Applications grouped per product → `{ success, customer, total, data: [{ product, count, applications }] }` (`product` is the model key, e.g. `personal`, not the URL resource). |
+
+`Customer` = `{ _id, customerId, name, mobile, email, dob, panNumber,
+continent, country, state, city, pincode, isVerified, isActive, role,
+lastLogin, createdAt, updatedAt }`. The account document also carries the
+**latest** credit fields (`creditScore`, `creditEligible`,
+`creditScoreCheckedAt`, `creditEligibilityExpiresAt`) — the UI never shows
+those as an application's score (see §4).
 
 ---
 
@@ -155,15 +160,19 @@ One REST resource per product. The frontend maps slugs to endpoints in
 | `npa-loan` | `/npa-loans` | ✅ |
 | `gold-loan` | `/gold-loans` | ✅ |
 | `fdi-loan` | `/fdi-loans` | ✅ |
+| `film-funding` | `/film-fundings` | ✅ |
 
 Every resource needs the same four routes:
 
 ```http
-GET    /{resource}                # list
+GET    /{resource}                # list — newest first, raw documents
 GET    /{resource}/:id            # single application (all fields)
-PATCH  /{resource}/:id/status     # { status: "Approved" }  ← needed for admin actions
-DELETE /{resource}/:id            # required — the application detail page has a delete action
+PATCH  /{resource}/:id/status     # { status, note? } — LIVE (admin actions use it)
+DELETE /{resource}/:id            # LIVE — the application detail page has a delete action
 ```
+
+All 18 resources above are registered in the backend's `RESOURCE_ROUTES`
+registry, so every product gets the same four endpoints.
 
 `DELETE` returns `{ "success": true }`, `404` for an unknown id. Deleting an
 application removes the saved form details permanently (the admin confirms by
@@ -186,6 +195,15 @@ recorded for this application". The current eligibility threshold is 600:
 scores of 600 or higher are eligible. The backend must use this same threshold
 when creating the snapshot's `creditEligible` value.
 
+**Eligibility window (current backend flow).** The customer now submits the
+loan form first (held as a temporary draft), then enters a credit score for
+that draft. A qualifying score (≥ 600) finalises the draft and starts a
+**24-hour window**: `creditEligibilityExpiresAt = creditScoreCheckedAt + 24h`.
+A score below 600 sets `creditEligibilityExpiresAt` to `null`. On the
+application snapshot the UI renders that timestamp as **"Eligibility Valid
+Until"**; when it is absent it falls back to "Not recorded…" (legacy
+snapshot) or "Not applicable — below 600" (ineligible score).
+
 **Recommended query parameters** (the UI already filters/paginates client-side;
 moving it server-side keeps the payload small as volume grows):
 
@@ -199,10 +217,21 @@ GET /personal-loans?page=1&limit=10&status=Pending&search=rahul
 full documents for every row is wasteful. Support `?fields=` or return a slim
 list document.
 
-**Status transitions.** `PATCH /{resource}/:id/status` should accept
-`Approved` / `Rejected` / `Pending`, store `approvedBy` / `approvedAt`, and
-reject illegal transitions. Add a note field:
-`PATCH /{resource}/:id/status` → `{ status, note? }`.
+**Status transitions (implemented).** `PATCH /{resource}/:id/status` accepts
+`Approved` / `Rejected` / `Pending` with an optional `note` (≤ 500 chars).
+The transition matrix is enforced server-side:
+
+| Current status | Allowed next |
+|---|---|
+| `Submitted` | `Pending`, `Approved`, `Rejected` |
+| `Pending` | `Approved`, `Rejected` |
+| `Approved` / `Rejected` | — (terminal) |
+
+A no-op (same status) or an illegal transition returns `409` with
+`{ success: false, message }`. Every decision stamps `approvedBy` (admin id),
+`approvedAt` (or `rejectedAt`) and `adminNote` on the document — the detail
+screen renders `adminNote` and the decision timestamp in its Timeline, and
+locks its action buttons to the same matrix so the UI never produces a 409.
 
 ---
 
@@ -432,15 +461,16 @@ Extra rules worth enforcing server-side:
 
 ## 7. What is missing today, at a glance
 
-| # | Gap | Impact | Fix |
-|---|---|---|---|
-| 1 | No `/dashboard/stats` | 15 requests per dashboard load | Add endpoint in §2 |
-| 2 | Loan endpoint availability depends on backend deployment | A mapped frontend route can still return `404` | Verify backend `od-cc-limits` and `loan-against-shares` routes |
-| 3 | No status-update route | Admin can view but not act on an application | `PATCH /{resource}/:id/status` |
-| 4 | No pagination/filter params | Full collections transferred on every list view | §4 query params |
-| 5 | No `/masters/type/:type` | Type lookups cost 2 requests (list + detail) instead of 1 | §5, optional |
-| 6 | Location API deployment has not been runtime-verified | Location Master requires the new record/status endpoints | Smoke-test the routes in [LOCATION_API.md](LOCATION_API.md) |
-| 7 | No customer↔application link | Cannot see one customer's full portfolio | `GET /customers/:id/applications` |
+| # | Gap | Status today |
+|---|---|---|
+| 1 | `/dashboard/stats` | ✅ Live — the dashboard loads it in one request (`src/api/dashboard.ts`). |
+| 2 | Loan endpoint availability | ✅ All 18 resources (incl. `od-cc-limits`, `loan-against-shares`, `film-fundings`) are registered in `RESOURCE_ROUTES`. |
+| 3 | Status-update route | ✅ `PATCH /{resource}/:id/status` live with the transition matrix, `note` and decision stamps. |
+| 4 | Pagination/filter params on application lists | ⛔ Still open — every `GET /{resource}` returns the full collection (`?status=&search=&page=&limit=` + `total` recommended as volume grows). Customers already support `page`/`limit`/`isActive`. |
+| 5 | `/masters/type/:type` | Optional — the frontend resolves types itself (list + detail). |
+| 6 | Location API runtime verification | ⚠️ Depends on deployment — smoke-test the routes in [LOCATION_API.md](LOCATION_API.md). |
+| 7 | Customer ↔ application link | ✅ `GET /customers/:id/applications` live and grouped per product. |
+| 8 | Audit trail of status changes | ⛔ Only `approvedBy` + timestamps are stored; a separate change log (old → new status per admin) is still recommended. |
 
 ## Franchise management — `/franchises`
 
