@@ -5,9 +5,12 @@ export { getApiErrorMessage } from "../utils/apiError";
 /** One rejected application, flattened across every loan product. */
 export interface RejectedLoan {
   _id: string;
-  /** Backend URL segment (e.g. `npa-loans`) — detail link ke liye slug me map hota hai. */
-  resource: string;
-  productKey: string;
+  /**
+   * Backend URL segment (e.g. `npa-loans`) — detail link ke liye slug me map hota
+   * hai. Credit-score rejections (jahan koi application submit nahi hui) me null.
+   */
+  resource?: string | null;
+  productKey?: string | null;
   productLabel: string;
   status: string;
   applicationNo?: string | null;
@@ -15,9 +18,13 @@ export interface RejectedLoan {
   loanAmount?: number;
   fullName?: string;
   mobile?: string;
+  /** Channel: franchise id/`FRN…` code set hone par application franchise ne file ki hai. */
+  franchise?: string | null;
+  franchiseCode?: string | null;
+  franchiseCustomer?: string | null;
   /** Reject reason — backend `adminNote` (customer-facing message). */
   rejectionReason: string;
-  /** true = eligibility gate ne khud reject kiya (3 din baad delete), false = admin decision. */
+  /** true = eligibility gate ne khud reject kiya (30 din baad delete), false = admin decision. */
   isAutoRejected: boolean;
   rejectedAt?: string | null;
   autoRejectedAt?: string | null;

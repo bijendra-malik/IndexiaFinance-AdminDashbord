@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Eye, RefreshCw, ShieldAlert, UserCheck, XCircle } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { getApiErrorMessage, getRejectedLoans, type RejectedLoan } from "../../api/rejectedLoans";
@@ -16,6 +16,34 @@ const INR = new Intl.NumberFormat("en-IN", {
 /** Dashboard ke tables wala header style — dono pages ek jaise dikhen. */
 const THEAD =
   "border-y border-slate-100 bg-slate-50/60 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500";
+
+/**
+ * Rejection ke teen alag raste — sidebar dropdown aur in-page tabs dono isi
+ * list se bante hain, taaki dono jagah ek hi definition rahe:
+ *
+ *   customer            -> customer ne khud apply kiya (franchise null)
+ *   franchise-customer  -> franchise ne apne customer ke naam par file kiya
+ *   franchise           -> franchise ki khud ki application admin ne reject ki
+ */
+const CHANNELS = [
+  { key: "all", label: "All", path: "/rejected-loans" },
+  { key: "customer", label: "Customer", path: "/rejected-loans/customer" },
+  { key: "franchise-customer", label: "Franchise Customer", path: "/rejected-loans/franchise-customer" },
+  { key: "franchise", label: "Franchise", path: "/rejected-loans/franchise" },
+] as const;
+type ChannelKey = (typeof CHANNELS)[number]["key"];
+
+/** Route se channel — `/rejected-loans/franchise` -> "franchise". */
+const channelFromParam = (param?: string): ChannelKey =>
+  CHANNELS.find((option) => option.key === param)?.key ?? "all";
+
+/** Har channel ka apna heading copy. */
+const CHANNEL_COPY: Record<ChannelKey, string> = {
+  all: "Har product ki rejected applications, reject reason ke saath — rule-based aur admin decisions dono.",
+  customer: "Direct customers ki rejected applications — customer ne khud apply kiya tha.",
+  "franchise-customer": "Franchise ke customers ke naam par file hui rejected applications.",
+  franchise: "Franchise ki khud ki applications jo admin ne reject ki.",
+};
 
 /** Date aur time alag lines me — column chhoti rehti hai, rows flat dikhte hain. */
 const formatDateTimeParts = (value?: string | null) => {
@@ -38,6 +66,7 @@ export default function RejectedLoans() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [product, setProduct] = useState("All");
+  const [channel, setChannel] = useState<Channel>("All");
 
   const load = async () => {
     setLoading(true);
@@ -65,14 +94,26 @@ export default function RejectedLoans() {
     const query = search.trim().toLowerCase();
     return loans.filter((loan) => {
       if (product !== "All" && loan.productLabel !== product) return false;
+      if (channel === "Franchise" && !loan.franchise) return false;
+      if (channel === "Customer" && loan.franchise) return false;
       if (!query) return true;
-      return [loan.applicationNo, loan.fullName, loan.mobile, loan.rejectionReason, loan.productLabel]
+      return [
+        loan.applicationNo,
+        loan.fullName,
+        loan.mobile,
+        loan.rejectionReason,
+        loan.productLabel,
+        loan.franchiseCode,
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query));
     });
-  }, [loans, search, product]);
+  }, [loans, search, product, channel]);
 
   const autoCount = loans.filter((loan) => loan.isAutoRejected).length;
+  const franchiseCount = loans.filter((loan) => Boolean(loan.franchise)).length;
+  const channelCount = (option: Channel) =>
+    option === "Franchise" ? franchiseCount : option === "Customer" ? loans.length - franchiseCount : loans.length;
 
   return (
     <AdminLayout>
@@ -88,6 +129,29 @@ export default function RejectedLoans() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Channel — franchise ki application aur direct customer alag alag dekho. */}
+          <div className="flex items-center rounded-xl border border-slate-300 bg-white p-1">
+            {CHANNELS.map((option) => {
+              const active = channel === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setChannel(option)}
+                  aria-pressed={active}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    active ? "text-white" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                  style={active ? { backgroundColor: BRAND.blue } : undefined}
+                >
+                  {option === "All" ? "All" : option === "Customer" ? "Customers" : "Franchise"}
+                  <span className={`ml-1.5 ${active ? "text-white/70" : "text-slate-400"}`}>
+                    {channelCount(option)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -122,7 +186,7 @@ export default function RejectedLoans() {
         <KpiCard
           label="Rejected by Rules"
           value={autoCount.toLocaleString("en-IN")}
-          sub="Auto-deleted after 3 days"
+          sub="Auto-deleted after 30 days"
           icon={ShieldAlert}
           color="#b45309"
           tint="#fffbeb"
@@ -183,7 +247,7 @@ export default function RejectedLoans() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((loan) => {
-                  const slug = resourceToSlug(loan.resource);
+                  const slug = resourceToSlug(loan.resource ?? undefined);
                   const when = formatDateTimeParts(
                     loan.rejectedAt || loan.autoRejectedAt || loan.createdAt
                   );
@@ -202,6 +266,21 @@ export default function RejectedLoans() {
                           {loan.fullName || "—"}
                         </p>
                         <p className="whitespace-nowrap text-xs text-slate-400">{loan.mobile || ""}</p>
+                        {/* Applicant ka channel — direct customer ya franchise ne file kiya. */}
+                        <span
+                          title={
+                            loan.franchise
+                              ? `Franchise customer${loan.franchiseCode ? ` · ${loan.franchiseCode}` : ""}`
+                              : "Direct customer (customer ne khud apply kiya)"
+                          }
+                          className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            loan.franchise
+                              ? "bg-indigo-50 text-indigo-600"
+                              : "bg-sky-50 text-[rgb(0,102,153)]"
+                          }`}
+                        >
+                          {loan.franchise ? "Franchise" : "Customer"}
+                        </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-700">
                         {typeof loan.loanAmount === "number" ? INR.format(loan.loanAmount) : "—"}
@@ -230,6 +309,11 @@ export default function RejectedLoans() {
                           {when ? when.time : ""}
                         </p>
                         <span
+                          title={
+                            loan.isAutoRejected
+                              ? "Eligibility rule (company type / salary received / credit score) ne auto-reject kiya — record 30 din baad apne aap delete ho jaayega."
+                              : "Admin ne manually reject kiya — record permanent rehta hai."
+                          }
                           className={`mt-1.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold ${
                             loan.isAutoRejected
                               ? "bg-amber-100 text-amber-700"
@@ -262,7 +346,7 @@ export default function RejectedLoans() {
 
       {!loading && !error && filtered.length > 0 && (
         <p className="mt-3 text-xs text-slate-400">
-          Showing {filtered.length} of {loans.length} rejected applications. Rule-based records 3 din
+          Showing {filtered.length} of {loans.length} rejected applications. Rule-based records 30 din
           baad apne aap delete ho jaate hain (customer tab tak usi product par dobara apply nahi
           kar sakta).
         </p>
