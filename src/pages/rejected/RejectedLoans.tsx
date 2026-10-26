@@ -37,6 +37,35 @@ type ChannelKey = (typeof CHANNELS)[number]["key"];
 const channelFromParam = (param?: string): ChannelKey =>
   CHANNELS.find((option) => option.key === param)?.key ?? "all";
 
+/** Row par channel ka badge — label, colour aur tooltip ek hi jagah. */
+const channelBadge = (loan: RejectedLoan) => {
+  const key = loan.channel ?? "customer";
+
+  if (key === "franchise") {
+    return {
+      label: "Franchise",
+      className: "bg-emerald-50 text-emerald-700",
+      title: "Franchise ki khud ki application — admin ne reject ki.",
+    };
+  }
+
+  if (key === "franchise-customer") {
+    return {
+      label: "Franchise customer",
+      className: "bg-indigo-50 text-indigo-600",
+      title: `Franchise ne apne customer ke naam par file kiya${
+        loan.franchiseCode ? ` · ${loan.franchiseCode}` : ""
+      }`,
+    };
+  }
+
+  return {
+    label: "Customer",
+    className: "bg-sky-50 text-[rgb(0,102,153)]",
+    title: "Direct customer (customer ne khud apply kiya)",
+  };
+};
+
 /** Har channel ka apna heading copy. */
 const CHANNEL_COPY: Record<ChannelKey, string> = {
   all: "Har product ki rejected applications, reject reason ke saath — rule-based aur admin decisions dono.",
@@ -66,7 +95,9 @@ export default function RejectedLoans() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [product, setProduct] = useState("All");
-  const [channel, setChannel] = useState<Channel>("All");
+  const navigate = useNavigate();
+  const { channel: channelParam } = useParams<{ channel?: string }>();
+  const channel = channelFromParam(channelParam);
 
   const load = async () => {
     setLoading(true);
@@ -94,8 +125,7 @@ export default function RejectedLoans() {
     const query = search.trim().toLowerCase();
     return loans.filter((loan) => {
       if (product !== "All" && loan.productLabel !== product) return false;
-      if (channel === "Franchise" && !loan.franchise) return false;
-      if (channel === "Customer" && loan.franchise) return false;
+      if (channel !== "all" && (loan.channel ?? "customer") !== channel) return false;
       if (!query) return true;
       return [
         loan.applicationNo,
@@ -111,9 +141,10 @@ export default function RejectedLoans() {
   }, [loans, search, product, channel]);
 
   const autoCount = loans.filter((loan) => loan.isAutoRejected).length;
-  const franchiseCount = loans.filter((loan) => Boolean(loan.franchise)).length;
-  const channelCount = (option: Channel) =>
-    option === "Franchise" ? franchiseCount : option === "Customer" ? loans.length - franchiseCount : loans.length;
+  const channelCount = (key: ChannelKey) =>
+    key === "all"
+      ? loans.length
+      : loans.filter((loan) => (loan.channel ?? "customer") === key).length;
 
   return (
     <AdminLayout>
@@ -123,30 +154,36 @@ export default function RejectedLoans() {
           <h2 className="text-lg font-semibold" style={{ color: BRAND.blue }}>
             Reject Loans
           </h2>
-          <p className="text-sm text-slate-500">
-            Har product ki rejected applications, reject reason ke saath — rule-based aur admin
-            decisions dono.
-          </p>
+          <p className="text-sm text-slate-500">{CHANNEL_COPY[channel]}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Channel — franchise ki application aur direct customer alag alag dekho. */}
+          {/* Channel tabs — URL se chalte hain, isliye sidebar ka dropdown bhi yahi state set karta hai. */}
           <div className="flex items-center rounded-xl border border-slate-300 bg-white p-1">
             {CHANNELS.map((option) => {
-              const active = channel === option;
+              const active = channel === option.key;
               return (
                 <button
-                  key={option}
+                  key={option.key}
                   type="button"
-                  onClick={() => setChannel(option)}
+                  onClick={() => navigate(option.path)}
                   aria-pressed={active}
+                  title={
+                    option.key === "customer"
+                      ? "Customer ne khud apply kiya aur reject hua"
+                      : option.key === "franchise-customer"
+                        ? "Franchise ne apne customer ke naam par file kiya"
+                        : option.key === "franchise"
+                          ? "Franchise ki khud ki application admin ne reject ki"
+                          : "Sabhi rejections"
+                  }
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                     active ? "text-white" : "text-slate-600 hover:bg-slate-50"
                   }`}
                   style={active ? { backgroundColor: BRAND.blue } : undefined}
                 >
-                  {option === "All" ? "All" : option === "Customer" ? "Customers" : "Franchise"}
+                  {option.label}
                   <span className={`ml-1.5 ${active ? "text-white/70" : "text-slate-400"}`}>
-                    {channelCount(option)}
+                    {channelCount(option.key)}
                   </span>
                 </button>
               );
@@ -266,20 +303,12 @@ export default function RejectedLoans() {
                           {loan.fullName || "—"}
                         </p>
                         <p className="whitespace-nowrap text-xs text-slate-400">{loan.mobile || ""}</p>
-                        {/* Applicant ka channel — direct customer ya franchise ne file kiya. */}
+                        {/* Applicant ka channel — teen alag types, ek hi jagah define. */}
                         <span
-                          title={
-                            loan.franchise
-                              ? `Franchise customer${loan.franchiseCode ? ` · ${loan.franchiseCode}` : ""}`
-                              : "Direct customer (customer ne khud apply kiya)"
-                          }
-                          className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            loan.franchise
-                              ? "bg-indigo-50 text-indigo-600"
-                              : "bg-sky-50 text-[rgb(0,102,153)]"
-                          }`}
+                          title={channelBadge(loan).title}
+                          className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${channelBadge(loan).className}`}
                         >
-                          {loan.franchise ? "Franchise" : "Customer"}
+                          {channelBadge(loan).label}
                         </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-700">
@@ -312,7 +341,9 @@ export default function RejectedLoans() {
                           title={
                             loan.isAutoRejected
                               ? "Eligibility rule (company type / salary received / credit score) ne auto-reject kiya — record 30 din baad apne aap delete ho jaayega."
-                              : "Admin ne manually reject kiya — record permanent rehta hai."
+                              : `Admin ne manually reject kiya${
+                                  loan.rejectedBy ? ` (${loan.rejectedBy})` : ""
+                                } — record permanent rehta hai.`
                           }
                           className={`mt-1.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold ${
                             loan.isAutoRejected
@@ -322,6 +353,12 @@ export default function RejectedLoans() {
                         >
                           {loan.isAutoRejected ? "Rule" : "Admin"}
                         </span>
+                        {/* Kisne reject kiya — rule ki wajah ya kaun sa admin. */}
+                        <p className="mt-1 whitespace-nowrap text-[10px] text-slate-400">
+                          {loan.isAutoRejected
+                            ? "by eligibility rule"
+                            : `by ${loan.rejectedBy || "Admin"}`}
+                        </p>
                       </td>
                       <td className="px-5 py-3 text-right">
                         {slug ? (

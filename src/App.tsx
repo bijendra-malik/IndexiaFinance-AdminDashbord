@@ -54,9 +54,19 @@ function App() {
               }
             />
 
-            {/* Sabhi products ki rejections — reject reason highlight ke saath */}
+            {/* Sabhi products ki rejections — reject reason highlight ke saath.
+                `/rejected-loans/customer`, `/franchise-customer`, `/franchise`
+                wahi page khulte hain, bas channel filter pehle se laga hota hai. */}
             <Route
               path="/rejected-loans"
+              element={
+                <ProtectedRoute>
+                  <RejectedLoans />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rejected-loans/:channel"
               element={
                 <ProtectedRoute>
                   <RejectedLoans />

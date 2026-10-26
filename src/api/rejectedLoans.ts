@@ -24,8 +24,17 @@ export interface RejectedLoan {
   franchiseCustomer?: string | null;
   /** Reject reason — backend `adminNote` (customer-facing message). */
   rejectionReason: string;
+  /**
+   * Kis type ka rejection hai:
+   *   customer           -> customer ne khud apply kiya,
+   *   franchise-customer -> franchise ne apne customer ke naam par file kiya,
+   *   franchise          -> franchise ki khud ki application reject hui.
+   */
+  channel?: "customer" | "franchise-customer" | "franchise";
   /** true = eligibility gate ne khud reject kiya (30 din baad delete), false = admin decision. */
   isAutoRejected: boolean;
+  /** Admin decisions par — kis admin ne reject kiya (naam), rule rows par nahi. */
+  rejectedBy?: string | null;
   rejectedAt?: string | null;
   autoRejectedAt?: string | null;
   createdAt: string;
