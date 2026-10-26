@@ -6,7 +6,7 @@ import {
   Database, FileText, Globe, GraduationCap,
   Home, Landmark, LayoutDashboard, LogOut,
   Settings, TrendingUp, UserCircle, Users,
-  Wallet, Coins,
+  Wallet, Coins, XCircle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { LOAN_TYPES } from "../../constants/loanTypes";
@@ -193,6 +193,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {[
             { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
             { to: "/customers", label: "Customers",  icon: Users },
+            { to: "/rejected-loans", label: "Reject Loans", icon: XCircle },
           ].map(({ to, label, icon: Icon }) => {
             const isActive = location.pathname === to;
             return (

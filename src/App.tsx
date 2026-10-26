@@ -11,6 +11,7 @@ import MasterDetail from "./pages/masters/MasterDetail";
 import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
 import LoanApplicationDetail from "./pages/applications/LoanApplicationDetail";
 import CustomersList from "./pages/customers/CustomersList";
+import RejectedLoans from "./pages/rejected/RejectedLoans";
 import LocationMasterAdmin from "./pages/masters/LocationMasterAdmin";
 import FranchiseList from "./pages/franchises/FranchiseList";
 import FranchiseDetail from "./pages/franchises/FranchiseDetail";
@@ -49,6 +50,16 @@ function App() {
               element={
                 <ProtectedRoute>
                   <CustomersList />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Sabhi products ki rejections — reject reason highlight ke saath */}
+            <Route
+              path="/rejected-loans"
+              element={
+                <ProtectedRoute>
+                  <RejectedLoans />
                 </ProtectedRoute>
               }
             />
