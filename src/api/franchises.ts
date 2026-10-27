@@ -280,3 +280,8 @@ export const resetFranchisePassword = async (id: string): Promise<FranchiseActio
   );
   return toActionResult(res.data);
 };
+
+/** DELETE /api/admin/franchises/:id — permanently remove a franchise */
+export const deleteFranchise = async (id: string): Promise<void> => {
+  await axiosInstance.delete(`/franchises/${encodeURIComponent(id)}`);
+};

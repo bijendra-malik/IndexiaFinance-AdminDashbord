@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Eye, RefreshCw, ShieldAlert, UserCheck, XCircle } from "lucide-react";
+import { Building2, Eye, RefreshCw, ShieldAlert, Trash2, UserCheck, XCircle } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { getApiErrorMessage, getRejectedLoans, type RejectedLoan } from "../../api/rejectedLoans";
-import { resourceToSlug } from "../../api/personalLoans";
+import { deleteLoanBySlug, resourceToSlug } from "../../api/personalLoans";
+import { deleteFranchise } from "../../api/franchises";
 import { BRAND } from "../dashboard/dashboardUtils";
 import { KpiCard } from "../dashboard/components/DashboardCards";
 
@@ -95,6 +97,8 @@ export default function RejectedLoans() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [product, setProduct] = useState("All");
+  const [pendingDelete, setPendingDelete] = useState<RejectedLoan | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
   const { channel: channelParam } = useParams<{ channel?: string }>();
   const channel = channelFromParam(channelParam);
@@ -115,6 +119,28 @@ export default function RejectedLoans() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleDelete = async () => {
+    if (!pendingDelete) return;
+    setIsDeleting(true);
+    try {
+      const loan = pendingDelete;
+      const isFranchise = (loan.channel ?? "customer") === "franchise";
+      if (isFranchise) {
+        await deleteFranchise(loan._id);
+      } else {
+        const slug = resourceToSlug(loan.resource ?? undefined);
+        if (!slug) throw new Error("Cannot determine loan type for this application.");
+        await deleteLoanBySlug(slug, loan._id);
+      }
+      setLoans((prev) => prev.filter((l) => l._id !== pendingDelete._id));
+      setPendingDelete(null);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Unable to delete this record."));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const products = useMemo(
     () => ["All", ...Array.from(new Set(loans.map((loan) => loan.productLabel))).sort()],
@@ -261,13 +287,29 @@ export default function RejectedLoans() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-5 py-14 text-center">
-            <ShieldAlert size={30} className="mx-auto text-slate-300" />
-            <p className="mt-3 text-sm font-semibold text-slate-500">
-              {loans.length === 0 ? "No rejected applications yet." : "No rejected loans match this filter."}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Rule se reject hone par application yahin dikhegi, reject reason ke saath.
-            </p>
+            {channel === "franchise" ? (
+              <>
+                <Building2 size={30} className="mx-auto text-slate-300" />
+                <p className="mt-3 text-sm font-semibold text-slate-500">
+                  {loans.length === 0
+                    ? "No rejected franchise applications."
+                    : "No rejected franchise applications match this filter."}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Jab admin kisi franchise application ko reject karta hai, wo yahin dikhega — rejection note ke saath.
+                </p>
+              </>
+            ) : (
+              <>
+                <ShieldAlert size={30} className="mx-auto text-slate-300" />
+                <p className="mt-3 text-sm font-semibold text-slate-500">
+                  {loans.length === 0 ? "No rejected applications yet." : "No rejected loans match this filter."}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Rule se reject hone par application yahin dikhegi, reject reason ke saath.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -275,11 +317,15 @@ export default function RejectedLoans() {
               <thead>
                 <tr className={THEAD}>
                   <th className="px-5 py-2.5">Application</th>
-                  <th className="px-4 py-2.5">Applicant</th>
+                  <th className="px-4 py-2.5">
+                    {channel === "franchise" ? "Franchise" : "Applicant"}
+                  </th>
                   <th className="px-4 py-2.5">Amount</th>
-                  <th className="px-4 py-2.5">Rejection reason</th>
+                  <th className="px-4 py-2.5">
+                    {channel === "franchise" ? "Admin rejection note" : "Rejection reason"}
+                  </th>
                   <th className="px-4 py-2.5">Rejected</th>
-                  <th className="px-5 py-2.5 text-right">Detail</th>
+                  <th className="px-5 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -288,48 +334,110 @@ export default function RejectedLoans() {
                   const when = formatDateTimeParts(
                     loan.rejectedAt || loan.autoRejectedAt || loan.createdAt
                   );
+                  const isFranchiseRow = (loan.channel ?? "customer") === "franchise";
+
                   return (
                     <tr key={`${loan.resource}-${loan._id}`} className="transition hover:bg-slate-50">
+                      {/* ── Application / Franchise ID column ── */}
                       <td className="px-5 py-3">
-                        <p className="whitespace-nowrap font-mono text-xs text-slate-600">
-                          {loan.applicationNo || "—"}
-                        </p>
-                        <span className="mt-1 inline-block whitespace-nowrap rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-                          {loan.productLabel}
-                        </span>
+                        {isFranchiseRow ? (
+                          <>
+                            <p className="whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                              {loan.franchiseCode || "—"}
+                            </p>
+                            <span className="mt-1 inline-block whitespace-nowrap rounded-lg bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                              Franchise application
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <p className="whitespace-nowrap font-mono text-xs text-slate-600">
+                              {loan.applicationNo || "—"}
+                            </p>
+                            <span className="mt-1 inline-block whitespace-nowrap rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                              {loan.productLabel}
+                            </span>
+                          </>
+                        )}
                       </td>
+
+                      {/* ── Applicant / Franchise details column ── */}
                       <td className="px-4 py-3">
-                        <p className="whitespace-nowrap font-semibold text-slate-700">
-                          {loan.fullName || "—"}
-                        </p>
-                        <p className="whitespace-nowrap text-xs text-slate-400">{loan.mobile || ""}</p>
-                        {/* Applicant ka channel — teen alag types, ek hi jagah define. */}
-                        <span
-                          title={channelBadge(loan).title}
-                          className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${channelBadge(loan).className}`}
-                        >
-                          {channelBadge(loan).label}
-                        </span>
+                        {isFranchiseRow ? (
+                          <>
+                            <p className="whitespace-nowrap font-semibold text-slate-800">
+                              {loan.fullName || "—"}
+                            </p>
+                            {loan.mobile && (
+                              <p className="whitespace-nowrap text-xs text-slate-400">{loan.mobile}</p>
+                            )}
+                            {/* Franchise code badge */}
+                            {loan.franchiseCode && (
+                              <span className="mt-1 inline-block whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600">
+                                {loan.franchiseCode}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <p className="whitespace-nowrap font-semibold text-slate-700">
+                              {loan.fullName || "—"}
+                            </p>
+                            <p className="whitespace-nowrap text-xs text-slate-400">{loan.mobile || ""}</p>
+                            <span
+                              title={channelBadge(loan).title}
+                              className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${channelBadge(loan).className}`}
+                            >
+                              {channelBadge(loan).label}
+                            </span>
+                          </>
+                        )}
                       </td>
+
+                      {/* ── Amount ── */}
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-700">
                         {typeof loan.loanAmount === "number" ? INR.format(loan.loanAmount) : "—"}
                       </td>
 
-                      {/* ══ Reject reason — highlight ══ */}
+                      {/* ── Rejection reason / Admin note ── */}
                       <td className="px-4 py-3">
-                        <div>
-                          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700">
-                            {loan.rejectionReason || "No reason recorded."}
-                          </p>
-                          <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-slate-400">
-                            {loan.employmentType && <span>{loan.employmentType}</span>}
-                            {loan.companyType && <span>· {loan.companyType}</span>}
-                            {loan.salaryReceivedAs && <span>· {loan.salaryReceivedAs}</span>}
-                            {typeof loan.creditScore === "number" && <span>· Score {loan.creditScore}</span>}
+                        {isFranchiseRow ? (
+                          <div className="space-y-1.5">
+                            {/* Admin note block — prominent */}
+                            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-red-500">
+                                Admin note
+                              </p>
+                              <p className="text-xs font-semibold leading-relaxed text-red-700">
+                                {loan.rejectionReason
+                                  ? loan.rejectionReason
+                                  : <span className="italic text-red-400">No rejection note provided by admin.</span>
+                                }
+                              </p>
+                            </div>
+                            {/* Who rejected */}
+                            {loan.rejectedBy && (
+                              <p className="text-[10px] text-slate-400">
+                                Rejected by: <span className="font-medium text-slate-600">{loan.rejectedBy}</span>
+                              </p>
+                            )}
                           </div>
-                        </div>
+                        ) : (
+                          <div>
+                            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700">
+                              {loan.rejectionReason || "No reason recorded."}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-slate-400">
+                              {loan.employmentType && <span>{loan.employmentType}</span>}
+                              {loan.companyType && <span>· {loan.companyType}</span>}
+                              {loan.salaryReceivedAs && <span>· {loan.salaryReceivedAs}</span>}
+                              {typeof loan.creditScore === "number" && <span>· Score {loan.creditScore}</span>}
+                            </div>
+                          </div>
+                        )}
                       </td>
 
+                      {/* ── Rejected date ── */}
                       <td className="px-4 py-3">
                         <p className="whitespace-nowrap text-xs text-slate-500">
                           {when ? when.date : "—"}
@@ -337,40 +445,61 @@ export default function RejectedLoans() {
                         <p className="whitespace-nowrap text-xs text-slate-400">
                           {when ? when.time : ""}
                         </p>
-                        <span
-                          title={
-                            loan.isAutoRejected
-                              ? "Eligibility rule (company type / salary received / credit score) ne auto-reject kiya — record 30 din baad apne aap delete ho jaayega."
-                              : `Admin ne manually reject kiya${
-                                  loan.rejectedBy ? ` (${loan.rejectedBy})` : ""
-                                } — record permanent rehta hai.`
-                          }
-                          className={`mt-1.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            loan.isAutoRejected
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-slate-200 text-slate-600"
-                          }`}
-                        >
-                          {loan.isAutoRejected ? "Rule" : "Admin"}
-                        </span>
-                        {/* Kisne reject kiya — rule ki wajah ya kaun sa admin. */}
-                        <p className="mt-1 whitespace-nowrap text-[10px] text-slate-400">
-                          {loan.isAutoRejected
-                            ? "by eligibility rule"
-                            : `by ${loan.rejectedBy || "Admin"}`}
-                        </p>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {slug ? (
-                          <Link
-                            to={`/applications/${slug}/${loan._id}`}
-                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                          >
-                            <Eye size={13} /> View
-                          </Link>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
+                        {!isFranchiseRow && (
+                          <>
+                            <span
+                              title={
+                                loan.isAutoRejected
+                                  ? "Eligibility rule ne auto-reject kiya — record 30 din baad delete ho jaayega."
+                                  : `Admin ne manually reject kiya${loan.rejectedBy ? ` (${loan.rejectedBy})` : ""} — record permanent rehta hai.`
+                              }
+                              className={`mt-1.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                loan.isAutoRejected
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-slate-200 text-slate-600"
+                              }`}
+                            >
+                              {loan.isAutoRejected ? "Rule" : "Admin"}
+                            </span>
+                            <p className="mt-1 whitespace-nowrap text-[10px] text-slate-400">
+                              {loan.isAutoRejected ? "by eligibility rule" : `by ${loan.rejectedBy || "Admin"}`}
+                            </p>
+                          </>
                         )}
+                      </td>
+
+                      {/* ── Actions: View + Delete ── */}
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* View button */}
+                          {isFranchiseRow ? (
+                            loan._id ? (
+                              <Link
+                                to={`/franchises/${encodeURIComponent(loan._id)}`}
+                                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                              >
+                                <Building2 size={13} /> View Franchise
+                              </Link>
+                            ) : null
+                          ) : slug ? (
+                            <Link
+                              to={`/applications/${slug}/${loan._id}`}
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                            >
+                              <Eye size={13} /> View
+                            </Link>
+                          ) : null}
+                          {/* Delete button — always shown */}
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete(loan)}
+                            aria-label={`Delete ${loan.fullName || "this record"}`}
+                            title="Delete this record permanently"
+                            className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-white p-1.5 text-red-500 transition hover:bg-red-50 hover:text-red-700"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -387,6 +516,27 @@ export default function RejectedLoans() {
           baad apne aap delete ho jaate hain (customer tab tak usi product par dobara apply nahi
           kar sakta).
         </p>
+      )}
+
+      {/* ── Delete confirmation ─────────────────────────────────────────── */}
+      {pendingDelete && (
+        <ConfirmDialog
+          title={
+            (pendingDelete.channel ?? "customer") === "franchise"
+              ? `Delete franchise "${pendingDelete.fullName || pendingDelete.franchiseCode || "this record"}"?`
+              : `Delete application "${pendingDelete.applicationNo || pendingDelete._id.slice(-8).toUpperCase()}"?`
+          }
+          message={
+            (pendingDelete.channel ?? "customer") === "franchise"
+              ? "This will permanently delete the franchise account. The applicant will no longer be able to log in. This cannot be undone."
+              : "This will permanently delete this loan application record. The customer will be able to re-apply for the same product. This cannot be undone."
+          }
+          confirmLabel="Delete permanently"
+          danger={true}
+          isSubmitting={isDeleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </AdminLayout>
   );

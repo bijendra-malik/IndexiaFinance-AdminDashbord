@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Check, Copy, Eye, EyeOff, FileText, LoaderCircle, Mail, MapPin,
   Phone, RefreshCw, ShieldCheck, UserRound, Users, X,
+  AlertTriangle, Calendar, Clock, MessageSquare, Trash2,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -11,6 +12,7 @@ import { LOAN_TYPES } from "../../constants/loanTypes";
 import { SUPPORTED_LOAN_SLUGS } from "../../api/personalLoans";
 import {
   approveFranchise,
+  deleteFranchise,
   getApiErrorMessage,
   getFranchise,
   getFranchiseLoans,
@@ -84,6 +86,8 @@ const FranchiseDetail = () => {
   const [showReject, setShowReject] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -197,6 +201,21 @@ const FranchiseDetail = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!franchise) return;
+    setIsDeleting(true);
+    try {
+      await deleteFranchise(franchise._id);
+      showToast(`"${displayName(franchise)}" deleted successfully.`, "success");
+      navigate("/franchises");
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Unable to delete this franchise."), "error");
+    } finally {
+      setIsDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   const copyCredential = async (value: string | undefined, label: string) => {
     if (!value) return;
     try {
@@ -231,6 +250,16 @@ const FranchiseDetail = () => {
           >
             <Users size={14} /> View customers
           </Link>
+          {franchise && (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              disabled={isDeleting}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setRefreshKey((key) => key + 1)}
@@ -674,6 +703,20 @@ const FranchiseDetail = () => {
         <p className="mt-4 flex items-center justify-center gap-2 text-sm text-slate-500">
           <LoaderCircle size={16} className="animate-spin" /> Loading franchise details...
         </p>
+      )}
+
+      {/* ── Delete confirmation ────────────────────────────────────────── */}
+      {franchise && confirmDelete && (
+        <ConfirmDialog
+          title={`Delete "${displayName(franchise)}"?`}
+          message="This will permanently remove the franchise account, all its data, and cannot be undone. Customers linked to this franchise will lose their franchise association."
+          confirmText={franchise.franchiseId || franchise.panNumber || displayName(franchise)}
+          confirmLabel="Delete Franchise"
+          danger={true}
+          isSubmitting={isDeleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setConfirmDelete(false)}
+        />
       )}
     </AdminLayout>
   );
