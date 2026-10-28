@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Building2, Check, Copy, Eye, EyeOff, FileText, LoaderCircle, Mail, MapPin,
+  ArrowLeft, Building2, Check, Coins, Copy, Eye, EyeOff, FileText, LoaderCircle, Mail, MapPin,
   Phone, RefreshCw, ShieldCheck, UserRound, Users, X,
   Trash2,
 } from "lucide-react";
@@ -398,9 +398,62 @@ const FranchiseDetail = () => {
               </dl>
             </Section>
 
-            {/* ── Location & timeline ─────────────────────────────────────── */}
+            {/* ── Investment Plan Details ────────────────────────────────── */}
+            {franchise.plan && (
+              <Section title="Investment Plan" icon={<Coins size={17} />}>
+                <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                  <Field label="Plan code">
+                    <span className="font-mono text-xs">{franchise.plan.code || "—"}</span>
+                  </Field>
+                  <Field label="Plan name">{franchise.plan.name}</Field>
+                  <Field label="Duration">
+                    {franchise.plan.durationMonths ? `${franchise.plan.durationMonths} month${franchise.plan.durationMonths !== 1 ? "s" : ""}` : "—"}
+                  </Field>
+                  <Field label="Fee (excl. GST)">{formatCurrency(franchise.plan.fee)}</Field>
+                  <Field label="GST">
+                    {franchise.plan.gstPercent ? `${franchise.plan.gstPercent}% (${formatCurrency(franchise.plan.gstAmount)})` : "—"}
+                  </Field>
+                  <Field label="Total (incl. GST)">
+                    <span className="font-semibold">{formatCurrency(franchise.plan.totalWithGst)}</span>
+                  </Field>
+                  <Field label="Renewal fee">
+                    {franchise.plan.renewalFee !== undefined
+                      ? franchise.plan.renewalFee === null
+                        ? franchise.plan.renewalNote || "As applicable"
+                        : formatCurrency(franchise.plan.renewalFee)
+                      : "—"}
+                  </Field>
+                  <Field label="Plan snapshot taken">
+                    {formatDateTime(franchise.plan.snapshotAt)}
+                  </Field>
+                </dl>
+                <p className="mt-4 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                  This is the plan pricing snapshot at the time of application. Current plan pricing may differ.
+                </p>
+              </Section>
+            )}
+
+            {/* Show Location & timeline in same row only if plan exists, otherwise it takes full width below */}
+            {!franchise.plan && (
+              <Section title="Location & timeline" icon={<MapPin size={17} />}>
+                <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                  <Field label="Address">{franchise.address}</Field>
+                  <Field label="Pincode">{franchise.pincode}</Field>
+                  <Field label="City / state / country">{locationOf(franchise)}</Field>
+                  <Field label="Registered on">{formatDate(franchise.createdAt)}</Field>
+                  <Field label="Applied on">{formatDate(franchise.franchiseAppliedAt)}</Field>
+                  <Field label="Approved on">{formatDate(franchise.franchiseApprovedAt)}</Field>
+                  <Field label="Rejected on">{formatDate(franchise.franchiseRejectedAt)}</Field>
+                  <Field label="Last updated">{formatDateTime(franchise.updatedAt)}</Field>
+                </dl>
+              </Section>
+            )}
+          </div>
+
+          {/* Location & timeline - full width when plan exists */}
+          {franchise.plan && (
             <Section title="Location & timeline" icon={<MapPin size={17} />}>
-              <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+              <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label="Address">{franchise.address}</Field>
                 <Field label="Pincode">{franchise.pincode}</Field>
                 <Field label="City / state / country">{locationOf(franchise)}</Field>
@@ -411,7 +464,7 @@ const FranchiseDetail = () => {
                 <Field label="Last updated">{formatDateTime(franchise.updatedAt)}</Field>
               </dl>
             </Section>
-          </div>
+          )}
 
           {/* ── Credentials ───────────────────────────────────────────────── */}
           {isApproved && (

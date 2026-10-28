@@ -3,6 +3,21 @@ import { getApiErrorMessage } from "../utils/apiError";
 
 export { getApiErrorMessage };
 
+export interface FranchisePlanSnapshot {
+  plan?: string;
+  code?: string;
+  name?: string;
+  durationMonths?: number;
+  fee?: number;
+  currency?: string;
+  gstPercent?: number;
+  gstAmount?: number;
+  totalWithGst?: number;
+  renewalFee?: number | null;
+  renewalNote?: string;
+  snapshotAt?: string;
+}
+
 export interface Franchise {
   _id: string;
   franchiseId?: string;
@@ -20,6 +35,7 @@ export interface Franchise {
   status?: string;
   panNumber?: string;
   package?: string;
+  plan?: FranchisePlanSnapshot;
   isVerified?: boolean;
   isActive?: boolean;
   lastLogin?: string;
@@ -102,6 +118,25 @@ const toCredentials = (value: unknown): FranchiseCredentials => {
   };
 };
 
+const toFranchisePlan = (value: unknown): FranchisePlanSnapshot | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const plan = recordOf(value);
+  return {
+    plan: optionalText(plan.plan ?? plan._id ?? plan.id),
+    code: optionalText(plan.code),
+    name: optionalText(plan.name),
+    durationMonths: typeof plan.durationMonths === "number" ? plan.durationMonths : undefined,
+    fee: typeof plan.fee === "number" ? plan.fee : undefined,
+    currency: optionalText(plan.currency),
+    gstPercent: typeof plan.gstPercent === "number" ? plan.gstPercent : undefined,
+    gstAmount: typeof plan.gstAmount === "number" ? plan.gstAmount : undefined,
+    totalWithGst: typeof plan.totalWithGst === "number" ? plan.totalWithGst : undefined,
+    renewalFee: plan.renewalFee === null ? null : typeof plan.renewalFee === "number" ? plan.renewalFee : undefined,
+    renewalNote: optionalText(plan.renewalNote),
+    snapshotAt: optionalText(plan.snapshotAt),
+  };
+};
+
 const toFranchise = (value: unknown): Franchise => {
   const item = recordOf(value);
   const business = recordOf(item.businessDetails ?? item.businessInfo ?? item.business);
@@ -113,6 +148,7 @@ const toFranchise = (value: unknown): Franchise => {
     : item.credentials !== undefined
       ? toCredentials(item.credentials)
       : undefined;
+  const plan = toFranchisePlan(item.plan);
   return {
     _id: optionalText(item._id ?? item.id) ?? "",
     franchiseId: firstText(item.franchiseId, item.loginId, recordOf(credentials).loginId),
@@ -129,7 +165,8 @@ const toFranchise = (value: unknown): Franchise => {
     country: firstText(item.country, location.country),
     status: firstText(item.franchiseStatus, application.status, item.status),
     panNumber: firstText(item.panNumber, item.pan, business.panNumber, contact.panNumber),
-    package: firstText(item.package, item.packageName, business.package, business.packageName),
+    package: firstText(item.package, item.packageName, business.package, business.packageName, plan?.name),
+    plan,
     isVerified: typeof item.isVerified === "boolean" ? item.isVerified : undefined,
     isActive: typeof item.isActive === "boolean" ? item.isActive : undefined,
     lastLogin: optionalText(item.lastLogin),
