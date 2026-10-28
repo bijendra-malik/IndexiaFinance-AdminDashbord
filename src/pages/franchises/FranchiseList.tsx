@@ -1,19 +1,21 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, Clock3, Mail, Phone, MapPin, XCircle } from "lucide-react";
+import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, Clock3, Mail, Phone, MapPin, Trash2, XCircle } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Pagination from "../../components/common/Pagination";
 import FilterSelect from "../../components/common/FilterSelect";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import StatusPill from "./components/StatusPill";
-import { getApiErrorMessage, getFranchises, type Franchise } from "../../api/franchises";
+import { deleteFranchise, getApiErrorMessage, getFranchises, type Franchise } from "../../api/franchises";
 import {
   BRAND_GRADIENT, STATUS_FILTER_OPTIONS,
   contactName, displayName, formatDate, initialsOf, locationOf,
 } from "./franchiseUtils";
 import SearchBar from "../../components/common/SearchBar";
+import { useToast } from "../../context/ToastContext";
 
 const PAGE_SIZE = 20;
 
@@ -33,6 +35,9 @@ const FranchiseList = () => {
   const [refreshKey, setRefreshKey]       = useState(0);
   const [state, setState]                 = useState<ListState | null>(null);
   const [counts, setCounts]               = useState<AllCounts | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Franchise | null>(null);
+  const [isDeleting, setIsDeleting]       = useState(false);
+  const { showToast }                     = useToast();
 
   // Paginated list
   useEffect(() => {
@@ -74,6 +79,22 @@ const FranchiseList = () => {
   const hasFilters = appliedSearch !== "" || status !== "All";
 
   const clearFilters = () => { setSearch(""); setAppliedSearch(""); setStatus("All"); setPage(1); };
+
+  const handleDelete = async () => {
+    if (!pendingDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteFranchise(pendingDelete._id);
+      showToast(`"${displayName(pendingDelete)}" deleted.`, "success");
+      setPendingDelete(null);
+      // The deleted row must leave the list, and the stat cards must re-count.
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      showToast(getApiErrorMessage(e, "Unable to delete this franchise."), "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <AdminLayout>
@@ -178,10 +199,19 @@ const FranchiseList = () => {
                       <td className="px-4 py-3.5"><StatusPill status={item.status} /></td>
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-right">
-                        <Link to={`/franchises/${encodeURIComponent(item._id)}`} aria-label={`View ${displayName(item)}`}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
-                          View <ChevronRight size={13} />
-                        </Link>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Link to={`/franchises/${encodeURIComponent(item._id)}`} aria-label={`View ${displayName(item)}`}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
+                            View <ChevronRight size={13} />
+                          </Link>
+                          <button type="button" onClick={() => setPendingDelete(item)}
+                            disabled={isDeleting}
+                            aria-label={`Delete ${displayName(item)}`}
+                            title="Delete this franchise permanently"
+                            className="rounded-lg border border-red-200 bg-white p-2 text-red-500 shadow-sm transition hover:bg-red-50 hover:text-red-700 disabled:opacity-40">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -192,6 +222,19 @@ const FranchiseList = () => {
           </>
         )}
       </TableCard>
+
+      {/* ── Delete confirmation ───────────────────────────────────────────── */}
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete "${displayName(pendingDelete)}"?`}
+          message="This permanently deletes the franchise account and its login access. The partner will no longer be able to sign in. This cannot be undone."
+          confirmText={pendingDelete.franchiseId || pendingDelete.email}
+          confirmLabel="Delete franchise"
+          isSubmitting={isDeleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
 
       {/* Pending queue nudge */}
       {counts && counts.pending > 0 && status !== "Pending" && (

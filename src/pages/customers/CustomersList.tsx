@@ -325,6 +325,16 @@ const CustomersList = () => {
                             {updatingId === c._id ? <LoaderCircle size={14} className="animate-spin" /> : c.isActive ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
                             {c.isActive ? "Disable" : "Enable"}
                           </button>
+                          {/* Row delete — the drawer footer has the same action.
+                              Whether the customer may go is decided by the backend:
+                              it answers 409 while Submitted/Pending applications
+                              exist, and handleDelete surfaces that message. */}
+                          <button onClick={() => setPendingDelete(c)} disabled={isDeleting || updatingId === c._id}
+                            aria-label={`Delete ${c.name}`}
+                            title="Delete this customer permanently"
+                            className="rounded-lg border border-red-200 bg-white p-2 text-red-500 shadow-sm transition hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40">
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
