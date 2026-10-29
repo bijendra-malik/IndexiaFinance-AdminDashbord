@@ -92,45 +92,6 @@ export const deleteMaster = async (id: string): Promise<void> => {
   await axiosInstance.delete(`/masters/${id}`);
 };
 
-// ── States & Cities API ───────────────────────────────────────────────────────
-
-/** POST /api/admin/masters/states — add a single state */
-export const addState = async (state: string): Promise<void> => {
-  await axiosInstance.post("/masters/states", { state });
-};
-
-/** DELETE /api/admin/masters/states/:state — remove a single state */
-export const deleteState = async (state: string): Promise<void> => {
-  await axiosInstance.delete(`/masters/states/${encodeURIComponent(state)}`);
-};
-
-/** POST /api/admin/masters/states/:state/cities — add a single city */
-export const addCity = async (state: string, city: string): Promise<void> => {
-  await axiosInstance.post(
-    `/masters/states/${encodeURIComponent(state)}/cities`,
-    { city }
-  );
-};
-
-/** PUT /api/admin/masters/states/:state/cities/:city — rename a city */
-export const updateCity = async (
-  state: string,
-  oldCity: string,
-  newCity: string
-): Promise<void> => {
-  await axiosInstance.put(
-    `/masters/states/${encodeURIComponent(state)}/cities/${encodeURIComponent(oldCity)}`,
-    { city: newCity }
-  );
-};
-
-/** DELETE /api/admin/masters/states/:state/cities/:city — remove a city */
-export const deleteCity = async (state: string, city: string): Promise<void> => {
-  await axiosInstance.delete(
-    `/masters/states/${encodeURIComponent(state)}/cities/${encodeURIComponent(city)}`
-  );
-};
-
 // ── Banks API ─────────────────────────────────────────────────────────────────
 //
 // KEEP these on purpose. The "custom bank" flow — a bank that is not in the
@@ -210,35 +171,4 @@ export const getMasterByType = async (type: string): Promise<MasterDetail> => {
     });
   }
   return getMaster(found._id);
-};
-
-// ── Bootstrap helpers ─────────────────────────────────────────────────────────
-
-export interface MasterDef {
-  type: string;
-  label: string;
-  /** Initial values used only when the master does not exist yet. */
-  values: MasterValues;
-}
-
-/**
- * Loads several masters in one pass and creates any that are missing.
- * Avoids N+1 calls: the summary list is fetched once, then each master is read
- * (or created) individually. Returns a map keyed by `type`.
- */
-export const ensureMasters = async (
-  defs: MasterDef[]
-): Promise<Record<string, MasterDetail>> => {
-  const existing = await getMasters();
-  const byType = new Map(existing.map((m) => [m.type, m]));
-  const out: Record<string, MasterDetail> = {};
-
-  for (const def of defs) {
-    const found = byType.get(def.type);
-    out[def.type] = found
-      ? await getMaster(found._id)
-      : await createMaster({ type: def.type, label: def.label, values: def.values });
-  }
-
-  return out;
 };

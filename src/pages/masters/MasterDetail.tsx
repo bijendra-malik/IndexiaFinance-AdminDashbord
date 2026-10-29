@@ -46,30 +46,42 @@ const MasterDetail = () => {
 
   // ── Load ─────────────────────────────────────────────────────────────────────
 
-  const load = async () => {
-    if (!id && !type) return;
+  const load = () =>
+    Promise.resolve()
+      .then(() => {
+        if (!id && !type) return null;
+        return id ? getMaster(id) : getMasterByType(type!);
+      })
+      .then((data) => {
+        if (!data) return;
+        setMaster(data);
+        setValuesDraft(data.values);
+        setSelectedGroup(
+          isGroupedValues(data.values) ? Object.keys(data.values)[0] ?? null : null
+        );
+      })
+      .catch((err: unknown) => {
+        const anyErr = err as { response?: { status?: number } };
+        if (anyErr?.response?.status === 404) {
+          setNotFound(true);
+        } else {
+          setLoadError(getApiErrorMessage(err, "Unable to load this master."));
+        }
+      });
+
+  // Switching master clears the previous record during render; the effect below
+  // only fetches.
+  const [seenKey, setSeenKey] = useState<string | null>(id ?? type ?? null);
+  const loadKey = id ?? type ?? null;
+  if (loadKey !== seenKey) {
+    setSeenKey(loadKey);
     setLoadError("");
     setNotFound(false);
     setMaster(null);
-    try {
-      const data = id ? await getMaster(id) : await getMasterByType(type!);
-      setMaster(data);
-      setValuesDraft(data.values);
-      setSelectedGroup(
-        isGroupedValues(data.values) ? Object.keys(data.values)[0] ?? null : null
-      );
-    } catch (err) {
-      const anyErr = err as { response?: { status?: number } };
-      if (anyErr?.response?.status === 404) {
-        setNotFound(true);
-      } else {
-        setLoadError(getApiErrorMessage(err, "Unable to load this master."));
-      }
-    }
-  };
+  }
 
   useEffect(() => {
-    load();
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, type]);
 

@@ -1,4 +1,3 @@
-import axios from "axios";
 import axiosInstance from "./axiosInstance";
 
 export type LocationStatus = "active" | "inactive" | "coming_soon";
@@ -37,20 +36,6 @@ export interface LocationCounts {
   totalStates: number;
   totalCities: number;
   totalPincodes: number;
-}
-
-export interface PublicPincodeMatch {
-  pincode: string;
-  prefix: string;
-  status: LocationStatus;
-  city: string;
-  cityId: string;
-  state: string;
-  stateId: string;
-  country: string;
-  countryId: string;
-  continent: string;
-  continentId: string;
 }
 
 const resourcePath = (resource: LocationResource) => `/masters/location/${resource}`;
@@ -209,39 +194,4 @@ export const deleteLocationRecord = async (
   const params: Record<string, string> = {};
   if (options.force) params.force = "true";
   await axiosInstance.delete(`${resourcePath(resource)}/${encodeURIComponent(id)}`, { params });
-};
-
-const adminBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/admin";
-const publicBaseUrl = import.meta.env.VITE_PUBLIC_API_BASE_URL || adminBaseUrl.replace(/\/admin\/?$/, "");
-const publicLocationClient = axios.create({
-  baseURL: publicBaseUrl,
-  headers: { "Content-Type": "application/json" },
-});
-
-export const lookupPublicPincode = async (pincode: string): Promise<PublicPincodeMatch> => {
-  const response = await publicLocationClient.get(`/masters/location/pincode/${encodeURIComponent(pincode)}`);
-  return unwrap(response.data) as unknown as PublicPincodeMatch;
-};
-
-export const searchPublicPincodes = async (
-  query: string,
-  limit = 10
-): Promise<unknown[]> => {
-  const response = await publicLocationClient.get("/masters/location/pincode", {
-    params: { q: query, limit },
-  });
-  const payload = unwrap(response.data);
-  return Array.isArray(payload.data) ? payload.data : [];
-};
-
-export const getPublicLocationOptions = async <T = unknown>(
-  resource: "countries" | "states" | "cities",
-  parentId?: string
-): Promise<T[]> => {
-  const params = parentId
-    ? { [`${resource === "states" ? "country" : "state"}Id`]: parentId }
-    : undefined;
-  const response = await publicLocationClient.get(`/masters/location/${resource}`, { params });
-  const payload = unwrap(response.data);
-  return Array.isArray(payload.data) ? (payload.data as T[]) : [];
 };

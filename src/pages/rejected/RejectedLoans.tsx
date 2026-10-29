@@ -103,21 +103,27 @@ export default function RejectedLoans() {
   const { channel: channelParam } = useParams<{ channel?: string }>();
   const channel = channelFromParam(channelParam);
 
-  const load = async () => {
+  const load = () =>
+    getRejectedLoans()
+      .then((list) => {
+        setError("");
+        setLoans(list);
+      })
+      .catch((err: unknown) => {
+        setError(getApiErrorMessage(err, "Unable to load rejected loans."));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+
+  /** Manual retry — an event handler may flip the loading flag synchronously. */
+  const refresh = () => {
     setLoading(true);
-    setError("");
-    try {
-      setLoans(await getRejectedLoans());
-    } catch (err) {
-      setError(getApiErrorMessage(err, "Unable to load rejected loans."));
-    } finally {
-      setLoading(false);
-    }
+    void load();
   };
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleDelete = async () => {
@@ -269,7 +275,7 @@ export default function RejectedLoans() {
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <span className="min-w-0">{error}</span>
           <button
-            onClick={() => void load()}
+            onClick={refresh}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white hover:bg-red-700"
           >
             <RefreshCw size={13} /> Retry

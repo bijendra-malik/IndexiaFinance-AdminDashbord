@@ -67,7 +67,7 @@ const FranchiseList = () => {
       });
     });
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [refreshKey]);
 
   const active     = state?.key === buildKey(status, appliedSearch, page, refreshKey) ? state : null;

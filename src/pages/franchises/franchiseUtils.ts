@@ -8,7 +8,6 @@
 import type { Franchise } from "../../api/franchises";
 
 export const BRAND_GRADIENT = "linear-gradient(135deg, rgb(6, 106, 156), rgb(38, 174, 144))";
-export const BRAND_BLUE = "rgb(0, 102, 153)";
 
 /** Business name is the most meaningful label; fall back through the rest. */
 export const displayName = (franchise: Franchise): string =>

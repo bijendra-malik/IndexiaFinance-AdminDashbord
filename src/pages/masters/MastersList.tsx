@@ -25,15 +25,15 @@ const MastersList = () => {
   const [pendingDelete, setPendingDelete] = useState<MasterSummary | null>(null);
   const [isDeleting, setIsDeleting]     = useState(false);
 
-  const load = async () => {
-    setError("");
-    try {
-      const list = await getMasters();
-      setMasters(list.filter((m) => !isLocationMasterType(m.type)));
-    } catch (err) {
-      setError(getApiErrorMessage(err, "Unable to load masters."));
-    }
-  };
+  const load = () =>
+    getMasters()
+      .then((list) => {
+        setError("");
+        setMasters(list.filter((m) => !isLocationMasterType(m.type)));
+      })
+      .catch((err: unknown) => {
+        setError(getApiErrorMessage(err, "Unable to load masters."));
+      });
 
   useEffect(() => { void load(); }, []);
 

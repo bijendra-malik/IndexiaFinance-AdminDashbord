@@ -83,15 +83,18 @@ const CustomersList = () => {
   const [isDeleting, setIsDeleting]             = useState(false);
 
   // ── Data loading ─────────────────────────────────────────────────────────
-  const load = async () => {
-    setError("");
-    try {
-      setCustomers(await getCustomers({
-        search: appliedSearch || undefined,
-        isActive: activeFilter === "all" ? undefined : activeFilter === "active",
-      }));
-    } catch (e) { setError(getApiErrorMessage(e, "Unable to load customers.")); }
-  };
+  const load = () =>
+    getCustomers({
+      search: appliedSearch || undefined,
+      isActive: activeFilter === "all" ? undefined : activeFilter === "active",
+    })
+      .then((list) => {
+        setError("");
+        setCustomers(list);
+      })
+      .catch((e: unknown) => {
+        setError(getApiErrorMessage(e, "Unable to load customers."));
+      });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [appliedSearch, activeFilter]);

@@ -278,21 +278,3 @@ export const deleteLoanBySlug = async (slug: string, id: string): Promise<void> 
   if (import.meta.env.DEV) console.log(`[loans] DELETE ${path}`);
   await axiosInstance.delete(path);
 };
-
-// ── Keep named exports for any direct usage ───────────────────────────────────
-
-export const getPersonalLoans  = () => getLoansBySlug("personal-loan");
-export const getBusinessLoans  = () => getLoansBySlug("business-loan");
-export const getHomeLoans      = () => getLoansBySlug("home-loan");
-export const getGoldLoans      = () => getLoansBySlug("gold-loan");
-export const getFdiLoans       = () => getLoansBySlug("fdi-loan");
-
-export const getPersonalLoan   = (id: string) => getLoanBySlug("personal-loan", id);
-export const getBusinessLoan   = (id: string) => getLoanBySlug("business-loan", id);
-export const getHomeLoan       = (id: string) => getLoanBySlug("home-loan", id);
-export const getGoldLoan       = (id: string) => getLoanBySlug("gold-loan", id);
-export const getFdiLoan        = (id: string) => getLoanBySlug("fdi-loan", id);
-
-export const deletePersonalLoan = (id: string) => deleteLoanBySlug("personal-loan", id);
-export const deleteGoldLoan     = (id: string) => deleteLoanBySlug("gold-loan", id);
-export const deleteFdiLoan      = (id: string) => deleteLoanBySlug("fdi-loan", id);

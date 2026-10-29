@@ -43,19 +43,30 @@ const LoanApplicationsList = () => {
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  const load = async () => {
-    setError("");
-    try {
-      if (!isSupported) { setLoans([]); return; }
-      const data = await getLoansBySlug(loanType!);
-      setLoans(data); setPage(1);
-    } catch (err) {
-      setError(getApiErrorMessage(err, "Unable to load applications."));
-    }
-  };
+  const load = () =>
+    (isSupported ? getLoansBySlug(loanType!) : Promise.resolve(null))
+      .then((data) => {
+        setError("");
+        setLoans(data ?? []);
+        setPage(1);
+      })
+      .catch((err: unknown) => {
+        setError(getApiErrorMessage(err, "Unable to load applications."));
+      });
+
+  // Switching product resets the list state during render; the effect below
+  // only fetches.
+  const [seenLoanType, setSeenLoanType] = useState(loanType);
+  if (loanType !== seenLoanType) {
+    setSeenLoanType(loanType);
+    setLoans(null);
+    setPage(1);
+    setSearch("");
+    setStatusFilter("All");
+  }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setLoans(null); setPage(1); setSearch(""); setStatusFilter("All"); void load(); }, [loanType]);
+  useEffect(() => { void load(); }, [loanType]);
 
   const filtered = useMemo(() => {
     if (!loans) return [];

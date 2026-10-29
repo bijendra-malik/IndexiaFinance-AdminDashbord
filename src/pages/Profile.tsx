@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Lock, Mail, Settings,
@@ -55,12 +55,15 @@ const ProfileTab = () => {
   const [errors, setErrors]       = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (admin) {
-      setName(admin.name ?? "");
-      setEmail(admin.email ?? "");
-    }
-  }, [admin]);
+  // Re-sync the drafts whenever the admin record itself changes (profile
+  // refetch after sign-in, or a save made elsewhere). The guarded pattern React
+  // recommends, instead of an effect that copies state during render.
+  const [syncedAdmin, setSyncedAdmin] = useState(admin);
+  if (admin !== syncedAdmin) {
+    setSyncedAdmin(admin);
+    setName(admin?.name ?? "");
+    setEmail(admin?.email ?? "");
+  }
 
   const isDirty = name.trim() !== (admin?.name ?? "") || email.trim() !== (admin?.email ?? "");
 
