@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle, CheckCircle2, Clock, FileText, RefreshCw, XCircle,
 } from "lucide-react";
@@ -6,27 +7,34 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { getDashboardStats, type DashboardStats } from "../../api/dashboard";
+import { LOAN_TYPES } from "../../constants/loanTypes";
 import {
-  BRAND, formatCompactCurrency, formatCurrency, formatDateTime, percentOf, type Bucket,
+  BRAND, applicationDetailPath, formatCompactCurrency, formatCurrency, formatDateTime, percentOf, shortDate, type Bucket,
 } from "./dashboardUtils";
 import { ContextStrip, DataWarning, KpiCard, Panel } from "./components/DashboardCards";
 import ProductBars from "./components/ProductBars";
 import StatusDonut from "./components/StatusDonut";
-import { RecentAccountsTable, RecentApplicationsTable } from "./components/DashboardTables";
+import { AdminUpdatesTable, RecentAccountsTable, RecentApplicationsTable } from "./components/DashboardTables";
 import ProductExplorer from "./components/ProductExplorer";
 
-type TabId = "products" | "applications" | "accounts";
+/** Product rows have no dependable slug, so fall back to matching the label. */
+const productSlug = (row: { slug?: string; label?: string }): string | undefined =>
+  row.slug ??
+  LOAN_TYPES.find((loan) => loan.label.toLowerCase() === (row.label ?? "").toLowerCase())?.slug;
+
+type TabId = "products" | "applications" | "updates" | "accounts";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "products", label: "By Product" },
   { id: "applications", label: "Recent Applications" },
+  { id: "updates", label: "Admin Updates" },
   { id: "accounts", label: "Recent Accounts" },
 ];
 
 const Dashboard = () => {
-  const { admin } = useAuth();
+  const { admin, loanAccess, canAccessLoan, isSuperAdmin } = useAuth();
 
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [rawStats, setRawStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
@@ -37,9 +45,9 @@ const Dashboard = () => {
   // once the request resolves.
   useEffect(() => {
     let cancelled = false;
-    getDashboardStats()
+    getDashboardStats({ includeAccounts: isSuperAdmin })
       .then((data) => {
-        if (!cancelled) setStats(data);
+        if (!cancelled) setRawStats(data);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(getApiErrorMessage(err, "Unable to load dashboard data."));
@@ -50,7 +58,7 @@ const Dashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [reloadToken]);
+  }, [reloadToken, isSuperAdmin]);
 
   const refresh = () => {
     setError("");
@@ -58,10 +66,48 @@ const Dashboard = () => {
     setReloadToken((token) => token + 1);
   };
 
+  /*
+  A restricted admin only sees the products a super admin assigned. Totals are
+  recomputed from those rows so the headline numbers, the donut and the product
+  list all describe the same slice instead of leaking org-wide counts.
+  */
+  const stats: DashboardStats | null = rawStats
+    ? loanAccess === "all"
+      ? rawStats
+      : (() => {
+          const products = rawStats.products.filter((product) => canAccessLoan(productSlug(product)));
+          const recent = rawStats.recent.filter((application) => canAccessLoan(productSlug(application)));
+          const sum = (pick: (row: DashboardStats["products"][number]) => number) =>
+            products.reduce((total, product) => total + pick(product), 0);
+          const totalApplications = sum((product) => product.total);
+          const approved = sum((product) => product.approved);
+          return {
+            ...rawStats,
+            products,
+            recent,
+            totalApplications,
+            submitted: sum((product) => product.submitted),
+            pending: sum((product) => product.pending),
+            approved,
+            rejected: sum((product) => product.rejected),
+            requestedAmount: sum((product) => product.requestedAmount),
+            approvedAmount: sum((product) => product.approvedAmount),
+            approvalRate: totalApplications > 0 ? (approved / totalApplications) * 100 : 0,
+          };
+        })()
+    : null;
+
+  /*
+  "Recent Accounts" lists customer and franchise logins — super-admin context.
+  A restricted admin's dashboard is loan products and applications only.
+  */
+  const tabs = isSuperAdmin ? TABS : TABS.filter((entry) => entry.id !== "accounts");
+
   const tabCount = (id: TabId) => {
     if (!stats) return 0;
     if (id === "products") return stats.products.length;
     if (id === "applications") return stats.recent.length;
+    if (id === "updates") return stats.recentUpdates.length;
     return stats.recentAccounts.length;
   };
 
@@ -91,7 +137,10 @@ const Dashboard = () => {
             Dashboard
           </h2>
           <p className="text-sm text-slate-500">
-            Welcome back, {admin?.name}. Live overview across every loan product.
+            Welcome back, {admin?.name}.{" "}
+            {loanAccess === "all"
+              ? "Live overview across every loan product."
+              : `Showing the ${stats?.products.length ?? 0} loan product(s) assigned to you.`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -182,21 +231,26 @@ const Dashboard = () => {
           <div className="mb-4">
             <ContextStrip
               items={[
-                {
-                  label: "Customers",
-                  value: stats.totalCustomers.toLocaleString("en-IN"),
-                  title: "Accounts with the Customer role",
-                },
-                {
-                  label: "Franchises",
-                  value: stats.totalFranchises.toLocaleString("en-IN"),
-                  title: "Franchise login accounts",
-                },
-                {
-                  label: "Franchise Customers",
-                  value: stats.franchiseCustomerTotal.toLocaleString("en-IN"),
-                  title: "Customers referred by franchises",
-                },
+                // Customers / franchises are super-admin context only.
+                ...(isSuperAdmin
+                  ? [
+                      {
+                        label: "Customers",
+                        value: stats.totalCustomers.toLocaleString("en-IN"),
+                        title: "Accounts with the Customer role",
+                      },
+                      {
+                        label: "Franchises",
+                        value: stats.totalFranchises.toLocaleString("en-IN"),
+                        title: "Franchise login accounts",
+                      },
+                      {
+                        label: "Franchise Customers",
+                        value: stats.franchiseCustomerTotal.toLocaleString("en-IN"),
+                        title: "Customers referred by franchises",
+                      },
+                    ]
+                  : []),
                 {
                   label: "Requested Value",
                   value: formatCompactCurrency(stats.requestedAmount),
@@ -216,7 +270,11 @@ const Dashboard = () => {
             <Panel
               className="xl:col-span-3"
               title="Applications by Product"
-              subtitle="Volume and decision split for every loan product"
+              subtitle={
+                isSuperAdmin
+                  ? "Volume and decision split for every loan product"
+                  : "Volume and decision split for the products assigned to you"
+              }
             >
               <ProductBars products={stats.products} />
             </Panel>
@@ -229,6 +287,77 @@ const Dashboard = () => {
             </Panel>
           </div>
 
+          {/* ── Latest admin activity ─────────────────────────────────────── */}
+          {stats.recentUpdates.length > 0 && (
+            <Panel
+              className="mb-4"
+              title="Admin updates"
+              subtitle={
+                isSuperAdmin
+                  ? "Latest notes, status recommendations and decisions from every admin"
+                  : "Latest notes and recommendations on the products assigned to you"
+              }
+            >
+              <ul className="divide-y divide-slate-100">
+                {stats.recentUpdates.slice(0, 5).map((update) => {
+                  const detailPath = applicationDetailPath(update.slug, update.applicationId);
+                  return (
+                    <li
+                      key={update._id}
+                      className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-500">
+                          <span className="font-semibold text-slate-800">
+                            {update.addedByName || "Admin"}
+                          </span>
+                          {" · "}
+                          {update.addedByRole || "Admin"}
+                          {" · "}
+                          {update.label}
+                          {" · "}
+                          {update.fullName || "Applicant"}
+                        </p>
+                        <p className="mt-0.5 truncate text-sm text-slate-700" title={update.text}>
+                          {update.text}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {update.suggestedStatus && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                              update.kind === "status"
+                                ? "bg-slate-800 text-white"
+                                : update.suggestedStatus === "Approved"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : update.suggestedStatus === "Rejected"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {update.kind === "status" ? "Status" : "Recommends"}{" "}
+                            {update.suggestedStatus}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-400">
+                          {shortDate(update.addedAt)}
+                        </span>
+                        {detailPath && (
+                          <Link
+                            to={detailPath}
+                            className="text-xs font-semibold text-sky-700 hover:underline"
+                          >
+                            View
+                          </Link>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Panel>
+          )}
+
           {/* ── Detail tables ────────────────────────────────────────────── */}
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div
@@ -236,7 +365,7 @@ const Dashboard = () => {
               aria-label="Dashboard detail tables"
               className="scrollbar-hidden flex gap-1 overflow-x-auto border-b border-slate-100 bg-slate-50/60 px-3 pt-3"
             >
-              {TABS.map(({ id, label }) => {
+              {tabs.map(({ id, label }) => {
                 const active = tab === id;
                 return (
                   <button
@@ -279,6 +408,7 @@ const Dashboard = () => {
             >
               {tab === "products" && <ProductExplorer products={stats.products} />}
               {tab === "applications" && <RecentApplicationsTable applications={stats.recent} />}
+              {tab === "updates" && <AdminUpdatesTable updates={stats.recentUpdates} />}
               {tab === "accounts" && <RecentAccountsTable accounts={stats.recentAccounts} />}
             </div>
           </section>
