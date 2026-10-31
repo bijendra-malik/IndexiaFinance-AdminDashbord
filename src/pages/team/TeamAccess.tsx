@@ -202,7 +202,7 @@ const ResetPasswordDialog = ({
 };
 
 const TeamAccess = () => {
-  const { admin, refreshAccess } = useAuth();
+  const { admin, isSuperAdmin, refreshAccess } = useAuth();
   const { showToast } = useToast();
 
   const [result, setResult] = useState<ListAdminsResult | null>(null);
@@ -221,10 +221,12 @@ const TeamAccess = () => {
    * admins exist and the account shows up in the table like any other admin.
    */
   useEffect(() => {
-    if (!admin?.email) return;
+    // Only an actual super admin may be claimed as one — otherwise opening this
+    // route would grant any signed-in admin a local super-admin override.
+    if (!admin?.email || !isSuperAdmin) return;
     claimSuperAdminRecord(admin);
     refreshAccess();
-  }, [admin, refreshAccess]);
+  }, [admin, isSuperAdmin, refreshAccess]);
 
   useEffect(() => {
     let cancelled = false;

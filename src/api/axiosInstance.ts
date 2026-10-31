@@ -7,10 +7,33 @@ const axiosInstance = axios.create({
   },
 });
 
+/*
+The session is per tab (sessionStorage) so two tabs can stay signed in as
+different admins. `localStorage` is read only as a one-time migration fallback.
+*/
+const readToken = (): string | null => {
+  try {
+    return sessionStorage.getItem("admin_token") ?? localStorage.getItem("admin_token");
+  } catch {
+    return localStorage.getItem("admin_token");
+  }
+};
+
+const clearToken = (): void => {
+  try {
+    sessionStorage.removeItem("admin_token");
+    sessionStorage.removeItem("admin_user");
+  } catch {
+    /* ignore */
+  }
+  localStorage.removeItem("admin_token");
+  localStorage.removeItem("admin_user");
+};
+
 // Attach admin token to every request if available
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("admin_token");
+    const token = readToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -24,8 +47,7 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 || error.response?.status === 403) {
-      localStorage.removeItem("admin_token");
-      localStorage.removeItem("admin_user");
+      clearToken();
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
       }
