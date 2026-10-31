@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Building2, Eye, RefreshCw, ShieldAlert, Trash2, UserCheck, XCircle } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import { useAuth } from "../../context/AuthContext";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { getApiErrorMessage, getRejectedLoans, type RejectedLoan } from "../../api/rejectedLoans";
 import { deleteLoanBySlug, resourceToSlug } from "../../api/personalLoans";
@@ -101,13 +102,30 @@ export default function RejectedLoans() {
   const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
   const { channel: channelParam } = useParams<{ channel?: string }>();
-  const channel = channelFromParam(channelParam);
+  const { isSuperAdmin, canAccessLoan } = useAuth();
+
+  /*
+  Super admin sab dekhta hai. Restricted admin sirf apne assigned products ki
+  rejections — backend bhi yahi filter lagata hai, ye client-side guard sirf
+  double safety hai (aur franchise/score rows jo product ke bina aate hain wo
+  restricted admin ke liye already nahi aate).
+  */
+  /*
+  Channel split (customer / franchise customer / franchise) sirf super admin
+  ke liye hai. Assigned admin ko sirf ek list dikhti hai — uske products ki
+  rejected applications — isliye uske liye channel hamesha "all" rehta hai.
+  */
+  const channel = isSuperAdmin ? channelFromParam(channelParam) : "all";
 
   const load = () =>
     getRejectedLoans()
       .then((list) => {
         setError("");
-        setLoans(list);
+        setLoans(
+          isSuperAdmin
+            ? list
+            : list.filter((loan) => canAccessLoan(resourceToSlug(loan.resource ?? undefined)))
+        );
       })
       .catch((err: unknown) => {
         setError(getApiErrorMessage(err, "Unable to load rejected loans."));
@@ -122,9 +140,11 @@ export default function RejectedLoans() {
     void load();
   };
 
+  // Mount-only fetch; `load` reads the signed-in admin's access, which does not
+  // change while this page is open.
   useEffect(() => {
     void load();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = async () => {
     if (!pendingDelete) return;
@@ -186,10 +206,15 @@ export default function RejectedLoans() {
           <h2 className="text-lg font-semibold" style={{ color: BRAND.blue }}>
             Reject Loans
           </h2>
-          <p className="text-sm text-slate-500">{CHANNEL_COPY[channel]}</p>
+          <p className="text-sm text-slate-500">
+            {isSuperAdmin
+              ? CHANNEL_COPY[channel]
+              : "Aapke assigned loan products ki rejected applications — reject reason ke saath."}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Channel tabs — URL se chalte hain, isliye sidebar ka dropdown bhi yahi state set karta hai. */}
+          {/* Channel tabs — sirf super admin; URL se chalte hain, isliye sidebar ka dropdown bhi yahi state set karta hai. */}
+          {isSuperAdmin && (
           <div className="flex items-center rounded-xl border border-slate-300 bg-white p-1">
             {CHANNELS.map((option) => {
               const active = channel === option.key;
@@ -217,10 +242,11 @@ export default function RejectedLoans() {
                   <span className={`ml-1.5 ${active ? "text-white/70" : "text-slate-400"}`}>
                     {channelCount(option.key)}
                   </span>
-                </button>
-              );
+                </button>              );
             })}
           </div>
+          )}
+
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -390,12 +416,15 @@ export default function RejectedLoans() {
                               {loan.fullName || "—"}
                             </p>
                             <p className="whitespace-nowrap text-xs text-slate-400">{loan.mobile || ""}</p>
-                            <span
-                              title={channelBadge(loan).title}
-                              className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${channelBadge(loan).className}`}
-                            >
-                              {channelBadge(loan).label}
-                            </span>
+                            {/* Channel badge sirf super admin ke liye — assigned admin ko customer/franchise split nahi dikhta. */}
+                            {isSuperAdmin && (
+                              <span
+                                title={channelBadge(loan).title}
+                                className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${channelBadge(loan).className}`}
+                              >
+                                {channelBadge(loan).label}
+                              </span>
+                            )}
                           </>
                         )}
                       </td>
@@ -495,7 +524,8 @@ export default function RejectedLoans() {
                               <Eye size={13} /> View
                             </Link>
                           ) : null}
-                          {/* Delete button — always shown */}
+                          {/* Delete is a super-admin action — the backend also enforces it. */}
+                          {isSuperAdmin && (
                           <button
                             type="button"
                             onClick={() => setPendingDelete(loan)}
@@ -505,6 +535,7 @@ export default function RejectedLoans() {
                           >
                             <Trash2 size={14} />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -519,13 +550,13 @@ export default function RejectedLoans() {
       {!loading && !error && filtered.length > 0 && (
         <p className="mt-3 text-xs text-slate-400">
           Showing {filtered.length} of {loans.length} rejected applications. Rule-based records 30 din
-          baad apne aap delete ho jaate hain (customer tab tak usi product par dobara apply nahi
-          kar sakta).
+          baad apne aap delete ho jaate hain — jab tak record rahe, applicant usi product par dobara
+          apply nahi kar sakta.
         </p>
       )}
 
       {/* ── Delete confirmation ─────────────────────────────────────────── */}
-      {pendingDelete && (
+      {isSuperAdmin && pendingDelete && (
         <ConfirmDialog
           title={
             (pendingDelete.channel ?? "customer") === "franchise"
