@@ -287,6 +287,11 @@ const LoanApplicationDetail = () => {
     ? (loan.applicationNo ?? `#${loan._id.slice(-8).toUpperCase()}`)
     : "";
 
+  /* Newest first so the history reads correctly even for older records. */
+  const adminUpdates = [...(loan?.adminUpdates ?? [])].sort(
+    (a, b) => new Date(b.addedAt || 0).getTime() - new Date(a.addedAt || 0).getTime()
+  );
+
   const copyId = async () => {
     if (!loan) return;
     try {
@@ -650,17 +655,32 @@ const LoanApplicationDetail = () => {
           </section>
         )}
 
-        {/* ── Application Updates / Remarks ── */}
+        {/*
+        Admin updates. Super admin reviews the full history only — adding
+        follow-ups is the assigned admin's job. The card stays hidden for a
+        super admin when no admin has touched the application yet.
+        */}
+        {(!isSuperAdmin || adminUpdates.length > 0) && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-slate-800">Application Updates</h3>
+              <h3 className="text-sm font-semibold text-slate-800">
+                {isSuperAdmin ? "Admin updates" : "Application Updates"}
+                {adminUpdates.length > 0 && (
+                  <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    {adminUpdates.length}
+                  </span>
+                )}
+              </h3>
               <p className="mt-1 text-xs text-slate-500">
-                Add follow-ups (call done, documents verified, etc.). All admins with access can see updates; super admin sees full history.
+                {isSuperAdmin
+                  ? "Full history of notes, status recommendations and final decisions on this application."
+                  : "Add follow-ups (call done, documents verified, etc.) and recommend a status — the super admin sees it instantly."}
               </p>
             </div>
           </div>
 
+          {!isSuperAdmin && (
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <input
               type="text"
@@ -700,14 +720,13 @@ const LoanApplicationDetail = () => {
               {isAddingUpdate ? "Adding..." : "Add Update"}
             </button>
           </div>
+          )}
 
           <div className="mt-4 space-y-3">
-            {(loan?.adminUpdates ?? []).length === 0 ? (
+            {adminUpdates.length === 0 ? (
               <p className="text-xs text-slate-400">No updates added yet.</p>
             ) : (
-              [...(loan?.adminUpdates ?? [])]
-                .sort((a, b) => new Date(b.addedAt || 0).getTime() - new Date(a.addedAt || 0).getTime())
-                .map((update, idx) => (
+              adminUpdates.map((update, idx) => (
                   <div
                     key={update._id || `${update.addedAt}-${idx}`}
                     className="rounded-xl border border-slate-100 bg-slate-50/70 p-3"
@@ -749,6 +768,7 @@ const LoanApplicationDetail = () => {
             )}
           </div>
         </section>
+        )}
 
         {/* ════════════ HERO ════════════════════════════════════════════════ */}
         <div className="rounded-3xl overflow-hidden shadow-lg"
