@@ -3,15 +3,17 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Briefcase, Building2, Calendar,
   Check, CheckCircle2, Clock, Copy, CreditCard, Hash,
-  IndianRupee, Mail, MapPin, Phone,
-  RefreshCw, Send, TrendingDown, Trash2, User, XCircle,
+  IndianRupee, Mail, MapPin, MessageSquarePlus, Phone,
+  RefreshCw, Send, ShieldAlert, TrendingDown, Trash2, User, XCircle,
   Car, Coins, FileText, GraduationCap, Home, Landmark, LayoutList,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { getLoanTypeLabel } from "../../constants/loanTypes";
 import {
+  addLoanUpdateBySlug,
   deleteLoanBySlug,
   getLoanBySlug,
   getApiErrorMessage,
@@ -221,6 +223,8 @@ const LoanApplicationDetail = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const label    = getLoanTypeLabel(loanType ?? "");
+  const { canAccessLoan, isSuperAdmin } = useAuth();
+  const allowed  = canAccessLoan(loanType);
 
   const [loan,  setLoan]  = useState<PersonalLoan | null>(null);
   const [error, setError] = useState("");
@@ -230,9 +234,12 @@ const LoanApplicationDetail = () => {
   const [pendingStatus, setPendingStatus] = useState<LoanStatus | null>(null);
   const [statusNote, setStatusNote] = useState("");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [updateText, setUpdateText] = useState("");
+  const [isAddingUpdate, setIsAddingUpdate] = useState(false);
+  const [updateSuggestedStatus, setUpdateSuggestedStatus] = useState<LoanStatus | "">("");
 
   const load = async () => {
-    if (!id || !loanType) return;
+    if (!id || !loanType || !allowed) return;
     setError("");
     try { setLoan(await getLoanBySlug(loanType, id)); }
     catch (err) { setError(getApiErrorMessage(err, "Unable to load.")); }
@@ -322,6 +329,27 @@ const LoanApplicationDetail = () => {
       showToast(getApiErrorMessage(err, "Unable to update this application's status."), "error");
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleAddUpdate = async () => {
+    if (!loan || !loanType || (!updateText.trim() && !updateSuggestedStatus)) return;
+    setIsAddingUpdate(true);
+    try {
+      const updatedLoan = await addLoanUpdateBySlug(
+        loanType,
+        loan._id,
+        updateText.trim(),
+        updateSuggestedStatus
+      );
+      setLoan(updatedLoan);
+      setUpdateText("");
+      setUpdateSuggestedStatus("");
+      showToast("Update added successfully.", "success");
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Unable to add update."), "error");
+    } finally {
+      setIsAddingUpdate(false);
     }
   };
 
@@ -455,6 +483,26 @@ const LoanApplicationDetail = () => {
     document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // ── Not assigned to this admin ───────────────────────────────────────────
+  if (!allowed) return (
+    <AdminLayout>
+      <div className="mx-auto mt-10 max-w-lg rounded-2xl border border-amber-200 bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
+          <ShieldAlert size={22} />
+        </div>
+        <h2 className="mt-3 text-base font-semibold text-slate-800">No access to {label}</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          This application belongs to a product your super admin has not assigned to you.
+        </p>
+        <button onClick={() => navigate("/dashboard")}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+          style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}>
+          Back to dashboard
+        </button>
+      </div>
+    </AdminLayout>
+  );
+
   // ── Loading ───────────────────────────────────────────────────────────────
   if (!loan && !error) return (
     <AdminLayout>
@@ -530,35 +578,176 @@ const LoanApplicationDetail = () => {
 
       <div className="space-y-5">
 
-        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              {nextStatuses.length
-                ? "Choose a permitted next status. Approved and rejected decisions cannot be changed."
-                : "This application has a final status and can no longer be changed."}
-            </p>
-          </div>
-          {nextStatuses.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {nextStatuses.map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setPendingStatus(status)}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
-                    status === "Rejected"
-                      ? "border border-red-200 text-red-700 hover:bg-red-50"
-                      : status === "Approved"
-                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                        : "border border-amber-200 text-amber-800 hover:bg-amber-50"
-                  }`}
-                >
-                  {status === "Pending" ? "Mark Pending" : status}
-                </button>
-              ))}
-            </div>
+        {loan?.statusRecommendation?.status &&
+          (loan.status === "Submitted" || loan.status === "Pending") && (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-amber-900">Admin recommendation</h3>
+                  <p className="mt-1 text-xs text-amber-800">
+                    <span className="font-semibold">
+                      {loan.statusRecommendation.recommendedByName || "An admin"}
+                    </span>{" "}
+                    recommended marking this application{" "}
+                    <span className="font-semibold">{loan.statusRecommendation.status}</span>
+                    {loan.statusRecommendation.recommendedAt
+                      ? ` on ${DT(loan.statusRecommendation.recommendedAt)}`
+                      : ""}
+                    .
+                  </p>
+                  {loan.statusRecommendation.note && (
+                    <p className="mt-2 whitespace-pre-wrap break-words text-sm text-amber-900">
+                      {loan.statusRecommendation.note}
+                    </p>
+                  )}
+                </div>
+                <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-bold text-amber-800">
+                  Pending super admin decision
+                </span>
+              </div>
+            </section>
           )}
+
+        {isSuperAdmin ? (
+          <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                {nextStatuses.length
+                  ? "Choose a permitted next status. Approved and rejected decisions cannot be changed."
+                  : "This application has a final status and can no longer be changed."}
+              </p>
+            </div>
+            {nextStatuses.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {nextStatuses.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setPendingStatus(status)}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                      status === "Rejected"
+                        ? "border border-red-200 text-red-700 hover:bg-red-50"
+                        : status === "Approved"
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : "border border-amber-200 text-amber-800 hover:bg-amber-50"
+                    }`}
+                  >
+                    {status === "Pending" ? "Mark Pending" : status}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Only super admins can finalise the status. Add an update with a recommended status below — it appears instantly on the super admin dashboard.
+              </p>
+            </div>
+          </section>
+        )}
+
+        {/* ── Application Updates / Remarks ── */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Application Updates</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Add follow-ups (call done, documents verified, etc.). All admins with access can see updates; super admin sees full history.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="text"
+              value={updateText}
+              onChange={(e) => setUpdateText(e.target.value)}
+              placeholder="Add an update (e.g. Called customer, Verified documents...)"
+              maxLength={500}
+              className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-[rgb(6,106,156)] focus:outline-none focus:ring-2 focus:ring-[rgba(6,106,156,0.2)]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleAddUpdate();
+                }
+              }}
+            />
+            {!isSuperAdmin && (
+              <select
+                value={updateSuggestedStatus}
+                onChange={(e) => setUpdateSuggestedStatus(e.target.value as LoanStatus | "")}
+                aria-label="Recommend a status with this update"
+                className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 focus:border-[rgb(6,106,156)] focus:outline-none focus:ring-2 focus:ring-[rgba(6,106,156,0.2)]"
+              >
+                <option value="">No status recommendation</option>
+                <option value="Pending">Recommend: Under review</option>
+                <option value="Approved">Recommend: Approve</option>
+                <option value="Rejected">Recommend: Reject</option>
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleAddUpdate()}
+              disabled={isAddingUpdate || (!updateText.trim() && !updateSuggestedStatus)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}
+            >
+              <MessageSquarePlus size={16} />
+              {isAddingUpdate ? "Adding..." : "Add Update"}
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {(loan?.adminUpdates ?? []).length === 0 ? (
+              <p className="text-xs text-slate-400">No updates added yet.</p>
+            ) : (
+              [...(loan?.adminUpdates ?? [])]
+                .sort((a, b) => new Date(b.addedAt || 0).getTime() - new Date(a.addedAt || 0).getTime())
+                .map((update, idx) => (
+                  <div
+                    key={update._id || `${update.addedAt}-${idx}`}
+                    className="rounded-xl border border-slate-100 bg-slate-50/70 p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-700">
+                          {update.addedByName || "Admin"}
+                        </span>
+                        {update.addedByRole && (
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 border border-slate-200">
+                            {String(update.addedByRole).replace("_", " ")}
+                          </span>
+                        )}
+                        {update.suggestedStatus && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                              update.kind === "status"
+                                ? "bg-slate-800 text-white"
+                                : update.suggestedStatus === "Approved"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : update.suggestedStatus === "Rejected"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {update.kind === "status" ? "Status" : "Recommends"}{" "}
+                            {update.suggestedStatus}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-400">
+                        {update.addedAt ? new Date(update.addedAt).toLocaleString("en-IN") : ""}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap break-words">{update.text}</p>
+                  </div>
+                ))
+            )}
+          </div>
         </section>
 
         {/* ════════════ HERO ════════════════════════════════════════════════ */}
@@ -894,21 +1083,23 @@ const LoanApplicationDetail = () => {
         </div>
 
         {/* ════════════ DANGER ZONE ═════════════════════════════════════════ */}
-        <div className="bg-white rounded-2xl border border-red-200 p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-red-700 mb-1">Danger Zone</h3>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-sm text-slate-500">
-              Permanently delete this application and all of its saved details. This cannot be undone.
-            </p>
-            <button
-              onClick={() => setPendingDelete(true)}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 rounded-xl transition"
-            >
-              <Trash2 size={15} />
-              Delete Application
-            </button>
+        {isSuperAdmin && (
+          <div className="bg-white rounded-2xl border border-red-200 p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-red-700 mb-1">Danger Zone</h3>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-slate-500">
+                Permanently delete this application and all of its saved details. This cannot be undone.
+              </p>
+              <button
+                onClick={() => setPendingDelete(true)}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 rounded-xl transition"
+              >
+                <Trash2 size={15} />
+                Delete Application
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
       </div>
 

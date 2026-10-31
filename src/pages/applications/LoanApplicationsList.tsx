@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowUpRight, FileText, Search } from "lucide-react";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import { ArrowUpRight, FileText, Search, ShieldAlert } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import { useAuth } from "../../context/AuthContext";
 import PageHeader from "../../components/common/PageHeader";
 import Pagination from "../../components/common/Pagination";
 import StatusBadge from "../../components/common/StatusBadge";
@@ -36,6 +37,10 @@ const LoanApplicationsList = () => {
   const navigate     = useNavigate();
   const label        = getLoanTypeLabel(loanType ?? "");
   const isSupported  = SUPPORTED_LOAN_SLUGS.has(loanType ?? "");
+  // Super admins can hand out access per product; an unassigned product must not
+  // even be fetched, let alone rendered.
+  const { canAccessLoan, accessibleLoanTypes } = useAuth();
+  const allowed      = canAccessLoan(loanType);
 
   const [loans, setLoans]               = useState<PersonalLoan[] | null>(null);
   const [error, setError]               = useState("");
@@ -44,7 +49,7 @@ const LoanApplicationsList = () => {
   const [statusFilter, setStatusFilter] = useState("All");
 
   const load = () =>
-    (isSupported ? getLoansBySlug(loanType!) : Promise.resolve(null))
+    (isSupported && allowed ? getLoansBySlug(loanType!) : Promise.resolve(null))
       .then((data) => {
         setError("");
         setLoans(data ?? []);
@@ -66,7 +71,7 @@ const LoanApplicationsList = () => {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void load(); }, [loanType]);
+  useEffect(() => { void load(); }, [loanType, allowed]);
 
   const filtered = useMemo(() => {
     if (!loans) return [];
@@ -95,6 +100,36 @@ const LoanApplicationsList = () => {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);
   const pageLoans  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  if (!allowed) {
+    const fallback = accessibleLoanTypes[0];
+    return (
+      <AdminLayout>
+        <div className="mx-auto mt-10 max-w-lg rounded-2xl border border-amber-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
+            <ShieldAlert size={22} />
+          </div>
+          <h2 className="mt-3 text-base font-semibold text-slate-800">No access to {label}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Your super admin has not assigned {label.toLowerCase()} applications to your account.
+          </p>
+          {fallback ? (
+            <Link
+              to={`/applications/${fallback.slug}`}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+              style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}
+            >
+              Open {fallback.label}
+            </Link>
+          ) : (
+            <p className="mt-4 text-xs text-slate-400">
+              No loan products are assigned to your account yet.
+            </p>
+          )}
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
