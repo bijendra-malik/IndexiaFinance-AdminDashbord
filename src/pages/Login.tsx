@@ -8,7 +8,7 @@ const Login = () => {
   const { isLoggedIn, login } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -23,7 +23,8 @@ const Login = () => {
     setIsSubmitting(true);
 
     try {
-      const res = await loginAdmin({ email, password });
+      // The backend accepts an email or an admin ID (`admin02`).
+      const res = await loginAdmin({ email: identifier.trim(), password });
       login(res.token, res.admin);
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -49,15 +50,16 @@ const Login = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Email
+                Admin ID or Email
               </label>
               <input
-                type="email"
+                type="text"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[rgba(0,102,153,0.4)]"
-                placeholder="admin@indexiafinance.com"
+                placeholder="admin01 or admin01@indexiafinance.com"
               />
             </div>
 

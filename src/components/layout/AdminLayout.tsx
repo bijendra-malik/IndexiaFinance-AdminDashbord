@@ -5,11 +5,10 @@ import {
   Building2, Car, ChevronDown, ChevronRight, CreditCard,
   Database, FileText, Globe, GraduationCap,
   Home, Landmark, LayoutDashboard, LogOut,
-  Settings, TrendingUp, UserCircle, Users,
+  Settings, ShieldCheck, TrendingUp, UserCircle, Users,
   Wallet, Coins, XCircle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { LOAN_TYPES } from "../../constants/loanTypes";
 import logo from "../../assets/main-logo.gif";
 
 const APPLICATIONS_BASE = "/applications";
@@ -156,7 +155,7 @@ const ProfileDropdown = ({
 
 // ── Main Layout ───────────────────────────────────────────────────────────────
 const AdminLayout = ({ children }: { children: ReactNode }) => {
-  const { admin, logout } = useAuth();
+  const { admin, logout, accessibleLoanTypes, isSuperAdmin } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -202,10 +201,10 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
         {/* Nav */}
         <nav className="scrollbar-hidden flex-1 px-3 space-y-0.5 overflow-y-auto pb-4">
 
-          {/* Flat links */}
+          {/* Flat links — Customers is a super-admin screen */}
           {[
             { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-            { to: "/customers", label: "Customers",  icon: Users },
+            ...(isSuperAdmin ? [{ to: "/customers", label: "Customers", icon: Users }] : []),
           ].map(({ to, label, icon: Icon }) => {
             const isActive = location.pathname === to;
             return (
@@ -222,12 +221,50 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             );
           })}
 
-          {/* Reject Loans dropdown — customer / franchise customer / franchise alag alag */}
-          <div>
-            <button type="button" onClick={() => setRejectsOpenChoice(!rejectsOpen)}
-              aria-expanded={rejectsOpen}
-              title="Rejections — customer, franchise customer aur franchise"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+          {/*
+          Reject Loans — super admin ko channel-wise dropdown milta hai
+          (customer / franchise customer / franchise). Assigned admin ka scope
+          sirf uske loan products hain, isliye usse ek plain link milta hai —
+          koi "Customer Reject" jaisa channel nahi.
+          */}
+          {isSuperAdmin ? (
+            <div>
+              <button type="button" onClick={() => setRejectsOpenChoice(!rejectsOpen)}
+                aria-expanded={rejectsOpen}
+                title="Rejections — customer, franchise customer aur franchise"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+                style={isOnRejects
+                  ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
+                  : { color: "rgba(255,255,255,0.75)" }}
+                onMouseEnter={e => hoverOn(e, isOnRejects)}
+                onMouseLeave={e => hoverOff(e, isOnRejects)}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isOnRejects ? "bg-white/20" : "bg-white/10"}`}>
+                  <XCircle size={15} />
+                </div>
+                <span className="flex-1 text-left">Reject Loans</span>
+                <ChevronRight size={14} className={`transition-transform duration-200 opacity-60 ${rejectsOpen ? "rotate-90" : ""}`} />
+              </button>
+              {rejectsOpen && (
+                <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5">
+                  {REJECT_LINKS.map(({ to, label, icon: Icon, match }) => {
+                    const isActive = match(location.pathname);
+                    return (
+                      <Link key={to} to={to}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                        style={isActive ? { background: "rgba(255,255,255,0.15)", color: "#fff" } : { color: "rgba(255,255,255,0.65)" }}
+                        onMouseEnter={e => hoverOn(e, isActive)}
+                        onMouseLeave={e => hoverOff(e, isActive)}>
+                        <Icon size={13} className="opacity-70" />
+                        <span className="truncate">{label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link to="/rejected-loans"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
               style={isOnRejects
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
                 : { color: "rgba(255,255,255,0.75)" }}
@@ -236,28 +273,13 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isOnRejects ? "bg-white/20" : "bg-white/10"}`}>
                 <XCircle size={15} />
               </div>
-              <span className="flex-1 text-left">Reject Loans</span>
-              <ChevronRight size={14} className={`transition-transform duration-200 opacity-60 ${rejectsOpen ? "rotate-90" : ""}`} />
-            </button>
-            {rejectsOpen && (
-              <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5">
-                {REJECT_LINKS.map(({ to, label, icon: Icon, match }) => {
-                  const isActive = match(location.pathname);
-                  return (
-                    <Link key={to} to={to}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                      style={isActive ? { background: "rgba(255,255,255,0.15)", color: "#fff" } : { color: "rgba(255,255,255,0.65)" }}
-                      onMouseEnter={e => hoverOn(e, isActive)}
-                      onMouseLeave={e => hoverOff(e, isActive)}>
-                      <Icon size={13} className="opacity-70" />
-                      <span className="truncate">{label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              Reject Loans
+            </Link>
+          )}
 
+          {/* Franchise network — super admins only */}
+          {isSuperAdmin && (
+            <>
           {/* Section label */}
           <div className="pt-3 pb-1 px-3">
             <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Franchise network</p>
@@ -298,7 +320,12 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               </div>
             )}
           </div>
+            </>
+          )}
 
+          {/* Masters — super admins only */}
+          {isSuperAdmin && (
+            <>
           {/* Section label */}
           <div className="pt-3 pb-1 px-3">
             <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Management</p>
@@ -338,6 +365,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               </div>
             )}
           </div>
+            </>
+          )}
 
           {/* Loan Applications dropdown */}
           <div>
@@ -357,7 +386,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             </button>
             {applicationsOpen && (
               <div className="scrollbar-hidden ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5 max-h-64 overflow-y-auto">
-                {LOAN_TYPES.map(({ slug, label }) => {
+                {accessibleLoanTypes.map(({ slug, label }) => {
                   const to = `${APPLICATIONS_BASE}/${slug}`;
                   const isActive = location.pathname === to;
                   const cfg = LOAN_TYPE_CONFIG[slug];
@@ -403,9 +432,35 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                     </Link>
                   );
                 })}
+                {accessibleLoanTypes.length === 0 && (
+                  <p className="px-3 py-2 text-[11px] leading-snug text-white/50">
+                    No loan access assigned. Ask your super admin.
+                  </p>
+                )}
               </div>
             )}
           </div>
+
+          {/* Team & loan access — super admins only */}
+          {isSuperAdmin && (
+            <Link to="/team"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={location.pathname === "/team"
+                ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
+                : { color: "rgba(255,255,255,0.75)" }}
+              onMouseEnter={e => hoverOn(e, location.pathname === "/team")}
+              onMouseLeave={e => hoverOff(e, location.pathname === "/team")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/team" ? "bg-white/20" : "bg-white/10"}`}>
+                <ShieldCheck size={15} />
+              </div>
+              <span className="flex-1">Team &amp; Access</span>
+              {isSuperAdmin && (
+                <span className="rounded-full bg-amber-300/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-200">
+                  Super
+                </span>
+              )}
+            </Link>
+          )}
         </nav>
 
         {/* ── Bottom admin strip ── */}
@@ -418,7 +473,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-semibold text-white truncate leading-tight">{admin?.name}</p>
-              <p className="text-[11px] text-white/50 capitalize truncate">{admin?.role}</p>
+              <p className="text-[11px] text-white/50 capitalize truncate">{isSuperAdmin ? "Super admin" : "Admin"}</p>
             </div>
             <Settings size={14} className="text-white/30 group-hover:text-white/60 transition shrink-0" />
           </button>
@@ -452,7 +507,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               <ProfileDropdown
                 name={admin?.name}
                 email={admin?.email}
-                role={admin?.role}
+                role={isSuperAdmin ? "Super admin" : "Admin"}
                 onLogout={handleLogout}
               />
             </div>
