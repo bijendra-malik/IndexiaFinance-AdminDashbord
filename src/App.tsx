@@ -1,11 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
-import { ToastProvider } from "./context/ToastContext";
+import { AuthProvider } from "./context/AuthProvider";
+import { ToastProvider } from "./context/ToastProvider";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import Profile from "./pages/Profile";
 import Dashboard from "./pages/dashboard/Dashboard";
+import TeamAccess from "./pages/team/TeamAccess";
 import MastersList from "./pages/masters/MastersList";
 import MasterDetail from "./pages/masters/MasterDetail";
 import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
@@ -45,10 +46,21 @@ function App() {
               }
             />
 
+            {/* Team & loan-access management — super admins only */}
+            <Route
+              path="/team"
+              element={
+                <ProtectedRoute requireSuperAdmin>
+                  <TeamAccess />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Customers / masters / franchise are super-admin sections */}
             <Route
               path="/customers"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <CustomersList />
                 </ProtectedRoute>
               }
@@ -77,7 +89,7 @@ function App() {
             <Route
               path="/franchises"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <FranchiseList />
                 </ProtectedRoute>
               }
@@ -86,7 +98,7 @@ function App() {
             <Route
               path="/franchise-plans"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <FranchisePlans />
                 </ProtectedRoute>
               }
@@ -95,7 +107,7 @@ function App() {
             <Route
               path="/franchises/:id"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <FranchiseDetail />
                 </ProtectedRoute>
               }
@@ -104,7 +116,7 @@ function App() {
             <Route
               path="/franchise-customers"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <FranchiseCustomers />
                 </ProtectedRoute>
               }
@@ -113,7 +125,7 @@ function App() {
             <Route
               path="/franchise-customers/stats"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <FranchiseCustomers />
                 </ProtectedRoute>
               }
@@ -122,7 +134,7 @@ function App() {
             <Route
               path="/franchise-customers/:id"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <FranchiseCustomers />
                 </ProtectedRoute>
               }
@@ -131,7 +143,7 @@ function App() {
             <Route
               path="/masters"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <MastersList />
                 </ProtectedRoute>
               }
@@ -146,7 +158,7 @@ function App() {
             <Route
               path="/masters/locations"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <LocationMasterAdmin />
                 </ProtectedRoute>
               }
@@ -156,7 +168,7 @@ function App() {
             <Route
               path="/masters/type/:type"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <MasterDetail />
                 </ProtectedRoute>
               }
@@ -165,7 +177,7 @@ function App() {
             <Route
               path="/masters/:id"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requireSuperAdmin>
                   <MasterDetail />
                 </ProtectedRoute>
               }
