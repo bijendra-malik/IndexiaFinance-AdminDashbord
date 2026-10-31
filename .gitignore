@@ -31,3 +31,4 @@ dist-ssr
 # Documentation and project-specific folders
 docs/
 .freebuff/
+.cloud-attachments/
