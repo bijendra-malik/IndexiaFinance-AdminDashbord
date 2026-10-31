@@ -12,6 +12,10 @@ export interface ApiAdmin {
   name: string;
   email: string;
   role: string;
+  /** Sign-in handle (`admin02`) when the backend provides one. */
+  loginId?: string;
+  /** Per-loan permission from the backend: `"all"` or the allowed slugs. */
+  loanAccess?: "all" | string[];
   isActive: boolean;
   lastLogin: string | null;
   createdAt: string;
