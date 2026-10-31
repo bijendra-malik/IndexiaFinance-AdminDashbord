@@ -8,6 +8,28 @@ export type LoanStatus = "Pending" | "Approved" | "Rejected" | "Submitted";
 
 export const MINIMUM_CREDIT_SCORE = 600;
 
+export interface AdminUpdate {
+  _id?: string;
+  text: string;
+  addedBy?: string | null;
+  addedByName?: string;
+  addedByRole?: string;
+  addedAt?: string;
+  /** Entry type: a plain note, a status recommendation, or a status-change log. */
+  kind?: "note" | "recommendation" | "status";
+  /** Status this update recommends (recommendation entries only). */
+  suggestedStatus?: LoanStatus | null;
+}
+
+export interface StatusRecommendation {
+  status: LoanStatus | null;
+  note?: string;
+  recommendedBy?: string | null;
+  recommendedByName?: string;
+  recommendedByRole?: string;
+  recommendedAt?: string | null;
+}
+
 export interface PersonalLoan {
   _id: string;
   user: string;
@@ -44,6 +66,10 @@ export interface PersonalLoan {
   approvedBy?: string | null;
   approvedAt?: string | null;
   rejectedAt?: string | null;
+  /** Admin updates/remarks added by admins with access */
+  adminUpdates?: AdminUpdate[];
+  /** Latest status suggested by a regular admin (super admin takes the final call). */
+  statusRecommendation?: StatusRecommendation | null;
 
   // ── Employment / salary fields ────────────────────────────────────────────
   employmentType?: string;
@@ -266,6 +292,24 @@ export const updateLoanStatusBySlug = async (
 
   const path = `${endpoint}/${id}/status`;
   const res = await axiosInstance.patch<Record<string, unknown>>(path, { status, note });
+  return extractItem(res.data, path);
+};
+
+/** Add an update/remark to a loan application. Any admin with access can add. */
+export const addLoanUpdateBySlug = async (
+  slug: string,
+  id: string,
+  text: string,
+  suggestedStatus?: LoanStatus | ""
+): Promise<PersonalLoan> => {
+  const endpoint = SLUG_ENDPOINT[slug];
+  if (!endpoint) throw new Error(`No endpoint mapped for slug: ${slug}`);
+
+  const path = `${endpoint}/${id}/updates`;
+  const res = await axiosInstance.post<Record<string, unknown>>(path, {
+    text,
+    ...(suggestedStatus ? { suggestedStatus } : {}),
+  });
   return extractItem(res.data, path);
 };
 

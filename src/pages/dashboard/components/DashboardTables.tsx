@@ -1,5 +1,9 @@
 import { Link } from "react-router-dom";
-import type { DashboardAccount, RecentApplication } from "../../../api/dashboard";
+import type {
+  AdminActivityUpdate,
+  DashboardAccount,
+  RecentApplication,
+} from "../../../api/dashboard";
 import {
   BRAND,
   STATUS,
@@ -29,13 +33,14 @@ export const RecentApplicationsTable = ({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[680px] text-sm">
+      <table className="w-full min-w-[720px] text-sm">
         <thead>
           <tr className={THEAD}>
             <th className="px-5 py-2.5">Applicant</th>
             <th className="px-5 py-2.5">Loan Type</th>
             <th className="px-5 py-2.5">Amount</th>
             <th className="px-5 py-2.5">Status</th>
+            <th className="px-5 py-2.5">Updates</th>
             <th className="px-5 py-2.5">Applied</th>
           </tr>
         </thead>
@@ -43,6 +48,7 @@ export const RecentApplicationsTable = ({
           {applications.map((application) => {
             const bucket = asBucket(application.status);
             const detailPath = applicationDetailPath(application.slug, application._id);
+            const updatesCount = application.adminUpdatesCount ?? 0;
             const avatar = (
               <>
                 <span
@@ -80,8 +86,113 @@ export const RecentApplicationsTable = ({
                     {application.status}
                   </span>
                 </td>
+                <td className="px-5 py-3">
+                  {updatesCount > 0 ? (
+                    <span className="inline-flex items-center rounded-full bg-[rgba(6,106,156,0.08)] px-2 py-0.5 text-xs font-semibold text-[rgb(6,106,156)]">
+                      {updatesCount} {updatesCount === 1 ? "update" : "updates"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  )}
+                </td>
                 <td className="px-5 py-3 text-slate-500" title={formatDate(application.createdAt)}>
                   {shortDate(application.createdAt)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/** One row per admin note, status recommendation or final status change. */
+export const AdminUpdatesTable = ({ updates }: { updates: AdminActivityUpdate[] }) => {
+  if (updates.length === 0) {
+    return <p className={EMPTY}>No admin updates yet.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-sm">
+        <thead>
+          <tr className={THEAD}>
+            <th className="px-5 py-2.5">Admin</th>
+            <th className="px-5 py-2.5">Application</th>
+            <th className="px-5 py-2.5">Update</th>
+            <th className="px-5 py-2.5">Loan status</th>
+            <th className="px-5 py-2.5">When</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {updates.map((update) => {
+            const detailPath = applicationDetailPath(update.slug, update.applicationId);
+            const statusBucket = asBucket(update.loanStatus);
+            const suggestion = update.suggestedStatus;
+            const isDecision = update.kind === "status";
+            const suggestionTone =
+              suggestion === "Approved"
+                ? "bg-emerald-100 text-emerald-700"
+                : suggestion === "Rejected"
+                  ? "bg-red-100 text-red-700"
+                  : suggestion === "Pending"
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-slate-100 text-slate-600";
+            return (
+              <tr key={update._id} className="align-top transition hover:bg-slate-50">
+                <td className="px-5 py-3">
+                  <span className="block text-xs font-semibold text-slate-800">
+                    {update.addedByName || "Admin"}
+                  </span>
+                  {update.addedByRole && (
+                    <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      {update.addedByRole.replace("_", " ")}
+                    </span>
+                  )}
+                </td>
+                <td className="px-5 py-3">
+                  {detailPath ? (
+                    <Link
+                      to={detailPath}
+                      className="font-medium text-slate-800 hover:text-[rgb(6,106,156)] hover:underline"
+                    >
+                      {update.fullName || "—"}
+                    </Link>
+                  ) : (
+                    <span className="font-medium text-slate-800">{update.fullName || "—"}</span>
+                  )}
+                  <span className="mt-0.5 block text-[11px] text-slate-400">
+                    {update.applicationNo || update.applicationId.slice(-8).toUpperCase()} ·{" "}
+                    {update.label}
+                  </span>
+                </td>
+                <td className="max-w-[22rem] px-5 py-3">
+                  {(isDecision || suggestion) && (
+                    <span
+                      className={`mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                        isDecision ? "bg-slate-800 text-white" : suggestionTone
+                      }`}
+                    >
+                      {isDecision ? "Status" : "Recommends"} {suggestion ?? ""}
+                    </span>
+                  )}
+                  <p className="whitespace-pre-wrap break-words text-slate-700">
+                    {update.text || "—"}
+                  </p>
+                </td>
+                <td className="px-5 py-3">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[statusBucket].bg} ${STATUS[statusBucket].text}`}
+                  >
+                    {update.loanStatus}
+                  </span>
+                </td>
+                <td
+                  className="px-5 py-3 text-slate-500"
+                  title={formatDateTime(update.addedAt)}
+                >
+                  {shortDate(update.addedAt)}
                 </td>
               </tr>
             );
