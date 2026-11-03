@@ -16,6 +16,7 @@ import ProductBars from "./components/ProductBars";
 import StatusDonut from "./components/StatusDonut";
 import { AdminUpdatesTable, RecentAccountsTable, RecentApplicationsTable } from "./components/DashboardTables";
 import ProductExplorer from "./components/ProductExplorer";
+import ModuleDashboardOverview from "./ModuleDashboardOverview";
 
 /** Product rows have no dependable slug, so fall back to matching the label. */
 const productSlug = (row: { slug?: string; label?: string }): string | undefined =>
@@ -138,7 +139,13 @@ const Dashboard = () => {
           </h2>
           <p className="text-sm text-slate-500">
             Welcome back, {admin?.name}.{" "}
-            {loanAccess === "all"
+            {rawStats?.dashboardMode === "customers"
+              ? "Here is your customer account overview."
+              : rawStats?.dashboardMode === "franchises"
+                ? "Here is your franchise registration overview."
+                : rawStats?.dashboardMode === "accounts"
+                  ? "Here is your customer and franchise account overview."
+                  : loanAccess === "all"
               ? "Live overview across every loan product."
               : `Showing the ${stats?.products.length ?? 0} loan product(s) assigned to you.`}
           </p>
@@ -190,6 +197,10 @@ const Dashboard = () => {
       ) : stats ? (
         <>
           <DataWarning messages={error ? [error, ...warnings] : warnings} />
+          {stats.dashboardMode ? (
+            <ModuleDashboardOverview stats={stats} />
+          ) : (
+            <>
 
           {/* ── Headline numbers ─────────────────────────────────────────── */}
           <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -412,6 +423,8 @@ const Dashboard = () => {
               {tab === "accounts" && <RecentAccountsTable accounts={stats.recentAccounts} />}
             </div>
           </section>
+            </>
+          )}
         </>
       ) : null}
     </AdminLayout>

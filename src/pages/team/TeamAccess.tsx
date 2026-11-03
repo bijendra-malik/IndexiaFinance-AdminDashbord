@@ -75,6 +75,31 @@ const LoanAccessCell = ({ admin }: { admin: ManagedAdmin }) => {
   );
 };
 
+const ModuleAccessCell = ({ admin }: { admin: ManagedAdmin }) => {
+  if (admin.role === "super_admin") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(6,106,156,0.08)] px-2.5 py-1 text-[11px] font-bold text-[rgb(6,106,156)]">
+        <ShieldCheck size={11} /> All modules
+      </span>
+    );
+  }
+
+  const mods = admin.moduleAccess === "all" ? ["customers", "franchises"] : admin.moduleAccess ?? [];
+  if (mods.length === 0) {
+    return <span className="text-xs font-medium text-slate-400">None</span>;
+  }
+  const labels = mods.map((m) => (m === "customers" ? "Customers" : "Franchises"));
+  return (
+    <div className="flex flex-wrap items-center gap-1" title={labels.join(", ")}>
+      {labels.map((label) => (
+        <span key={label} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const PasswordField = ({
   value,
   onChange,
@@ -423,6 +448,7 @@ const TeamAccess = () => {
                   <Th>Email</Th>
                   <Th>Role</Th>
                   <Th>Loan access</Th>
+                  <Th>Modules</Th>
                   <Th>Created</Th>
                   <Th right>Actions</Th>
                 </tr>
@@ -468,6 +494,9 @@ const TeamAccess = () => {
                       </td>
                       <td className="px-4 py-3.5">
                         <LoanAccessCell admin={record} />
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <ModuleAccessCell admin={record} />
                       </td>
                       <td className="px-4 py-3.5 text-xs text-slate-500">{fmtDate(record.createdAt)}</td>
                       <td className="px-4 py-3.5">
