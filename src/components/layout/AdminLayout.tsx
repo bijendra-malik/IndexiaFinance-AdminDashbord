@@ -155,7 +155,7 @@ const ProfileDropdown = ({
 
 // ── Main Layout ───────────────────────────────────────────────────────────────
 const AdminLayout = ({ children }: { children: ReactNode }) => {
-  const { admin, logout, accessibleLoanTypes, isSuperAdmin } = useAuth();
+  const { admin, logout, accessibleLoanTypes, isSuperAdmin, canAccessModule } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -201,10 +201,15 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
         {/* Nav */}
         <nav className="scrollbar-hidden flex-1 px-3 space-y-0.5 overflow-y-auto pb-4">
 
-          {/* Flat links — Customers is a super-admin screen */}
+          {/* Flat links */}
           {[
             { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-            ...(isSuperAdmin ? [{ to: "/customers", label: "Customers", icon: Users }] : []),
+            ...(isSuperAdmin || canAccessModule("customers")
+              ? [{ to: "/customers", label: "Customers", icon: Users }]
+              : []),
+            ...(!isSuperAdmin && canAccessModule("franchises")
+              ? [{ to: "/franchises", label: "Franchises", icon: Building2 }]
+              : []),
           ].map(({ to, label, icon: Icon }) => {
             const isActive = location.pathname === to;
             return (
@@ -227,7 +232,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           sirf uske loan products hain, isliye usse ek plain link milta hai —
           koi "Customer Reject" jaisa channel nahi.
           */}
-          {isSuperAdmin ? (
+          {(isSuperAdmin || accessibleLoanTypes.length > 0) && (isSuperAdmin ? (
             <div>
               <button type="button" onClick={() => setRejectsOpenChoice(!rejectsOpen)}
                 aria-expanded={rejectsOpen}
@@ -275,7 +280,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               </div>
               Reject Loans
             </Link>
-          )}
+          ))}
 
           {/* Franchise network — super admins only */}
           {isSuperAdmin && (
@@ -369,7 +374,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           )}
 
           {/* Loan Applications dropdown */}
-          <div>
+          {accessibleLoanTypes.length > 0 && <div>
             <button type="button" onClick={() => setApplicationsOpenChoice(!applicationsOpen)}
               aria-expanded={applicationsOpen}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
@@ -432,14 +437,9 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                     </Link>
                   );
                 })}
-                {accessibleLoanTypes.length === 0 && (
-                  <p className="px-3 py-2 text-[11px] leading-snug text-white/50">
-                    No loan access assigned. Ask your super admin.
-                  </p>
-                )}
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Team & loan access — super admins only */}
           {isSuperAdmin && (

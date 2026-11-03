@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { ApiAdmin } from "../api/auth";
-import type { AdminRole, LoanAccess } from "../api/adminUsers";
+import type { AdminRole, LoanAccess, ModuleAccess } from "../api/adminUsers";
 import type { LoanTypeDef } from "../constants/loanTypes";
 
 export interface AuthContextType {
@@ -19,6 +19,9 @@ export interface AuthContextType {
   loanAccess: LoanAccess;
   accessibleLoanTypes: LoanTypeDef[];
   canAccessLoan: (slug?: string) => boolean;
+  /** `"all"` or the module keys a super admin assigned to this account. */
+  moduleAccess: ModuleAccess;
+  canAccessModule: (module?: string) => boolean;
   /** Re-read the team directory (call after a super admin saves access). */
   refreshAccess: () => void;
 }
