@@ -1,5 +1,5 @@
 import { LOAN_TYPES, type LoanTypeDef, type LoanTypeSlug } from "../constants/loanTypes";
-import type { AdminRole, LoanAccess, ManagedAdmin } from "../api/adminUsers";
+import type { AdminRole, LoanAccess, ManagedAdmin, ModuleAccess } from "../api/adminUsers";
 
 /** The sign-in handle that always keeps super-admin rights. */
 export const DEFAULT_SUPER_ADMIN_LOGIN = "admin01";
@@ -7,6 +7,7 @@ export const DEFAULT_SUPER_ADMIN_LOGIN = "admin01";
 export const ALL_LOAN_SLUGS: LoanTypeSlug[] = LOAN_TYPES.map((loan) => loan.slug);
 
 const VALID_SLUGS = new Set<string>(ALL_LOAN_SLUGS);
+const VALID_MODULES = new Set<string>(["customers", "franchises"]);
 
 /** Drops unknown / duplicate slugs so a bad payload can never widen access. */
 export const normalizeLoanAccess = (value: unknown): LoanAccess => {
@@ -18,6 +19,24 @@ export const normalizeLoanAccess = (value: unknown): LoanAccess => {
     seen.add(entry);
     return true;
   });
+};
+
+/** Drops unknown / duplicate module keys so a bad payload can never widen access. */
+export const normalizeModuleAccess = (value: unknown): ModuleAccess => {
+  if (value === "all") return "all";
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.filter((entry): entry is "customers" | "franchises" => {
+    if (typeof entry !== "string" || !VALID_MODULES.has(entry) || seen.has(entry)) return false;
+    seen.add(entry);
+    return true;
+  });
+};
+
+export const canAccessModule = (access: ModuleAccess, module?: string): boolean => {
+  if (!module) return false;
+  if (access === "all") return true;
+  return access.includes(module as "customers" | "franchises");
 };
 
 export const canAccessLoan = (access: LoanAccess, slug?: string): boolean => {
@@ -40,6 +59,7 @@ export interface SignedInAdmin {
   role?: string;
   loginId?: string;
   loanAccess?: unknown;
+  moduleAccess?: unknown;
 }
 
 /** Directory entry for the signed-in admin, matched by email or login handle. */
@@ -112,6 +132,21 @@ export const resolveLoanAccess = (
   if (admin?.loanAccess !== undefined) return normalizeLoanAccess(admin.loanAccess);
   const record = findAccessRecord(admins, admin);
   if (record) return normalizeLoanAccess(record.loanAccess);
+
+  return [];
+};
+
+/** Super admins always see every module; everyone else gets their assignment. */
+export const resolveModuleAccess = (
+  admins: ManagedAdmin[],
+  admin: SignedInAdmin | null,
+  isSuper: boolean
+): ModuleAccess => {
+  if (isSuper) return "all";
+
+  if (admin?.moduleAccess !== undefined) return normalizeModuleAccess(admin.moduleAccess);
+  const record = findAccessRecord(admins, admin);
+  if (record && record.moduleAccess !== undefined) return normalizeModuleAccess(record.moduleAccess);
 
   return [];
 };
