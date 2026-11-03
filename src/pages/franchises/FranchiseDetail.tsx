@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { LOAN_TYPES } from "../../constants/loanTypes";
 import { SUPPORTED_LOAN_SLUGS } from "../../api/personalLoans";
@@ -70,6 +71,8 @@ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
 const FranchiseDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { isSuperAdmin } = useAuth();
+  const readOnly = !isSuperAdmin;
   const { showToast } = useToast();
   const [refreshKey, setRefreshKey] = useState(0);
   const [result, setResult] = useState<{
@@ -93,6 +96,35 @@ const FranchiseDetail = () => {
     if (!id) return;
     let cancelled = false;
     const key = `${id}:${refreshKey}`;
+    if (readOnly) {
+      getFranchise(id)
+        .then((franchise) => {
+          if (!cancelled) {
+            setResult({
+              key,
+              franchise,
+              loans: EMPTY_LOANS,
+              detailError: "",
+              loansError: "",
+            });
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setResult({
+              key,
+              franchise: null,
+              loans: EMPTY_LOANS,
+              detailError: getApiErrorMessage(error, "Unable to load franchise details."),
+              loansError: "",
+            });
+          }
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     Promise.allSettled([getFranchise(id), getFranchiseLoans(id)]).then(([detail, loans]) => {
       if (cancelled) return;
       setResult({
@@ -112,7 +144,7 @@ const FranchiseDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, refreshKey]);
+  }, [id, refreshKey, readOnly]);
 
   const active = result?.key === `${id}:${refreshKey}` ? result : null;
   const franchise = active?.franchise ?? null;
@@ -244,13 +276,13 @@ const FranchiseDetail = () => {
           <ArrowLeft size={16} /> Back to franchises
         </Link>
         <div className="flex items-center gap-2">
-          <Link
+          {!readOnly && <Link
             to={franchise ? `/franchise-customers?franchise=${encodeURIComponent(franchise.franchiseId || franchise._id)}` : "/franchise-customers"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
           >
             <Users size={14} /> View customers
-          </Link>
-          {franchise && (
+          </Link>}
+          {!readOnly && franchise && (
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
@@ -319,7 +351,7 @@ const FranchiseDetail = () => {
                 </div>
               </div>
 
-              {(isPending || isApproved) && (
+              {!readOnly && (isPending || isApproved) && (
                 <div className="flex shrink-0 gap-2">
                   <button
                     type="button"
@@ -467,7 +499,7 @@ const FranchiseDetail = () => {
           )}
 
           {/* ── Credentials ───────────────────────────────────────────────── */}
-          {isApproved && (
+          {!readOnly && isApproved && (
             <Section
               title="Franchise login credentials"
               icon={<ShieldCheck size={17} />}
@@ -570,7 +602,7 @@ const FranchiseDetail = () => {
           )}
 
           {/* ── Loan applications ─────────────────────────────────────────── */}
-          <Section
+          {!readOnly && <Section
             title={`Loan applications (${loanCount})`}
             icon={<FileText size={17} />}
             action={<span className="text-xs text-slate-400">{loans.total} total</span>}
@@ -651,7 +683,7 @@ const FranchiseDetail = () => {
                 ))}
               </div>
             )}
-          </Section>
+          </Section>}
         </div>
       )}
 
