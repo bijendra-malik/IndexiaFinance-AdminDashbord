@@ -15,6 +15,12 @@ export type AdminRole = "super_admin" | "admin";
 /** `"all"` means every loan product; otherwise the explicit allowed slugs. */
 export type LoanAccess = "all" | LoanTypeSlug[];
 
+/** Module access keys for customers and franchises */
+export type ModuleKey = "customers" | "franchises";
+
+/** `"all"` means every module; otherwise the explicit allowed modules. */
+export type ModuleAccess = "all" | ModuleKey[];
+
 export type DirectoryMode = "backend" | "local";
 
 export interface ManagedAdmin {
@@ -26,6 +32,7 @@ export interface ManagedAdmin {
   email: string;
   role: AdminRole;
   loanAccess: LoanAccess;
+  moduleAccess?: ModuleAccess;
   isActive: boolean;
   createdAt: string;
   lastLogin: string | null;
@@ -40,6 +47,7 @@ export interface CreateAdminInput {
   password: string;
   role: AdminRole;
   loanAccess: LoanAccess;
+  moduleAccess?: ModuleAccess;
 }
 
 export interface ListAdminsResult {
@@ -59,11 +67,15 @@ interface AccessOverride {
   name?: string;
   role: AdminRole;
   loanAccess: LoanAccess;
+  moduleAccess?: ModuleAccess;
   updatedAt: string;
 }
 
 const isLoanAccess = (value: unknown): value is LoanAccess =>
   value === "all" || Array.isArray(value);
+
+const isModuleAccess = (value: unknown): value is ModuleAccess =>
+  value === "all" || (Array.isArray(value) && value.every((v) => typeof v === "string"));
 
 const normalizeRole = (value: unknown): AdminRole =>
   typeof value === "string" && /super/i.test(value) ? "super_admin" : "admin";
@@ -107,6 +119,7 @@ const toManaged = (raw: unknown, storage: DirectoryMode): ManagedAdmin | null =>
   const id = String(value._id ?? value.id ?? "");
   if (!id || !email) return null;
   const access = value.loanAccess ?? value.loans;
+  const moduleAcc = value.moduleAccess ?? value.modules;
   return {
     id,
     loginId,
@@ -114,6 +127,7 @@ const toManaged = (raw: unknown, storage: DirectoryMode): ManagedAdmin | null =>
     email,
     role: normalizeRole(value.role),
     loanAccess: isLoanAccess(access) ? access : "all",
+    moduleAccess: isModuleAccess(moduleAcc) ? moduleAcc : undefined,
     isActive: value.isActive !== false,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : "",
     lastLogin: typeof value.lastLogin === "string" ? value.lastLogin : null,
@@ -148,6 +162,7 @@ const applyOverride = (admin: ManagedAdmin): ManagedAdmin => {
     name: override.name || admin.name,
     role: override.role ?? admin.role,
     loanAccess: override.loanAccess ?? admin.loanAccess,
+    moduleAccess: override.moduleAccess ?? admin.moduleAccess,
   };
 };
 
@@ -161,6 +176,7 @@ export const rememberAdminAccess = (admin: {
   name?: string;
   role: AdminRole;
   loanAccess: LoanAccess;
+  moduleAccess?: ModuleAccess;
 }): void => {
   const email = accessKey(admin.email);
   if (!email) return;
@@ -170,6 +186,7 @@ export const rememberAdminAccess = (admin: {
     name: admin.name,
     role: admin.role,
     loanAccess: admin.loanAccess,
+    moduleAccess: admin.moduleAccess,
     updatedAt: new Date().toISOString(),
   };
   writeJson(ACCESS_KEY, overrides);
@@ -188,7 +205,14 @@ export const claimSuperAdminRecord = (admin: {
   const email = accessKey(admin.email ?? "");
   if (!email) return;
   const loginId = admin.loginId?.trim() || email.split("@")[0];
-  rememberAdminAccess({ email, loginId, name: admin.name, role: "super_admin", loanAccess: "all" });
+  rememberAdminAccess({ 
+    email, 
+    loginId, 
+    name: admin.name, 
+    role: "super_admin", 
+    loanAccess: "all", 
+    moduleAccess: "all" 
+  });
 
   const records = readLocalRecords();
   if (records.some((record) => accessKey(record.email) === email)) return;
@@ -201,6 +225,7 @@ export const claimSuperAdminRecord = (admin: {
       email,
       role: "super_admin",
       loanAccess: "all",
+      moduleAccess: "all",
       isActive: true,
       createdAt: new Date().toISOString(),
       lastLogin: null,
@@ -241,6 +266,7 @@ export const readManagedAdmins = (): ManagedAdmin[] => {
         email,
         role: override.role ?? "admin",
         loanAccess: override.loanAccess ?? "all",
+        moduleAccess: override.moduleAccess,
         isActive: true,
         createdAt: override.updatedAt ?? "",
         lastLogin: null,
@@ -292,6 +318,7 @@ const toBackendPayload = (input: Partial<CreateAdminInput>): Record<string, unkn
   if (input.password !== undefined) payload.password = input.password;
   if (input.role !== undefined) payload.role = input.role;
   if (input.loanAccess !== undefined) payload.loanAccess = input.loanAccess;
+  if (input.moduleAccess !== undefined) payload.moduleAccess = input.moduleAccess;
   return payload;
 };
 
@@ -332,6 +359,7 @@ export const createManagedAdmin = async (
       email: input.email,
       role: input.role,
       loanAccess: input.loanAccess,
+      moduleAccess: input.moduleAccess,
       isActive: true,
       createdAt: new Date().toISOString(),
       lastLogin: null,
@@ -345,7 +373,7 @@ export const createManagedAdmin = async (
 
 export const updateManagedAdmin = async (
   id: string,
-  patch: { name?: string; email?: string; role?: AdminRole; loanAccess?: LoanAccess }
+  patch: { name?: string; email?: string; role?: AdminRole; loanAccess?: LoanAccess; moduleAccess?: ModuleAccess }
 ): Promise<ManagedAdmin> => {
   const localRecords = readLocalRecords();
   const local = localRecords.find((record) => record.id === id);

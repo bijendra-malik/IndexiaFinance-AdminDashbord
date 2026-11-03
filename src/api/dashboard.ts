@@ -118,6 +118,32 @@ interface RawAdminActivity {
 const toCount = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
+const toOverviewAccounts = (
+  rows: Array<Record<string, unknown>> | undefined,
+  role: "customer" | "franchise"
+): DashboardOverviewAccount[] =>
+  (rows ?? []).map((row) => {
+    const isActive = row.isActive !== false;
+    const rawStatus = String(row.franchiseStatus ?? "").trim();
+    const status = role === "customer"
+      ? isActive ? "Active" : "Inactive"
+      : !rawStatus || rawStatus.toLowerCase() === "none" ? "Registered" : rawStatus;
+    return {
+      id: String(row._id ?? ""),
+      displayId: String(row.customerId ?? row.franchiseId ?? ""),
+      name: String(
+        row.businessName ?? row.name ?? row.fullName ?? row.contactPerson ?? role
+      ),
+      email: String(row.email ?? ""),
+      mobile: String(row.mobile ?? ""),
+      location: [row.city, row.state, row.country].filter(Boolean).join(", "),
+      status,
+      isVerified: row.isVerified === true,
+      isActive,
+      createdAt: String(row.createdAt ?? ""),
+    };
+  }).filter((account) => account.id);
+
 const toProductStat = (raw: RawProductStat): ProductStat => {
   const slug = raw.slug ?? resourceToSlug(raw.resource);
   return {
@@ -187,8 +213,26 @@ export interface DashboardAccount {
   createdAt: string;
 }
 
+export interface DashboardOverviewAccount {
+  id: string;
+  displayId?: string;
+  name: string;
+  email: string;
+  mobile: string;
+  location: string;
+  status: string;
+  isVerified: boolean;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export interface DashboardStats {
+  dashboardMode?: "customers" | "franchises" | "accounts";
   totalCustomers: number;
+  activeCustomers?: number;
+  inactiveCustomers?: number;
+  verifiedCustomers?: number;
+  recentCustomers?: DashboardOverviewAccount[];
   totalApplications: number;
   submitted: number;
   pending: number;
@@ -204,6 +248,12 @@ export interface DashboardStats {
   franchiseCustomerTotal: number;
   franchiseCustomersError?: string;
   totalFranchises: number;
+  pendingFranchises?: number;
+  approvedFranchises?: number;
+  rejectedFranchises?: number;
+  registeredFranchises?: number;
+  activeFranchises?: number;
+  recentFranchises?: DashboardOverviewAccount[];
   recentAccounts: DashboardAccount[];
   accountsError?: string;
 }
@@ -211,18 +261,29 @@ export interface DashboardStats {
 interface DashboardStatsResponse {
   success: boolean;
   stats: {
-    totalCustomers: number;
+    dashboardMode?: "customers" | "franchises" | "accounts";
+    totalCustomers?: number;
+    activeCustomers?: number;
+    inactiveCustomers?: number;
+    verifiedCustomers?: number;
+    recentCustomers?: Array<Record<string, unknown>>;
     totalFranchises?: number;
-    totalApplications: number;
-    submitted: number;
-    pending: number;
-    approved: number;
-    rejected: number;
-    requestedAmount: number;
-    approvedAmount: number;
-    approvalRate: number;
-    products: RawProductStat[];
-    recent: RawRecentApplication[];
+    pendingFranchises?: number;
+    approvedFranchises?: number;
+    rejectedFranchises?: number;
+    registeredFranchises?: number;
+    activeFranchises?: number;
+    recentFranchises?: Array<Record<string, unknown>>;
+    totalApplications?: number;
+    submitted?: number;
+    pending?: number;
+    approved?: number;
+    rejected?: number;
+    requestedAmount?: number;
+    approvedAmount?: number;
+    approvalRate?: number;
+    products?: RawProductStat[];
+    recent?: RawRecentApplication[];
     recentUpdates?: RawAdminActivity[];
     generatedAt: string;
   };
@@ -251,6 +312,42 @@ export const getDashboardStats = async (
   }
 
   const stats = dashboardResult.value.data.stats;
+  if (
+    stats?.dashboardMode === "customers" ||
+    stats?.dashboardMode === "franchises" ||
+    stats?.dashboardMode === "accounts"
+  ) {
+    return {
+      dashboardMode: stats.dashboardMode,
+      totalCustomers: toCount(stats.totalCustomers),
+      activeCustomers: toCount(stats.activeCustomers),
+      inactiveCustomers: toCount(stats.inactiveCustomers),
+      verifiedCustomers: toCount(stats.verifiedCustomers),
+      recentCustomers: toOverviewAccounts(stats.recentCustomers, "customer"),
+      totalFranchises: toCount(stats.totalFranchises),
+      pendingFranchises: toCount(stats.pendingFranchises),
+      approvedFranchises: toCount(stats.approvedFranchises),
+      rejectedFranchises: toCount(stats.rejectedFranchises),
+      registeredFranchises: toCount(stats.registeredFranchises),
+      activeFranchises: toCount(stats.activeFranchises),
+      recentFranchises: toOverviewAccounts(stats.recentFranchises, "franchise"),
+      totalApplications: 0,
+      submitted: 0,
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      requestedAmount: 0,
+      approvedAmount: 0,
+      approvalRate: 0,
+      products: [],
+      recent: [],
+      recentUpdates: [],
+      generatedAt: stats.generatedAt ?? new Date().toISOString(),
+      franchiseCustomerTotal: 0,
+      recentAccounts: [],
+    };
+  }
+
   if (!stats || !Array.isArray(stats.products) || !Array.isArray(stats.recent)) {
     throw new Error("Unexpected response while loading dashboard statistics.");
   }
@@ -316,16 +413,29 @@ export const getDashboardStats = async (
       ? getApiErrorMessage(franchisesResult.reason, "Could not load franchise accounts.")
       : "",
   ].filter(Boolean);
+  const normalizedStats = { ...stats };
+  delete normalizedStats.recentCustomers;
+  delete normalizedStats.recentFranchises;
 
   return {
-    ...stats,
+    ...normalizedStats,
     products,
     recent,
+    totalApplications: toCount(stats.totalApplications),
+    submitted: toCount(stats.submitted),
+    pending: toCount(stats.pending),
+    approved: toCount(stats.approved),
+    rejected: toCount(stats.rejected),
+    requestedAmount: toCount(stats.requestedAmount),
+    approvedAmount: toCount(stats.approvedAmount),
+    approvalRate: toCount(stats.approvalRate),
     recentUpdates: (stats.recentUpdates ?? []).map(toAdminActivity),
+    recentCustomers: toOverviewAccounts(stats.recentCustomers, "customer"),
+    recentFranchises: toOverviewAccounts(stats.recentFranchises, "franchise"),
     totalCustomers:
       customersResult.status === "fulfilled" && customersResult.value
         ? customers.length
-        : stats.totalCustomers,
+        : toCount(stats.totalCustomers),
     totalFranchises:
       franchisesResult.status === "fulfilled" && franchisesResult.value
         ? franchisesResult.value.total
