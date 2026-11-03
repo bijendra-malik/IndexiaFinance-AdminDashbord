@@ -56,11 +56,11 @@ function App() {
               }
             />
 
-            {/* Customers / masters / franchise are super-admin sections */}
+            {/* Customer module access is independent of loan-product access. */}
             <Route
               path="/customers"
               element={
-                <ProtectedRoute requireSuperAdmin>
+                <ProtectedRoute requireModule="customers">
                   <CustomersList />
                 </ProtectedRoute>
               }
@@ -89,7 +89,7 @@ function App() {
             <Route
               path="/franchises"
               element={
-                <ProtectedRoute requireSuperAdmin>
+                <ProtectedRoute requireModule="franchises">
                   <FranchiseList />
                 </ProtectedRoute>
               }
@@ -107,7 +107,7 @@ function App() {
             <Route
               path="/franchises/:id"
               element={
-                <ProtectedRoute requireSuperAdmin>
+                <ProtectedRoute requireModule="franchises">
                   <FranchiseDetail />
                 </ProtectedRoute>
               }

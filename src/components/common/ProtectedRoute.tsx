@@ -5,12 +5,15 @@ import { useAuth } from "../../context/AuthContext";
 const ProtectedRoute = ({
   children,
   requireSuperAdmin = false,
+  requireModule,
 }: {
   children: ReactNode;
   /** Team / access management is reserved for super admins. */
   requireSuperAdmin?: boolean;
+  /** Restrict a route to admins assigned this module (super admins included). */
+  requireModule?: string;
 }) => {
-  const { isLoggedIn, isLoading, isSuperAdmin } = useAuth();
+  const { isLoggedIn, isLoading, isSuperAdmin, canAccessModule } = useAuth();
 
   if (isLoading) {
     return (
@@ -25,6 +28,10 @@ const ProtectedRoute = ({
   }
 
   if (requireSuperAdmin && !isSuperAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireModule && !canAccessModule(requireModule)) {
     return <Navigate to="/dashboard" replace />;
   }
 
