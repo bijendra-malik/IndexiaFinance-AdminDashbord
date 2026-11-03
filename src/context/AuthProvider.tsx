@@ -3,9 +3,11 @@ import { fetchAdminProfile, type ApiAdmin } from "../api/auth";
 import { claimSuperAdminRecord, readManagedAdmins, type ManagedAdmin } from "../api/adminUsers";
 import {
   canAccessLoan as loanIsAllowed,
+  canAccessModule as moduleIsAllowed,
   isSuperAdminSession,
   loanTypesFor,
   resolveLoanAccess,
+  resolveModuleAccess,
   resolveRole,
 } from "../utils/adminAccess";
 import { AuthContext } from "./AuthContext";
@@ -142,6 +144,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const loanAccess = resolveLoanAccess(directory, admin, isSuperAdmin);
   const accessibleLoanTypes = loanTypesFor(loanAccess);
   const canAccessLoan = (slug?: string) => loanIsAllowed(loanAccess, slug);
+  const moduleAccess = resolveModuleAccess(directory, admin, isSuperAdmin);
+  const canAccessModule = (module?: string) => moduleIsAllowed(moduleAccess, module);
 
   return (
     <AuthContext.Provider
@@ -158,6 +162,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         loanAccess,
         accessibleLoanTypes,
         canAccessLoan,
+        moduleAccess,
+        canAccessModule,
         refreshAccess,
       }}
     >
