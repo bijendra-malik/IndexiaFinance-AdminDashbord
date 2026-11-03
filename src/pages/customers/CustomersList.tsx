@@ -16,6 +16,7 @@ import SearchBar from "../../components/common/SearchBar";
 import StatusBadge from "../../components/common/StatusBadge";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 import {
   deleteCustomer, getApiErrorMessage, getCustomer,
   getCustomerApplications, getCustomers, updateCustomerStatus,
@@ -54,8 +55,10 @@ const initials = (name: string) =>
   name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
 
 // ── CustomersList ─────────────────────────────────────────────────────────────
-const CustomersList = () => {
+const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => {
   const { showToast } = useToast();
+  const { isSuperAdmin } = useAuth();
+  const isCustomerOnly = customerOnly || !isSuperAdmin;
 
   const [customers, setCustomers]         = useState<Customer[] | null>(null);
   const [error, setError]                 = useState("");
@@ -102,6 +105,20 @@ const CustomersList = () => {
   useEffect(() => {
     if (!viewingCustomer?._id) return;
     let cancelled = false;
+    if (isCustomerOnly) {
+      getCustomer(viewingCustomer._id)
+        .then((customer) => {
+          if (!cancelled) setCustomerDetail(customer);
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) setDetailError(getApiErrorMessage(e, "Unable to load customer details."));
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingApps(false);
+        });
+      return () => { cancelled = true; };
+    }
+
     Promise.allSettled([
       getCustomer(viewingCustomer._id),
       getCustomerApplications(viewingCustomer._id),
@@ -114,7 +131,7 @@ const CustomersList = () => {
       setLoadingApps(false);
     });
     return () => { cancelled = true; };
-  }, [viewingCustomer?._id, appsRefreshKey]);
+  }, [viewingCustomer?._id, appsRefreshKey, isCustomerOnly]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const allApps  = appGroups?.flatMap((g) => g.applications) ?? [];
@@ -214,7 +231,9 @@ const CustomersList = () => {
     <AdminLayout>
       <PageHeader
         icon={Users} title="Customers"
-        subtitle="Manage customer accounts and review their loan applications."
+        subtitle={isCustomerOnly
+          ? "Registered customer accounts."
+          : "Manage customer accounts and review their loan applications."}
         onRefresh={() => void load()} refreshing={customers === null && !error}
       />
 
@@ -224,7 +243,9 @@ const CustomersList = () => {
           <StatCard label="Total Customers"   value={customers.length} icon={Users}      bgClass="bg-sky-50"     iconClass="text-sky-600"     labelClass="text-sky-700"     subtext="All registered" />
           <StatCard label="Active Accounts"   value={totalActive}      icon={UserCheck}  bgClass="bg-emerald-50" iconClass="text-emerald-600" labelClass="text-emerald-700" subtext="Can log in" />
           <StatCard label="Inactive Accounts" value={totalInactive}    icon={UserX}      bgClass="bg-red-50"     iconClass="text-red-600"     labelClass="text-red-700"     subtext="Temporarily disabled" />
-          <StatCard label="Open Applications" value="—"                icon={TrendingUp} bgClass="bg-amber-50"   iconClass="text-amber-600"   labelClass="text-amber-700"   subtext="Across all customers" />
+          {!isCustomerOnly && (
+            <StatCard label="Open Applications" value="—" icon={TrendingUp} bgClass="bg-amber-50" iconClass="text-amber-600" labelClass="text-amber-700" subtext="Across all customers" />
+          )}
         </div>
       )}
 
@@ -322,22 +343,22 @@ const CustomersList = () => {
                             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
                             <Eye size={13} /> View
                           </button>
-                          <button onClick={() => void handleToggle(c)} disabled={updatingId === c._id}
+                          {!isCustomerOnly && <button onClick={() => void handleToggle(c)} disabled={updatingId === c._id}
                             aria-label={`${c.isActive ? "Deactivate" : "Activate"} ${c.name}`}
                             className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${c.isActive ? "text-slate-500 hover:bg-amber-50 hover:text-amber-700" : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"}`}>
                             {updatingId === c._id ? <LoaderCircle size={14} className="animate-spin" /> : c.isActive ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
                             {c.isActive ? "Disable" : "Enable"}
-                          </button>
+                          </button>}
                           {/* Row delete — the drawer footer has the same action.
                               Whether the customer may go is decided by the backend:
                               it answers 409 while Submitted/Pending applications
                               exist, and handleDelete surfaces that message. */}
-                          <button onClick={() => setPendingDelete(c)} disabled={isDeleting || updatingId === c._id}
+                          {!isCustomerOnly && <button onClick={() => setPendingDelete(c)} disabled={isDeleting || updatingId === c._id}
                             aria-label={`Delete ${c.name}`}
                             title="Delete this customer permanently"
                             className="rounded-lg border border-red-200 bg-white p-2 text-red-500 shadow-sm transition hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40">
                             <Trash2 size={14} />
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>
@@ -398,6 +419,13 @@ const CustomersList = () => {
                 </div>
               )}
 
+              {isCustomerOnly && loadingApps && (
+                <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
+                  <LoaderCircle size={16} className="animate-spin text-sky-600" />
+                  Loading customer profile…
+                </div>
+              )}
+
               {/* Customer info */}
               {customerDetail && (
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -425,8 +453,8 @@ const CustomersList = () => {
                 </div>
               )}
 
-              {/* Applications */}
-              {loadingApps ? (
+              {/* Applications are visible only to Super Admins. */}
+              {!isCustomerOnly && (loadingApps ? (
                 <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white py-14 shadow-sm">
                   <LoaderCircle size={22} className="animate-spin text-sky-600" />
                   <span className="text-sm text-slate-500">Loading applications…</span>
@@ -550,11 +578,11 @@ const CustomersList = () => {
                   <p className="font-semibold text-emerald-800">No applications</p>
                   <p className="text-sm text-emerald-700">This customer has not applied for any loans. They can be deleted.</p>
                 </div>
-              )}
+              ))}
             </div>
 
             {/* Drawer footer */}
-            <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-4">
+            {!isCustomerOnly && <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-slate-500">
                   {canDelete ? "Permanently removes customer and all closed records." : "Deletion disabled until all applications are decided."}
@@ -564,7 +592,7 @@ const CustomersList = () => {
                   <Trash2 size={15} />{isDeleting ? "Deleting…" : "Delete customer"}
                 </button>
               </div>
-            </footer>
+            </footer>}
           </section>
         </div>
       )}

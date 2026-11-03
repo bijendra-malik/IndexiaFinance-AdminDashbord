@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check, Eye, EyeOff, Loader2, ShieldCheck, X } from "lucide-react";
 import { LOAN_TYPES, type LoanTypeSlug } from "../../../constants/loanTypes";
-import type { AdminRole, LoanAccess, ManagedAdmin } from "../../../api/adminUsers";
+import type { AdminRole, LoanAccess, ManagedAdmin, ModuleAccess, ModuleKey } from "../../../api/adminUsers";
 
 export interface AdminFormValues {
   loginId: string;
@@ -13,7 +13,13 @@ export interface AdminFormValues {
   currentPassword?: string;
   role: AdminRole;
   loanAccess: LoanAccess;
+  moduleAccess?: ModuleAccess;
 }
+
+const MODULE_OPTIONS: Array<{ key: ModuleKey; label: string; description: string }> = [
+  { key: "customers", label: "Customers", description: "Registered customers list" },
+  { key: "franchises", label: "Franchises", description: "Franchises, plans & franchise customers" },
+];
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOGIN_ID_REGEX = /^[a-z0-9][a-z0-9._-]{2,23}$/i;
@@ -107,14 +113,24 @@ const AdminFormModal = ({
       ? LOAN_TYPES.map((loan) => loan.slug)
       : [...admin.loanAccess];
   });
+  const [selectedModules, setSelectedModules] = useState<ModuleKey[]>(() => {
+    if (!admin || !admin.moduleAccess) return [];
+    return admin.moduleAccess === "all" ? MODULE_OPTIONS.map((m) => m.key) : [...admin.moduleAccess];
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const isSuperRole = role === "super_admin";
   const allSelected = selected.length === LOAN_TYPES.length;
+  const allModulesSelected = selectedModules.length === MODULE_OPTIONS.length;
 
   const toggle = (slug: LoanTypeSlug) => {
     setSelected((current) =>
       current.includes(slug) ? current.filter((entry) => entry !== slug) : [...current, slug]
+    );
+  };
+  const toggleModule = (key: ModuleKey) => {
+    setSelectedModules((current) =>
+      current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]
     );
   };
 
@@ -160,8 +176,8 @@ const AdminFormModal = ({
       }
     }
 
-    if (!isSuperRole && selected.length === 0) {
-      next.loans = "Assign at least one loan product.";
+    if (!isSuperRole && selected.length === 0 && selectedModules.length === 0) {
+      next.access = "Assign at least one loan product or module.";
     }
 
     setErrors(next);
@@ -178,6 +194,7 @@ const AdminFormModal = ({
       ...(mode === "edit" ? { currentPassword } : {}),
       role,
       loanAccess: isSuperRole || allSelected ? "all" : selected,
+      moduleAccess: isSuperRole || allModulesSelected ? "all" : selectedModules,
     });
   };
 
@@ -198,8 +215,8 @@ const AdminFormModal = ({
             </h3>
             <p className="mt-0.5 text-sm text-slate-500">
               {mode === "create"
-                ? "Set the credentials and choose exactly which loans this admin handles."
-                : "Update the details and the loan products this admin can open."}
+                ? "Set the credentials and choose which loan products and modules this admin can access."
+                : "Update the details and the loan products and modules this admin can access."}
             </p>
           </div>
           <button
@@ -363,7 +380,7 @@ const AdminFormModal = ({
             )}
           </div>
 
-          {errors.loans && <p className="mb-2 text-xs text-red-600">{errors.loans}</p>}
+          {errors.access && <p className="mb-2 text-xs text-red-600">{errors.access}</p>}
 
           <div
             className={`scrollbar-hidden grid max-h-56 gap-1.5 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/50 p-2 sm:grid-cols-2 ${
@@ -395,6 +412,38 @@ const AdminFormModal = ({
                     {checked && <Check size={11} strokeWidth={3} />}
                   </span>
                   <span className="truncate">{loan.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Module assignment */}
+        <div className="px-6 pb-5">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Customers & Franchises</p>
+              <p className="text-xs text-slate-500">{isSuperRole ? 'Super admins always have access to all modules.' : selectedModules.length + ' of ' + MODULE_OPTIONS.length + ' selected'}</p>
+            </div>
+            {!isSuperRole && (
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => setSelectedModules(MODULE_OPTIONS.map((m) => m.key))} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">Select all</button>
+                <button type="button" onClick={() => setSelectedModules([])} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">Clear</button>
+              </div>
+            )}
+          </div>
+          <div className={"grid gap-1.5 rounded-xl border border-slate-100 bg-slate-50/50 p-2 sm:grid-cols-2 " + (isSuperRole ? "pointer-events-none opacity-60" : "")}>
+            {MODULE_OPTIONS.map((mod) => {
+              const checked = isSuperRole || selectedModules.includes(mod.key);
+              return (
+                <button key={mod.key} type="button" onClick={() => toggleModule(mod.key)} aria-pressed={checked} className={"flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition " + (checked ? "border-[rgba(6,106,156,0.35)] bg-white text-slate-800 shadow-sm" : "border-transparent text-slate-500 hover:bg-white")}>
+                  <span className={"flex h-4 w-4 shrink-0 items-center justify-center rounded border " + (checked ? "border-transparent text-white" : "border-slate-300 bg-white")} style={checked ? { background: BRAND_GRADIENT } : undefined}>
+                    {checked && <Check size={11} strokeWidth={3} />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate">{mod.label}</div>
+                    <div className="truncate text-[10px] text-slate-400">{mod.description}</div>
+                  </div>
                 </button>
               );
             })}
