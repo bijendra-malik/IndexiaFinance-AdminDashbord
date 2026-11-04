@@ -53,9 +53,14 @@ export interface CreateAdminInput {
 export interface ListAdminsResult {
   admins: ManagedAdmin[];
   mode: DirectoryMode;
+  /** Regular admin seats a super admin may create (backend limit). */
+  adminLimit: number;
   /** Set when the backend admin endpoints are not available yet. */
   warning?: string;
 }
+
+/** Fallback when the backend does not report its own limit. */
+const DEFAULT_ADMIN_LIMIT = 25;
 
 // ── Local storage keys ───────────────────────────────────────────────────────
 
@@ -330,12 +335,21 @@ export const listManagedAdmins = async (): Promise<ListAdminsResult> => {
       .map((row) => toManaged(row, "backend"))
       .filter((row): row is ManagedAdmin => row !== null)
       .map(applyOverride);
-    return { admins, mode: "backend" };
+    const reportedLimit = response.data?.limits?.regularAdmins;
+    return {
+      admins,
+      mode: "backend",
+      adminLimit:
+        typeof reportedLimit === "number" && Number.isFinite(reportedLimit)
+          ? reportedLimit
+          : DEFAULT_ADMIN_LIMIT,
+    };
   } catch (error) {
     if (isAuthError(error) || !isMissingEndpoint(error)) throw error;
     return {
       admins: readLocalRecords().map(applyOverride),
       mode: "local",
+      adminLimit: DEFAULT_ADMIN_LIMIT,
       warning: backendMessage(error),
     };
   }
