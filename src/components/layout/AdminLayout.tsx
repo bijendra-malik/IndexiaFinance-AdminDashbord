@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowLeftRight, BarChart3, Bell, Briefcase,
+  Activity, ArrowLeftRight, BarChart3, Bell, Briefcase,
   Building2, Car, ChevronDown, ChevronRight, CreditCard,
   Database, FileText, Globe, GraduationCap,
   Home, Landmark, LayoutDashboard, LogOut,
@@ -440,6 +440,22 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               </div>
             )}
           </div>}
+
+          {/* Admin updates — super admins only: kis admin ne kis loan par kya kiya */}
+          {isSuperAdmin && (
+            <Link to="/activity"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={location.pathname === "/activity"
+                ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
+                : { color: "rgba(255,255,255,0.75)" }}
+              onMouseEnter={e => hoverOn(e, location.pathname === "/activity")}
+              onMouseLeave={e => hoverOff(e, location.pathname === "/activity")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/activity" ? "bg-white/20" : "bg-white/10"}`}>
+                <Activity size={15} />
+              </div>
+              <span className="flex-1">Admin Updates</span>
+            </Link>
+          )}
 
           {/* Team & loan access — super admins only */}
           {isSuperAdmin && (
