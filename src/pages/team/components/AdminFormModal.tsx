@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Eye, EyeOff, Loader2, ShieldCheck, X } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff, Loader2, ShieldCheck, X } from "lucide-react";
 import { LOAN_TYPES, type LoanTypeSlug } from "../../../constants/loanTypes";
 import type { AdminRole, LoanAccess, ManagedAdmin, ModuleAccess, ModuleKey } from "../../../api/adminUsers";
 
@@ -24,6 +24,103 @@ const MODULE_OPTIONS: Array<{ key: ModuleKey; label: string; description: string
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOGIN_ID_REGEX = /^[a-z0-9][a-z0-9._-]{2,23}$/i;
 const BRAND_GRADIENT = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))";
+
+/** Readable token per loan product — used first so the ID stays human-friendly. */
+const LOAN_ID_WORDS: Record<LoanTypeSlug, string> = {
+  "personal-loan": "personal",
+  "business-loan": "business",
+  "home-loan": "home",
+  "loan-against-property": "property",
+  "balance-transfer": "transfer",
+  "project-loan": "project",
+  "car-loan": "car",
+  "education-loan": "education",
+  "credit-card": "card",
+  "working-capital": "capital",
+  "commercial-purchase": "commercial",
+  "lease-rental-discounting": "lease",
+  "odcc-limit": "odcc",
+  "loan-against-share": "share",
+  "npa-loan": "npa",
+  "gold-loan": "gold",
+  "fdi-loan": "fdi",
+  "film-funding": "film",
+};
+
+/** Short codes — the fallback when the readable names do not fit in 24 chars. */
+const LOAN_ID_CODES: Record<LoanTypeSlug, string> = {
+  "personal-loan": "pl",
+  "business-loan": "bl",
+  "home-loan": "hl",
+  "loan-against-property": "lap",
+  "balance-transfer": "bt",
+  "project-loan": "pj",
+  "car-loan": "cl",
+  "education-loan": "el",
+  "credit-card": "cc",
+  "working-capital": "wc",
+  "commercial-purchase": "cp",
+  "lease-rental-discounting": "lrd",
+  "odcc-limit": "odcc",
+  "loan-against-share": "las",
+  "npa-loan": "npa",
+  "gold-loan": "gl",
+  "fdi-loan": "fdi",
+  "film-funding": "ff",
+};
+
+/** Every generated handle ends in this, so the role is visible in the ID itself. */
+const ID_SUFFIX = "admin";
+
+const MAX_LOGIN_ID = 24;
+
+/**
+ * Admin ID that follows the role and the loan products a super admin ticked:
+ * `project-admin`, `business-home-admin`, `super-admin`, and short codes only
+ * when the readable names would break the 24-char limit (`bl-hl-pj-el-admin`).
+ * A taken handle gets a number before the suffix (`project-2-admin`).
+ */
+const buildAutoLoginId = (
+  selected: LoanTypeSlug[],
+  modules: ModuleKey[],
+  role: AdminRole,
+  takenIds: string[]
+): string => {
+  // A super admin sees every product, so the handle is `super-admin` — never a
+  // product list.
+  if (role === "super_admin") return withFreeSuffix("super", ID_SUFFIX, takenIds);
+  // Module-only access (`customers-admin` / `franchises-admin`) — loans and
+  // modules are never assigned together.
+  if (selected.length === 0) {
+    return modules.length === 1 ? withFreeSuffix(modules[0], ID_SUFFIX, takenIds) : "";
+  }
+
+  const ordered = LOAN_TYPES.filter((loan) => selected.includes(loan.slug));
+  const stems =
+    ordered.length === LOAN_TYPES.length
+      ? ["all-loans"]
+      : [
+          ordered.map((loan) => LOAN_ID_WORDS[loan.slug]).join("-"),
+          ordered.map((loan) => LOAN_ID_CODES[loan.slug]).join("-"),
+          `${ordered.length}-loans`,
+        ];
+
+  const stem =
+    stems.find((candidate) => `${candidate}-${ID_SUFFIX}`.length <= MAX_LOGIN_ID) ??
+    stems[stems.length - 1];
+
+  return withFreeSuffix(stem, ID_SUFFIX, takenIds);
+};
+
+/** `stem-admin`, or `stem-2-admin` when another admin already owns the handle. */
+const withFreeSuffix = (stem: string, suffix: string, takenIds: string[]): string => {
+  const used = new Set(takenIds.filter(Boolean).map((id) => id.trim().toLowerCase()));
+  let candidate = `${stem}-${suffix}`;
+  for (let n = 2; used.has(candidate.toLowerCase()); n += 1) {
+    candidate = `${stem}-${n}-${suffix}`;
+  }
+  return candidate;
+};
 
 const Field = ({
   label, value, onChange, placeholder, type = "text", error, hint, disabled, autoFocus, showToggle = false,
@@ -97,6 +194,9 @@ const AdminFormModal = ({
   onSubmit: (values: AdminFormValues) => void;
 }) => {
   const [loginId, setLoginId] = useState(admin?.loginId ?? "");
+  // Create mode starts with an auto ID: it follows the loan products ticked below
+  // until the super admin types their own handle.
+  const [autoLoginId, setAutoLoginId] = useState(mode === "create");
   const [name, setName] = useState(admin?.name ?? "");
   const [email, setEmail] = useState(admin?.email ?? "");
   const [password, setPassword] = useState("");
@@ -118,20 +218,59 @@ const AdminFormModal = ({
     return admin.moduleAccess === "all" ? MODULE_OPTIONS.map((m) => m.key) : [...admin.moduleAccess];
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Loan products sit behind one compact dropdown, so the modal stays short.
+  const [loanMenuOpen, setLoanMenuOpen] = useState(false);
 
   const isSuperRole = role === "super_admin";
   const allSelected = selected.length === LOAN_TYPES.length;
   const allModulesSelected = selectedModules.length === MODULE_OPTIONS.length;
+  // Access is exactly one of three: loan products, Customers or Franchises.
+  const loansLocked = isSuperRole || selectedModules.length > 0;
+
+  const takenIds = existing
+    .filter((record) => record.id !== admin?.id)
+    .map((record) => record.loginId);
+
+  /**
+   * Tick/untick a loan product. While the ID is still auto, it is regenerated so
+   * the handle always matches the current selection.
+   */
+  const applyLoans = (next: LoanTypeSlug[]) => {
+    setSelected(next);
+    if (autoLoginId) setLoginId(buildAutoLoginId(next, selectedModules, role, takenIds));
+  };
+
+  /** The role is part of the generated handle, so switching it re-generates the ID. */
+  const applyRole = (next: AdminRole) => {
+    setRole(next);
+    if (autoLoginId) setLoginId(buildAutoLoginId(selected, selectedModules, next, takenIds));
+  };
 
   const toggle = (slug: LoanTypeSlug) => {
-    setSelected((current) =>
-      current.includes(slug) ? current.filter((entry) => entry !== slug) : [...current, slug]
+    applyLoans(
+      selected.includes(slug)
+        ? selected.filter((entry) => entry !== slug)
+        : [...selected, slug]
     );
   };
+
+  /** Typing a custom handle stops the auto ID; clearing the field turns it back on. */
+  const changeLoginId = (value: string) => {
+    setLoginId(value);
+    setAutoLoginId(value.trim() === "");
+  };
+  /**
+   * Module access replaces loan access — a Customers/Franchises admin never gets
+   * loan products, and only one module can be held at a time.
+   */
   const toggleModule = (key: ModuleKey) => {
-    setSelectedModules((current) =>
-      current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]
-    );
+    if (isSuperRole) return;
+    const nextModules: ModuleKey[] = selectedModules.includes(key) ? [] : [key];
+    const nextLoans: LoanTypeSlug[] = nextModules.length > 0 ? [] : selected;
+    setSelectedModules(nextModules);
+    setSelected(nextLoans);
+    setLoanMenuOpen(false);
+    if (autoLoginId) setLoginId(buildAutoLoginId(nextLoans, nextModules, role, takenIds));
   };
 
   const validate = (): boolean => {
@@ -177,7 +316,7 @@ const AdminFormModal = ({
     }
 
     if (!isSuperRole && selected.length === 0 && selectedModules.length === 0) {
-      next.access = "Assign at least one loan product or module.";
+      next.access = "Choose one: loan products, Customers or Franchises.";
     }
 
     setErrors(next);
@@ -215,7 +354,7 @@ const AdminFormModal = ({
             </h3>
             <p className="mt-0.5 text-sm text-slate-500">
               {mode === "create"
-                ? "Set the credentials and choose which loan products and modules this admin can access."
+                ? "Pick the loan products and modules first — the admin ID and sign-in details follow."
                 : "Update the details and the loan products and modules this admin can access."}
             </p>
           </div>
@@ -229,14 +368,200 @@ const AdminFormModal = ({
           </button>
         </div>
 
+        {/* Loan assignment — one compact dropdown instead of the tall grid */}
+        <div className="px-6 pb-4 pt-5">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-700">Loan products</p>
+            <p className="text-[11px] font-medium text-slate-400">
+              {isSuperRole
+                ? `All ${LOAN_TYPES.length} products`
+                : `${selected.length} of ${LOAN_TYPES.length} selected`}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setLoanMenuOpen((open) => !open)}
+            disabled={loansLocked}
+            aria-expanded={loanMenuOpen}
+            className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left text-sm transition focus:outline-none focus:ring-2 focus:ring-[rgba(6,106,156,0.2)] ${
+              loansLocked
+                ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                : "border-slate-200 bg-white hover:border-slate-300"
+            }`}
+          >
+            <span
+              className={`min-w-0 flex-1 truncate ${
+                loansLocked || selected.length === 0 ? "text-slate-400" : "font-medium text-slate-700"
+              }`}
+            >
+              {isSuperRole
+                ? "Every product is included"
+                : selectedModules.length > 0
+                  ? "Not available with Customers / Franchises access"
+                  : selected.length === 0
+                    ? "Select loan products"
+                    : LOAN_TYPES.filter((loan) => selected.includes(loan.slug))
+                        .map((loan) => loan.label)
+                        .join(", ")}
+            </span>
+            {!loansLocked && (
+              <ChevronDown
+                size={16}
+                className={`shrink-0 text-slate-400 transition ${loanMenuOpen ? "rotate-180" : ""}`}
+              />
+            )}
+          </button>
+
+          {loanMenuOpen && !loansLocked && (
+            <div className="mt-1.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+              <div className="mb-1 flex items-center justify-between px-1">
+                <span className="text-[11px] font-semibold text-slate-400">
+                  {selected.length} of {LOAN_TYPES.length} selected
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => applyLoans(LOAN_TYPES.map((loan) => loan.slug))}
+                    className="rounded-md px-2 py-0.5 text-[11px] font-semibold text-[rgb(6,106,156)] transition hover:bg-[rgba(6,106,156,0.08)]"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyLoans([])}
+                    className="rounded-md px-2 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-100"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="scrollbar-hidden grid max-h-48 gap-1 overflow-y-auto sm:grid-cols-2">
+                {LOAN_TYPES.map((loan) => {
+                  const checked = selected.includes(loan.slug);
+                  return (
+                    <button
+                      key={loan.slug}
+                      type="button"
+                      onClick={() => toggle(loan.slug)}
+                      aria-pressed={checked}
+                      className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-xs font-medium transition ${
+                        checked
+                          ? "border-[rgba(6,106,156,0.35)] bg-[rgba(6,106,156,0.05)] text-slate-800"
+                          : "border-transparent text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          checked ? "border-transparent text-white" : "border-slate-300 bg-white"
+                        }`}
+                        style={checked ? { background: BRAND_GRADIENT } : undefined}
+                      >
+                        {checked && <Check size={11} strokeWidth={3} />}
+                      </span>
+                      <span className="truncate">{loan.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {selectedModules.length > 0 && !isSuperRole && (
+            <p className="mt-1.5 text-[11px] text-amber-600">
+              Customers / Franchises access is selected — loan products can&apos;t be combined.
+              Untick it below to assign loans instead.
+            </p>
+          )}
+
+          {errors.access && <p className="mt-1.5 text-xs text-red-600">{errors.access}</p>}
+        </div>
+
+        {/* Module assignment — two compact chips instead of tall cards */}
+        <div className="px-6 pb-5">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-700">Customers &amp; Franchises</p>
+            <p className="text-[11px] font-medium text-slate-400">
+              {isSuperRole ? "All modules" : `${selectedModules.length} of ${MODULE_OPTIONS.length} selected`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {MODULE_OPTIONS.map((mod) => {
+              const checked = isSuperRole || selectedModules.includes(mod.key);
+              return (
+                <button
+                  key={mod.key}
+                  type="button"
+                  onClick={() => toggleModule(mod.key)}
+                  disabled={isSuperRole}
+                  aria-pressed={checked}
+                  title={mod.description}
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                    checked
+                      ? "border-[rgba(6,106,156,0.35)] bg-[rgba(6,106,156,0.06)] text-[rgb(6,106,156)]"
+                      : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                  } ${isSuperRole ? "cursor-not-allowed opacity-70" : ""}`}
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      checked ? "border-transparent text-white" : "border-slate-300 bg-white"
+                    }`}
+                    style={checked ? { background: BRAND_GRADIENT } : undefined}
+                  >
+                    {checked && <Check size={11} strokeWidth={3} />}
+                  </span>
+                  {mod.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {mode === "create" && (
+          <div className="px-6 pb-1">
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Role</label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {([
+                { value: "admin", title: "Admin", desc: "Only the loans you assign below" },
+                { value: "super_admin", title: "Super admin", desc: "Every loan + team management" },
+              ] as const).map((option) => {
+                const active = role === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => applyRole(option.value)}
+                    className={`rounded-xl border px-3.5 py-2.5 text-left transition ${
+                      active
+                        ? "border-[rgb(6,106,156)] bg-[rgba(6,106,156,0.06)] ring-1 ring-[rgba(6,106,156,0.25)]"
+                        : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                      {option.value === "super_admin" && <ShieldCheck size={14} className="text-[rgb(6,106,156)]" />}
+                      {option.title}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-500">{option.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
           <Field
             label="Admin ID"
             value={loginId}
-            onChange={setLoginId}
-            placeholder="admin02"
+            onChange={changeLoginId}
+            placeholder="project-admin"
             error={errors.loginId}
-            hint="Sign-in handle — the admin can log in with this or the email."
+            hint={
+              mode === "create" && autoLoginId
+                ? "Auto-generated from the role and loan products — ends with admin or super-admin. You can still edit it."
+                : "Sign-in handle — the admin can log in with this or the email."
+            }
             disabled={mode === "edit"}
             autoFocus={mode === "create"}
           />
@@ -265,7 +590,7 @@ const AdminFormModal = ({
               <label className="mb-1.5 block text-sm font-semibold text-slate-700">Role</label>
               <select
                 value={role}
-                onChange={(event) => setRole(event.target.value as AdminRole)}
+                onChange={(event) => applyRole(event.target.value as AdminRole)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm focus:border-[rgb(6,106,156)] focus:outline-none focus:ring-2 focus:ring-[rgba(6,106,156,0.2)]"
               >
                 <option value="admin">Admin — only the assigned loans</option>
@@ -274,38 +599,6 @@ const AdminFormModal = ({
             </div>
           )}
         </div>
-
-        {mode === "create" && (
-          <div className="px-6 pb-1">
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Role</label>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {([
-                { value: "admin", title: "Admin", desc: "Only the loans you assign below" },
-                { value: "super_admin", title: "Super admin", desc: "Every loan + team management" },
-              ] as const).map((option) => {
-                const active = role === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setRole(option.value)}
-                    className={`rounded-xl border px-3.5 py-2.5 text-left transition ${
-                      active
-                        ? "border-[rgb(6,106,156)] bg-[rgba(6,106,156,0.06)] ring-1 ring-[rgba(6,106,156,0.25)]"
-                        : "border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-                      {option.value === "super_admin" && <ShieldCheck size={14} className="text-[rgb(6,106,156)]" />}
-                      {option.title}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-slate-500">{option.desc}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Change password (edit only) — the super admin's own old password
             is required before the new one is saved. */}
@@ -348,107 +641,6 @@ const AdminFormModal = ({
             </div>
           </div>
         )}
-
-        {/* Loan assignment */}
-        <div className="px-6 pb-5 pt-5">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-slate-700">Loan products</p>
-              <p className="text-xs text-slate-500">
-                {isSuperRole
-                  ? "Super admins always see all 18 products."
-                  : `${selected.length} of ${LOAN_TYPES.length} selected`}
-              </p>
-            </div>
-            {!isSuperRole && (
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setSelected(LOAN_TYPES.map((loan) => loan.slug))}
-                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-                >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelected([])}
-                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-          </div>
-
-          {errors.access && <p className="mb-2 text-xs text-red-600">{errors.access}</p>}
-
-          <div
-            className={`scrollbar-hidden grid max-h-56 gap-1.5 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/50 p-2 sm:grid-cols-2 ${
-              isSuperRole ? "pointer-events-none opacity-60" : ""
-            }`}
-          >
-            {LOAN_TYPES.map((loan) => {
-              const checked = isSuperRole || selected.includes(loan.slug);
-              return (
-                <button
-                  key={loan.slug}
-                  type="button"
-                  onClick={() => toggle(loan.slug)}
-                  aria-pressed={checked}
-                  className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition ${
-                    checked
-                      ? "border-[rgba(6,106,156,0.35)] bg-white text-slate-800 shadow-sm"
-                      : "border-transparent text-slate-500 hover:bg-white"
-                  }`}
-                >
-                  <span
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                      checked
-                        ? "border-transparent text-white"
-                        : "border-slate-300 bg-white"
-                    }`}
-                    style={checked ? { background: BRAND_GRADIENT } : undefined}
-                  >
-                    {checked && <Check size={11} strokeWidth={3} />}
-                  </span>
-                  <span className="truncate">{loan.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Module assignment */}
-        <div className="px-6 pb-5">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-slate-700">Customers & Franchises</p>
-              <p className="text-xs text-slate-500">{isSuperRole ? 'Super admins always have access to all modules.' : selectedModules.length + ' of ' + MODULE_OPTIONS.length + ' selected'}</p>
-            </div>
-            {!isSuperRole && (
-              <div className="flex gap-1.5">
-                <button type="button" onClick={() => setSelectedModules(MODULE_OPTIONS.map((m) => m.key))} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">Select all</button>
-                <button type="button" onClick={() => setSelectedModules([])} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">Clear</button>
-              </div>
-            )}
-          </div>
-          <div className={"grid gap-1.5 rounded-xl border border-slate-100 bg-slate-50/50 p-2 sm:grid-cols-2 " + (isSuperRole ? "pointer-events-none opacity-60" : "")}>
-            {MODULE_OPTIONS.map((mod) => {
-              const checked = isSuperRole || selectedModules.includes(mod.key);
-              return (
-                <button key={mod.key} type="button" onClick={() => toggleModule(mod.key)} aria-pressed={checked} className={"flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition " + (checked ? "border-[rgba(6,106,156,0.35)] bg-white text-slate-800 shadow-sm" : "border-transparent text-slate-500 hover:bg-white")}>
-                  <span className={"flex h-4 w-4 shrink-0 items-center justify-center rounded border " + (checked ? "border-transparent text-white" : "border-slate-300 bg-white")} style={checked ? { background: BRAND_GRADIENT } : undefined}>
-                    {checked && <Check size={11} strokeWidth={3} />}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="truncate">{mod.label}</div>
-                    <div className="truncate text-[10px] text-slate-400">{mod.description}</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
           <button

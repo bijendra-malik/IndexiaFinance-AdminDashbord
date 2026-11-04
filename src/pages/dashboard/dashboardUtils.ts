@@ -80,6 +80,45 @@ export const shortDate = (iso?: string) => {
   return formatDate(iso);
 };
 
+/** "Today, 01:05 pm" — the day alone hides the order of same-day updates. */
+export const shortDateTime = (iso?: string) => {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${shortDate(iso)}, ${date.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+};
+
+/**
+ * The audit trail stores the admin name as `name || loginId || email`, so a
+ * super admin shows up as `admin@indexiafinance.com`. Show the handle part and
+ * keep the full email for the tooltip instead.
+ */
+export const adminLabel = (name?: string) => {
+  const raw = (name ?? "").trim();
+  if (!raw) return "Admin";
+  if (!raw.includes("@")) return raw;
+  const local = raw.split("@")[0] || "admin";
+  // `admin04indexiafinance@…` → `admin04`: when the org name is glued to the
+  // handle, keep just the name+number prefix so the row stays readable.
+  const compact = local.match(/^[a-z]+[._-]?\d+/i);
+  return (compact ? compact[0] : local)
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+/** Stored as "SuperAdmin"/"Admin" — shown as "Super admin"/"Admin". */
+export const roleLabel = (role?: string) => {
+  const raw = (role ?? "").replace(/[_-]+/g, " ").trim();
+  if (!raw) return "";
+  if (/^super\s*admin$/i.test(raw)) return "Super admin";
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+};
+
 /** Percentage of a total, safe when the total is zero. */
 export const percentOf = (count: number, total: number) =>
   total > 0 ? (count / total) * 100 : 0;
