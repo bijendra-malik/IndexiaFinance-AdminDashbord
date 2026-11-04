@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   CheckCircle2, Eye, EyeOff, Info, KeyRound, Loader2, Pencil, ShieldCheck, Trash2, UserPlus, Users,
 } from "lucide-react";
@@ -53,9 +53,17 @@ const LoanAccessCell = ({ admin }: { admin: ManagedAdmin }) => {
 
   const slugs = admin.loanAccess === "all" ? LOAN_TYPES.map((loan) => loan.slug) : admin.loanAccess;
   const labels = slugs.map(getLoanTypeLabel);
+  const hasModules =
+    admin.moduleAccess === "all" || (admin.moduleAccess ?? []).length > 0;
 
   if (labels.length === 0) {
-    return <span className="text-xs font-medium text-amber-600">No loans assigned</span>;
+    // Customers/Franchises admins never hold loans — that is by design, not a
+    // missing assignment, so it must not show the amber warning.
+    return hasModules ? (
+      <span className="text-xs font-medium text-slate-400">Module access only</span>
+    ) : (
+      <span className="text-xs font-medium text-amber-600">No loans assigned</span>
+    );
   }
 
   return (
@@ -86,7 +94,7 @@ const ModuleAccessCell = ({ admin }: { admin: ManagedAdmin }) => {
 
   const mods = admin.moduleAccess === "all" ? ["customers", "franchises"] : admin.moduleAccess ?? [];
   if (mods.length === 0) {
-    return <span className="text-xs font-medium text-slate-400">None</span>;
+    return <span className="text-xs font-medium text-slate-400">Not assigned</span>;
   }
   const labels = mods.map((m) => (m === "customers" ? "Customers" : "Franchises"));
   return (
@@ -226,6 +234,141 @@ const ResetPasswordDialog = ({
   );
 };
 
+const DetailItem = ({ label, children }: { label: string; children: ReactNode }) => (
+  <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+    <div className="mt-1 text-sm font-medium text-slate-700">{children}</div>
+  </div>
+);
+
+const DetailChip = ({ label }: { label: string }) => (
+  <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+    {label}
+  </span>
+);
+
+/** Read-only view: everything stored for one admin on a single card. */
+const AdminDetailDialog = ({
+  admin,
+  onClose,
+}: {
+  admin: ManagedAdmin;
+  onClose: () => void;
+}) => {
+  const isSuper = admin.role === "super_admin";
+  const loanSlugs =
+    admin.loanAccess === "all"
+      ? LOAN_TYPES.map((loan) => loan.slug)
+      : admin.loanAccess;
+  const modules =
+    admin.moduleAccess === "all"
+      ? (["customers", "franchises"] as const)
+      : admin.moduleAccess ?? [];
+  const moduleLabels = modules.map((module) =>
+    module === "customers" ? "Customers" : "Franchises"
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="my-8 w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="h-1.5" style={{ background: BRAND_GRADIENT }} />
+
+        <div className="flex items-start gap-3 px-6 pt-5">
+          <div
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+            style={{ background: BRAND_GRADIENT }}
+          >
+            {getInitials(admin.name)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-lg font-bold text-slate-800">{admin.name}</h3>
+            <p className="truncate font-mono text-xs text-slate-500">
+              {admin.loginId} · {admin.email}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+              isSuper ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {isSuper ? "Super admin" : "Admin"}
+          </span>
+        </div>
+
+        <div className="grid gap-2.5 px-6 py-5 sm:grid-cols-2">
+          <DetailItem label="Admin ID">
+            <span className="font-mono">{admin.loginId}</span>
+          </DetailItem>
+          <DetailItem label="Email">{admin.email || "—"}</DetailItem>
+          <DetailItem label="Role">
+            {isSuper ? "Super admin — every product & module" : "Admin — assigned access only"}
+          </DetailItem>
+          <DetailItem label="Status">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                admin.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {admin.isActive ? "Active" : "Inactive"}
+            </span>
+          </DetailItem>
+          <DetailItem label="Created on">{fmtDate(admin.createdAt)}</DetailItem>
+          <DetailItem label="Last login">
+            {admin.lastLogin ? fmtDate(admin.lastLogin) : "Never signed in"}
+          </DetailItem>
+          <DetailItem label={`Loan products${isSuper ? " (all)" : ` (${loanSlugs.length})`}`}>
+            {isSuper ? (
+              `All ${LOAN_TYPES.length} products`
+            ) : loanSlugs.length === 0 ? (
+              <span className="font-normal text-slate-400">
+                {moduleLabels.length > 0 ? "Not assigned — module access only" : "Not assigned"}
+              </span>
+            ) : (
+              <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                {loanSlugs.map((slug) => (
+                  <DetailChip key={slug} label={getLoanTypeLabel(slug)} />
+                ))}
+              </div>
+            )}
+          </DetailItem>
+          <DetailItem label={`Modules (${isSuper ? "all" : moduleLabels.length})`}>
+            {isSuper ? (
+              `All ${MODULE_KEYS.length} modules`
+            ) : moduleLabels.length === 0 ? (
+              <span className="font-normal text-slate-400">Not assigned</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {moduleLabels.map((label) => (
+                  <DetailChip key={label} label={label} />
+                ))}
+              </div>
+            )}
+          </DetailItem>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+            style={{ background: BRAND_GRADIENT }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MODULE_KEYS = ["customers", "franchises"] as const;
+
 const TeamAccess = () => {
   const { admin, isSuperAdmin, refreshAccess } = useAuth();
   const { showToast } = useToast();
@@ -238,6 +381,7 @@ const TeamAccess = () => {
   const [form, setForm] = useState<{ mode: "create" | "edit"; admin?: ManagedAdmin } | null>(null);
   const [deleting, setDeleting] = useState<ManagedAdmin | null>(null);
   const [resetting, setResetting] = useState<ManagedAdmin | null>(null);
+  const [viewing, setViewing] = useState<ManagedAdmin | null>(null);
   const [busy, setBusy] = useState(false);
 
   /**
@@ -283,6 +427,10 @@ const TeamAccess = () => {
   const restricted = admins.filter(
     (record) => record.role === "admin" && record.loanAccess !== "all"
   );
+  // A super admin can create at most 25 regular admins (backend enforces it too).
+  const adminLimit = result?.adminLimit ?? 25;
+  const regularAdmins = admins.filter((record) => record.role === "admin");
+  const atAdminLimit = regularAdmins.length >= adminLimit;
   const assignedLoans = new Set<string>(
     admins.flatMap((record) =>
       record.loanAccess === "all" ? LOAN_TYPES.map((loan) => loan.slug) : record.loanAccess
@@ -383,7 +531,13 @@ const TeamAccess = () => {
           <button
             type="button"
             onClick={() => setForm({ mode: "create" })}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+            disabled={atAdminLimit}
+            title={
+              atAdminLimit
+                ? `Regular admin limit reached (${adminLimit}) — delete one to add another`
+                : "Create an admin login"
+            }
+            className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100"
             style={{ background: BRAND_GRADIENT }}
           >
             <UserPlus size={15} /> Create admin
@@ -394,6 +548,7 @@ const TeamAccess = () => {
         <StatPill label="Super admins" value={superAdmins.length} />
         <StatPill label="Limited access" value={restricted.length} />
         <StatPill label="Loans covered" value={`${assignedLoans.size}/${LOAN_TYPES.length}`} />
+        <StatPill label="Admin limit" value={`${regularAdmins.length}/${adminLimit}`} />
       </PageHeader>
 
       {mode === "local" && (
@@ -417,6 +572,16 @@ const TeamAccess = () => {
             team.
           </p>
       </div>
+
+      {atAdminLimit && (
+        <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <Info size={15} className="mt-0.5 shrink-0" />
+          <p>
+            <span className="font-semibold">Regular admin limit reached.</span> A super admin can
+            create at most {adminLimit} regular admins — delete one to free a seat.
+          </p>
+        </div>
+      )}
 
       <TableCard>
         {error ? (
@@ -503,6 +668,14 @@ const TeamAccess = () => {
                         <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
+                            onClick={() => setViewing(record)}
+                            title="View all details"
+                            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-[rgb(6,106,156)]"
+                          >
+                            <Eye size={15} />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setForm({ mode: "edit", admin: record })}
                             title="Edit details and loan access"
                             className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-[rgb(6,106,156)]"
@@ -550,6 +723,8 @@ const TeamAccess = () => {
           onSubmit={form.mode === "create" ? handleCreate : handleUpdate}
         />
       )}
+
+      {viewing && <AdminDetailDialog admin={viewing} onClose={() => setViewing(null)} />}
 
       {resetting && (
         <ResetPasswordDialog
