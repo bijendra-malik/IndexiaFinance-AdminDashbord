@@ -1,4 +1,5 @@
 import axiosInstance from "./axiosInstance";
+import type { AdminUpdate, StatusRecommendation } from "../types";
 
 export { getApiErrorMessage } from "../utils/apiError";
 
@@ -7,28 +8,6 @@ export { getApiErrorMessage } from "../utils/apiError";
 export type LoanStatus = "Pending" | "Approved" | "Rejected" | "Submitted";
 
 export const MINIMUM_CREDIT_SCORE = 600;
-
-export interface AdminUpdate {
-  _id?: string;
-  text: string;
-  addedBy?: string | null;
-  addedByName?: string;
-  addedByRole?: string;
-  addedAt?: string;
-  /** Entry type: a plain note, a status recommendation, or a status-change log. */
-  kind?: "note" | "recommendation" | "status";
-  /** Status this update recommends (recommendation entries only). */
-  suggestedStatus?: LoanStatus | null;
-}
-
-export interface StatusRecommendation {
-  status: LoanStatus | null;
-  note?: string;
-  recommendedBy?: string | null;
-  recommendedByName?: string;
-  recommendedByRole?: string;
-  recommendedAt?: string | null;
-}
 
 export interface PersonalLoan {
   _id: string;
