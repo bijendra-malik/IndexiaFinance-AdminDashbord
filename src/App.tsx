@@ -7,6 +7,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import Profile from "./pages/Profile";
 import Dashboard from "./pages/dashboard/Dashboard";
 import TeamAccess from "./pages/team/TeamAccess";
+import AdminUpdates from "./pages/activity/AdminUpdates";
 import MastersList from "./pages/masters/MastersList";
 import MasterDetail from "./pages/masters/MasterDetail";
 import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
@@ -52,6 +53,16 @@ function App() {
               element={
                 <ProtectedRoute requireSuperAdmin>
                   <TeamAccess />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Admin updates feed — kis admin ne kis loan par kya update kiya */}
+            <Route
+              path="/activity"
+              element={
+                <ProtectedRoute requireSuperAdmin>
+                  <AdminUpdates />
                 </ProtectedRoute>
               }
             />
