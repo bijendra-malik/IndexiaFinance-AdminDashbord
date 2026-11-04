@@ -1,10 +1,6 @@
 import axiosInstance from "./axiosInstance";
 import type { PersonalLoan } from "./personalLoans";
-import {
-  toEntityUpdates,
-  type AdminUpdateTag,
-  type EntityAdminUpdate,
-} from "./adminUpdates.js";
+import { parseAdminUpdates, type AdminUpdate } from "../types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,7 +26,7 @@ export interface Customer {
   panNumber?: string;
   package?: string;
   /** Admin work trail — verification, correction, flag, escalation, status. */
-  adminUpdates?: EntityAdminUpdate[];
+  adminUpdates?: AdminUpdate[];
 }
 
 export interface CustomerApplicationGroup {
@@ -75,7 +71,7 @@ const toCustomer = (value: unknown): Customer => {
     pincode: optionalText(item.pincode ?? item.pinCode),
     panNumber: optionalText(item.panNumber ?? item.pan),
     package: optionalText(item.package ?? item.packageName),
-    adminUpdates: toEntityUpdates(item.adminUpdates),
+    adminUpdates: parseAdminUpdates(item.adminUpdates),
   };
 };
 
@@ -113,13 +109,13 @@ export const updateCustomerStatus = async (
  */
 export const addCustomerUpdate = async (
   id: string,
-  payload: { text: string; tag?: AdminUpdateTag }
-): Promise<EntityAdminUpdate[]> => {
+  payload: { text: string; tag?: string }
+): Promise<AdminUpdate[]> => {
   const res = await axiosInstance.post<{
     adminUpdates?: unknown;
     update?: unknown;
   }>(`/customers/${encodeURIComponent(id)}/updates`, payload);
-  return toEntityUpdates(res.data?.adminUpdates ?? [res.data?.update]) ?? [];
+  return parseAdminUpdates(res.data?.adminUpdates ?? [res.data?.update]) ?? [];
 };
 
 export const getCustomer = async (id: string): Promise<Customer> => {
