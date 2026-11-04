@@ -7,13 +7,16 @@ import type {
 import {
   BRAND,
   STATUS,
+  adminLabel,
   amountOf,
   applicationDetailPath,
   asBucket,
   formatCurrency,
   formatDate,
   formatDateTime,
+  roleLabel,
   shortDate,
+  shortDateTime,
 } from "../dashboardUtils";
 
 const THEAD =
@@ -143,11 +146,19 @@ export const AdminUpdatesTable = ({ updates }: { updates: AdminActivityUpdate[] 
               <tr key={update._id} className="align-top transition hover:bg-slate-50">
                 <td className="px-5 py-3">
                   <span className="block text-xs font-semibold text-slate-800">
-                    {update.addedByName || "Admin"}
+                    {adminLabel(update.addedByName)}
                   </span>
+                  {update.addedByName?.includes("@") && (
+                    <span
+                      className="block max-w-[12rem] truncate text-[10px] text-slate-400"
+                      title={update.addedByName}
+                    >
+                      {update.addedByName}
+                    </span>
+                  )}
                   {update.addedByRole && (
                     <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      {update.addedByRole.replace("_", " ")}
+                      {roleLabel(update.addedByRole)}
                     </span>
                   )}
                 </td>
@@ -168,15 +179,24 @@ export const AdminUpdatesTable = ({ updates }: { updates: AdminActivityUpdate[] 
                   </span>
                 </td>
                 <td className="max-w-[22rem] px-5 py-3">
-                  {(isDecision || suggestion) && (
-                    <span
-                      className={`mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                        isDecision ? "bg-slate-800 text-white" : suggestionTone
-                      }`}
-                    >
-                      {isDecision ? "Status" : "Recommends"} {suggestion ?? ""}
-                    </span>
-                  )}
+                  {/* One chip explains the row: note, recommendation or decision. */}
+                  <span
+                    className={`mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                      isDecision
+                        ? "bg-slate-800 text-white"
+                        : suggestion
+                          ? suggestionTone
+                          : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {isDecision
+                      ? suggestion
+                        ? `Status changed to ${suggestion}`
+                        : "Status change"
+                      : suggestion
+                        ? `Recommends ${suggestion}`
+                        : "Note"}
+                  </span>
                   <p className="whitespace-pre-wrap break-words text-slate-700">
                     {update.text || "—"}
                   </p>
@@ -192,7 +212,7 @@ export const AdminUpdatesTable = ({ updates }: { updates: AdminActivityUpdate[] 
                   className="px-5 py-3 text-slate-500"
                   title={formatDateTime(update.addedAt)}
                 >
-                  {shortDate(update.addedAt)}
+                  {shortDateTime(update.addedAt)}
                 </td>
               </tr>
             );
