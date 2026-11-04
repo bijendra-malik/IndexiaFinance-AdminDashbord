@@ -6,10 +6,15 @@ import {
 import AdminLayout from "../../components/layout/AdminLayout";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../utils/apiError";
-import { getDashboardStats, type DashboardStats } from "../../api/dashboard";
+import {
+  getDashboardStats,
+  type AdminActivityUpdate,
+  type DashboardStats,
+} from "../../api/dashboard";
 import { LOAN_TYPES } from "../../constants/loanTypes";
 import {
-  BRAND, applicationDetailPath, formatCompactCurrency, formatCurrency, formatDateTime, percentOf, shortDate, type Bucket,
+  BRAND, adminLabel, applicationDetailPath, formatCompactCurrency, formatCurrency, formatDateTime,
+  percentOf, roleLabel, shortDateTime, type Bucket,
 } from "./dashboardUtils";
 import { ContextStrip, DataWarning, KpiCard, Panel } from "./components/DashboardCards";
 import ProductBars from "./components/ProductBars";
@@ -31,6 +36,115 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "updates", label: "Admin Updates" },
   { id: "accounts", label: "Recent Accounts" },
 ];
+
+const initialsOf = (text: string) =>
+  text
+    .split(/[\s._-]+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "A";
+
+/**
+ * One admin update, read like a sentence: who (role) → on which product /
+ * applicant → what they wrote → when. The stored name can be an email and the
+ * role arrives as "SuperAdmin", so both are humanised here.
+ */
+const AdminUpdateRow = ({ update }: { update: AdminActivityUpdate }) => {
+  const detailPath = applicationDetailPath(update.slug, update.applicationId);
+  const who = adminLabel(update.addedByName);
+  const role = roleLabel(update.addedByRole);
+  const isDecision = update.kind === "status";
+
+  // One chip carries the whole meaning: note, recommendation or decision.
+  const kindChip = isDecision
+    ? {
+        text: update.suggestedStatus
+          ? `Status changed to ${update.suggestedStatus}`
+          : "Status change",
+        className: "bg-slate-800 text-white",
+      }
+    : update.kind === "recommendation"
+      ? {
+          text: update.suggestedStatus
+            ? `Recommends ${update.suggestedStatus}`
+            : "Recommendation",
+          className: "bg-amber-100 text-amber-800",
+        }
+      : { text: "Note", className: "bg-slate-100 text-slate-600" };
+
+  return (
+    <li className="flex items-start gap-3 px-5 py-3.5">
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+        style={{ background: BRAND.gradient }}
+      >
+        {initialsOf(who)}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-sm font-semibold text-slate-800" title={update.addedByName}>
+            {who}
+          </span>
+          {role && (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                isDecision || /super/i.test(update.addedByRole)
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {role}
+            </span>
+          )}
+          <span className="text-[11px] text-slate-400">on</span>
+          <span className="rounded-md bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-700">
+            {update.label}
+          </span>
+          <span className="truncate text-[11px] text-slate-500">
+            · {update.fullName || "Applicant"}
+            {update.applicationNo ? ` · ${update.applicationNo}` : ""}
+          </span>
+        </div>
+
+        <p
+          className="mt-1.5 whitespace-pre-wrap break-words rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700"
+          title={update.text}
+        >
+          {update.text || "—"}
+        </p>
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className={`rounded-full px-2 py-0.5 font-semibold ${kindChip.className}`}>
+            {kindChip.text}
+          </span>
+          <span
+            className={`rounded-full px-2 py-0.5 font-semibold ${
+              update.loanStatus === "Approved"
+                ? "bg-emerald-50 text-emerald-700"
+                : update.loanStatus === "Rejected"
+                  ? "bg-red-50 text-red-700"
+                  : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            Loan: {update.loanStatus}
+          </span>
+          <span className="inline-flex items-center gap-1 text-slate-400">
+            <Clock size={11} /> {shortDateTime(update.addedAt)}
+          </span>
+          {detailPath && (
+            <Link
+              to={detailPath}
+              className="ml-auto shrink-0 text-xs font-semibold text-sky-700 hover:underline"
+            >
+              View
+            </Link>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+};
 
 const Dashboard = () => {
   const { admin, loanAccess, canAccessLoan, isSuperAdmin } = useAuth();
@@ -308,64 +422,27 @@ const Dashboard = () => {
                   ? "Latest notes, status recommendations and decisions from every admin"
                   : "Latest notes and recommendations on the products assigned to you"
               }
+              action={
+                isSuperAdmin ? (
+                  <Link
+                    to="/activity"
+                    className="shrink-0 text-xs font-semibold text-sky-700 hover:underline"
+                  >
+                    View all
+                  </Link>
+                ) : undefined
+              }
             >
               <ul className="divide-y divide-slate-100">
-                {stats.recentUpdates.slice(0, 5).map((update) => {
-                  const detailPath = applicationDetailPath(update.slug, update.applicationId);
-                  return (
-                    <li
-                      key={update._id}
-                      className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs text-slate-500">
-                          <span className="font-semibold text-slate-800">
-                            {update.addedByName || "Admin"}
-                          </span>
-                          {" · "}
-                          {update.addedByRole || "Admin"}
-                          {" · "}
-                          {update.label}
-                          {" · "}
-                          {update.fullName || "Applicant"}
-                        </p>
-                        <p className="mt-0.5 truncate text-sm text-slate-700" title={update.text}>
-                          {update.text}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {update.suggestedStatus && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                              update.kind === "status"
-                                ? "bg-slate-800 text-white"
-                                : update.suggestedStatus === "Approved"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : update.suggestedStatus === "Rejected"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-amber-100 text-amber-800"
-                            }`}
-                          >
-                            {update.kind === "status" ? "Status" : "Recommends"}{" "}
-                            {update.suggestedStatus}
-                          </span>
-                        )}
-                        <span className="text-[11px] text-slate-400">
-                          {shortDate(update.addedAt)}
-                        </span>
-                        {detailPath && (
-                          <Link
-                            to={detailPath}
-                            className="text-xs font-semibold text-sky-700 hover:underline"
-                          >
-                            View
-                          </Link>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
+                {stats.recentUpdates.slice(0, 5).map((update) => (
+                  <AdminUpdateRow key={update._id} update={update} />
+                ))}
               </ul>
+              {stats.recentUpdates.length > 5 && (
+                <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">
+                  Showing the 5 most recent of {stats.recentUpdates.length} updates.
+                </p>
+              )}
             </Panel>
           )}
 
