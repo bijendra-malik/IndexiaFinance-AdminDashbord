@@ -1,5 +1,5 @@
 import axiosInstance from "./axiosInstance";
-import type { AdminUpdate, StatusRecommendation } from "../types";
+import type { AdminUpdate, StatusRecommendation } from "../types/admin.types";
 
 export { getApiErrorMessage } from "../utils/apiError";
 

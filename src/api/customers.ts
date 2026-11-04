@@ -1,6 +1,6 @@
 import axiosInstance from "./axiosInstance";
 import type { PersonalLoan } from "./personalLoans";
-import { parseAdminUpdates, type AdminUpdate } from "../types";
+import { parseAdminUpdates, type AdminUpdate } from "../types/admin.types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
