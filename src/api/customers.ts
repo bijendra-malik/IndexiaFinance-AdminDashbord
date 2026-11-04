@@ -1,5 +1,10 @@
 import axiosInstance from "./axiosInstance";
 import type { PersonalLoan } from "./personalLoans";
+import {
+  toEntityUpdates,
+  type AdminUpdateTag,
+  type EntityAdminUpdate,
+} from "./adminUpdates.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +29,8 @@ export interface Customer {
   pincode?: string;
   panNumber?: string;
   package?: string;
+  /** Admin work trail — verification, correction, flag, escalation, status. */
+  adminUpdates?: EntityAdminUpdate[];
 }
 
 export interface CustomerApplicationGroup {
@@ -68,6 +75,7 @@ const toCustomer = (value: unknown): Customer => {
     pincode: optionalText(item.pincode ?? item.pinCode),
     panNumber: optionalText(item.panNumber ?? item.pan),
     package: optionalText(item.package ?? item.packageName),
+    adminUpdates: toEntityUpdates(item.adminUpdates),
   };
 };
 
@@ -90,9 +98,28 @@ export const getCustomers = async (params?: {
 
 export const updateCustomerStatus = async (
   id: string,
-  isActive: boolean
+  isActive: boolean,
+  note?: string
 ): Promise<void> => {
-  await axiosInstance.patch(`/customers/${encodeURIComponent(id)}/status`, { isActive });
+  await axiosInstance.patch(`/customers/${encodeURIComponent(id)}/status`, {
+    isActive,
+    ...(note && note.trim() ? { note: note.trim() } : {}),
+  });
+};
+
+/**
+ * POST /api/admin/customers/:id/updates
+ * Sirf regular admin likh sakta hai (super admin ko 403 milta hai).
+ */
+export const addCustomerUpdate = async (
+  id: string,
+  payload: { text: string; tag?: AdminUpdateTag }
+): Promise<EntityAdminUpdate[]> => {
+  const res = await axiosInstance.post<{
+    adminUpdates?: unknown;
+    update?: unknown;
+  }>(`/customers/${encodeURIComponent(id)}/updates`, payload);
+  return toEntityUpdates(res.data?.adminUpdates ?? [res.data?.update]) ?? [];
 };
 
 export const getCustomer = async (id: string): Promise<Customer> => {
