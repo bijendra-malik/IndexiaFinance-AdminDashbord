@@ -7,11 +7,13 @@ import {
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import AdminUpdateThread from "../../components/common/AdminUpdateThread";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { LOAN_TYPES } from "../../constants/loanTypes";
 import { SUPPORTED_LOAN_SLUGS } from "../../api/personalLoans";
 import {
+  addFranchiseUpdate,
   approveFranchise,
   deleteFranchise,
   getApiErrorMessage,
@@ -233,6 +235,23 @@ const FranchiseDetail = () => {
     }
   };
 
+  /* Regular admin ka update / recommendation — final authority super admin ke paas. */
+  const handleAddUpdate = async (payload: {
+    text: string;
+    tag: string;
+    suggestedStatus?: string;
+  }) => {
+    if (!franchise) return false;
+    await addFranchiseUpdate(franchise._id, payload);
+    setRefreshKey((key) => key + 1);
+    showToast(
+      payload.suggestedStatus
+        ? "Update saved and sent to the super admin for a decision."
+        : "Update saved to the franchise trail."
+    );
+    return true;
+  };
+
   const handleDelete = async () => {
     if (!franchise) return;
     setIsDeleting(true);
@@ -412,6 +431,15 @@ const FranchiseDetail = () => {
               </p>
             </section>
           )}
+
+          {/* ── Admin work trail ─────────────────────────────────────────────── */}
+          <AdminUpdateThread
+            entity="franchise"
+            updates={franchise.adminUpdates}
+            recommendation={franchise.statusRecommendation}
+            canWrite={!isSuperAdmin}
+            onSubmit={handleAddUpdate}
+          />
 
           <div className="grid gap-5 xl:grid-cols-2">
             {/* ── Business & KYC ──────────────────────────────────────────── */}
