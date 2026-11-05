@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, CheckCircle2, Clock, FileText, RefreshCw, XCircle,
+  AlertTriangle, ArrowRight, CheckCircle2, Clock, FileText, MessageSquare, RefreshCw, ShieldCheck,
+  UserRound, XCircle,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { useAuth } from "../../context/AuthContext";
@@ -13,9 +14,11 @@ import {
 } from "../../api/dashboard";
 import { LOAN_TYPES } from "../../constants/loanTypes";
 import {
-  BRAND, adminLabel, applicationDetailPath, formatCompactCurrency, formatCurrency, formatDateTime,
+  adminLabel, applicationDetailPath, formatCompactCurrency, formatCurrency, formatDateTime,
   percentOf, roleLabel, shortDateTime, type Bucket,
 } from "./dashboardUtils";
+import { updateTagLabel } from "../../api/adminUpdates";
+import { avatarGradient, initialsOf } from "../../utils/auditFormat";
 import { ContextStrip, DataWarning, KpiCard, Panel } from "./components/DashboardCards";
 import ProductBars from "./components/ProductBars";
 import StatusDonut from "./components/StatusDonut";
@@ -37,58 +40,106 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "accounts", label: "Recent Accounts" },
 ];
 
-const initialsOf = (text: string) =>
-  text
-    .split(/[\s._-]+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("") || "A";
-
 /**
  * One admin update, read like a sentence: who (role) → on which product /
  * applicant → what they wrote → when. The stored name can be an email and the
  * role arrives as "SuperAdmin", so both are humanised here.
  */
+/*
+Super admin aur regular admin ka dashboard ek jaisa nahi dikhna chahiye — role
+ke hisaab se hero, tab accent aur highlight colour badalte hain, layout same
+rehta hai.
+*/
+const ROLE_THEME = {
+  super: {
+    label: "Super admin view",
+    icon: ShieldCheck,
+    gradient: "linear-gradient(135deg, rgb(6,106,156) 0%, rgb(17,146,138) 58%, rgb(38,174,144) 100%)",
+    accent: "rgb(6,106,156)",
+    soft: "rgba(6,106,156,0.1)",
+    hairline: "rgba(250,204,21,0.85)",
+  },
+  admin: {
+    label: "Admin view",
+    icon: UserRound,
+    gradient: "linear-gradient(135deg, rgb(49,46,129) 0%, rgb(67,56,202) 52%, rgb(14,165,233) 100%)",
+    accent: "rgb(67,56,202)",
+    soft: "rgba(67,56,202,0.1)",
+    hairline: "rgba(125,211,252,0.9)",
+  },
+} as const;
+
+/* Customer/franchise rows apne record par jaate hain, loans apne application par. */
+const updateTargetPath = (update: AdminActivityUpdate): string | null | undefined => {
+  if (update.entity === "customer") {
+    return `/customers?customer=${encodeURIComponent(update.entityId || update.applicationId)}`;
+  }
+  if (update.entity === "franchise") {
+    return `/franchises/${update.entityId || update.applicationId}`;
+  }
+  return applicationDetailPath(update.slug, update.applicationId);
+};
+
 const AdminUpdateRow = ({ update }: { update: AdminActivityUpdate }) => {
-  const detailPath = applicationDetailPath(update.slug, update.applicationId);
+  const detailPath = updateTargetPath(update);
   const who = adminLabel(update.addedByName);
   const role = roleLabel(update.addedByRole);
   const isDecision = update.kind === "status";
+  const isRecommendation = update.kind === "recommendation";
+  const recordLabel =
+    update.entity === "customer" ? "Customer" : update.entity === "franchise" ? "Franchise" : update.label;
+
+  // Left border = kind, so the feed can be scanned without reading the chips.
+  const accent = isDecision
+    ? "border-l-emerald-400"
+    : isRecommendation
+      ? "border-l-amber-400"
+      : "border-l-slate-300";
 
   // One chip carries the whole meaning: note, recommendation or decision.
   const kindChip = isDecision
     ? {
-        text: update.suggestedStatus
-          ? `Status changed to ${update.suggestedStatus}`
-          : "Status change",
-        className: "bg-slate-800 text-white",
+        text: update.suggestedStatus ? `Decision: ${update.suggestedStatus}` : "Decision",
+        className: "bg-emerald-50 text-emerald-700 ring-emerald-200",
       }
-    : update.kind === "recommendation"
+    : isRecommendation
       ? {
           text: update.suggestedStatus
             ? `Recommends ${update.suggestedStatus}`
             : "Recommendation",
-          className: "bg-amber-100 text-amber-800",
+          className: "bg-amber-50 text-amber-800 ring-amber-200",
         }
-      : { text: "Note", className: "bg-slate-100 text-slate-600" };
+      : { text: "Note", className: "bg-slate-50 text-slate-600 ring-slate-200" };
+
+  const statusTone =
+    update.loanStatus === "Approved"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+      : update.loanStatus === "Rejected"
+        ? "bg-red-50 text-red-700 ring-red-200"
+        : "bg-amber-50 text-amber-700 ring-amber-200";
 
   return (
-    <li className="flex items-start gap-3 px-5 py-3.5">
+    <li
+      className={`flex items-start gap-3 border-l-[3px] px-5 py-3 transition hover:bg-slate-50/70 ${accent}`}
+    >
       <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-        style={{ background: BRAND.gradient }}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+        style={{ background: avatarGradient(who) }}
+        title={update.addedByName}
+        aria-hidden
       >
         {initialsOf(who)}
       </span>
 
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-semibold text-slate-800" title={update.addedByName}>
+        {/* kaun + kab, ek line me */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 truncate text-sm font-semibold text-slate-800" title={update.addedByName}>
             {who}
           </span>
           {role && (
             <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                 isDecision || /super/i.test(update.addedByRole)
                   ? "bg-amber-50 text-amber-700"
                   : "bg-slate-100 text-slate-600"
@@ -97,48 +148,58 @@ const AdminUpdateRow = ({ update }: { update: AdminActivityUpdate }) => {
               {role}
             </span>
           )}
-          <span className="text-[11px] text-slate-400">on</span>
-          <span className="rounded-md bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-700">
-            {update.label}
-          </span>
-          <span className="truncate text-[11px] text-slate-500">
-            · {update.fullName || "Applicant"}
-            {update.applicationNo ? ` · ${update.applicationNo}` : ""}
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] text-slate-400">
+            <Clock size={11} /> {shortDateTime(update.addedAt)}
           </span>
         </div>
 
+        {/* kis record par + open */}
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+            {recordLabel}
+          </span>
+          <span className="min-w-0 truncate text-xs font-medium text-slate-700" title={update.fullName}>
+            {update.fullName || "Applicant"}
+          </span>
+          {update.applicationNo && (
+            <span className="hidden shrink-0 font-mono text-[10px] text-slate-400 sm:inline">
+              {update.applicationNo}
+            </span>
+          )}
+          {detailPath && (
+            <Link to={detailPath} className="ml-auto shrink-0 text-[10px] font-semibold whitespace-nowrap text-sky-700 hover:underline">
+              Open
+            </Link>
+          )}
+        </div>
+
         <p
-          className="mt-1.5 whitespace-pre-wrap break-words rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700"
+          className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700"
           title={update.text}
         >
           {update.text || "—"}
         </p>
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-          <span className={`rounded-full px-2 py-0.5 font-semibold ${kindChip.className}`}>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ring-1 ${kindChip.className}`}
+          >
+            {isDecision ? (
+              <CheckCircle2 size={11} />
+            ) : isRecommendation ? (
+              <Clock size={11} />
+            ) : (
+              <MessageSquare size={11} />
+            )}
             {kindChip.text}
           </span>
-          <span
-            className={`rounded-full px-2 py-0.5 font-semibold ${
-              update.loanStatus === "Approved"
-                ? "bg-emerald-50 text-emerald-700"
-                : update.loanStatus === "Rejected"
-                  ? "bg-red-50 text-red-700"
-                  : "bg-amber-50 text-amber-700"
-            }`}
-          >
-            Loan: {update.loanStatus}
+          <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${statusTone}`}>
+            {update.loanStatus}
           </span>
-          <span className="inline-flex items-center gap-1 text-slate-400">
-            <Clock size={11} /> {shortDateTime(update.addedAt)}
-          </span>
-          {detailPath && (
-            <Link
-              to={detailPath}
-              className="ml-auto shrink-0 text-xs font-semibold text-sky-700 hover:underline"
-            >
-              View
-            </Link>
+          {update.tag && update.tag !== "general" && (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+              {updateTagLabel(update.tag)}
+            </span>
           )}
         </div>
       </div>
@@ -243,42 +304,56 @@ const Dashboard = () => {
       )
     : [];
 
+  const theme = isSuperAdmin ? ROLE_THEME.super : ROLE_THEME.admin;
+
   return (
     <AdminLayout>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold" style={{ color: BRAND.blue }}>
-            Dashboard
-          </h2>
-          <p className="text-sm text-slate-500">
-            Welcome back, {admin?.name}.{" "}
-            {rawStats?.dashboardMode === "customers"
-              ? "Here is your customer account overview."
-              : rawStats?.dashboardMode === "franchises"
-                ? "Here is your franchise registration overview."
-                : rawStats?.dashboardMode === "accounts"
-                  ? "Here is your customer and franchise account overview."
-                  : loanAccess === "all"
-              ? "Live overview across every loan product."
-              : `Showing the ${stats?.products.length ?? 0} loan product(s) assigned to you.`}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {stats && (
-            <span className="hidden text-xs text-slate-400 sm:block">
-              Updated {formatDateTime(stats.generatedAt)}
+      {/* ── Hero — role ke hisaab se rang ────────────────────────────────── */}
+      <div
+        className="mb-4 overflow-hidden rounded-2xl px-5 py-5 text-white shadow-sm"
+        style={{ background: theme.gradient }}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset ring-white/25">
+              <theme.icon size={11} /> {theme.label}
             </span>
-          )}
+            <h2 className="mt-2.5 text-2xl font-bold leading-tight">Dashboard</h2>
+            <p className="mt-1 max-w-2xl text-sm text-white/85">
+              Welcome back, {admin?.name}.{" "}
+              {rawStats?.dashboardMode === "customers"
+                ? "Here is your customer account overview."
+                : rawStats?.dashboardMode === "franchises"
+                  ? "Here is your franchise registration overview."
+                  : rawStats?.dashboardMode === "accounts"
+                    ? "Here is your customer and franchise account overview."
+                    : loanAccess === "all"
+                ? "Live overview across every loan product."
+                : `Showing the ${stats?.products.length ?? 0} loan product(s) assigned to you.`}
+            </p>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] font-medium text-white/80">
+              <span className="rounded-full bg-white/10 px-2 py-0.5 ring-1 ring-inset ring-white/20">
+                {isSuperAdmin
+                  ? "Full organisation access"
+                  : `${stats?.products.length ?? 0} assigned product(s)`}
+              </span>
+              {stats && <span>Updated {formatDateTime(stats.generatedAt)}</span>}
+            </div>
+          </div>
           <button
             onClick={refresh}
             disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium transition hover:bg-slate-50 disabled:opacity-60"
+            className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold ring-1 ring-inset ring-white/30 transition hover:bg-white/25 disabled:opacity-60"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Refresh
           </button>
         </div>
+        <span
+          aria-hidden
+          className="mt-4 block h-[3px] w-full max-w-[11rem] rounded-full"
+          style={{ background: theme.hairline, opacity: 0.75 }}
+        />
       </div>
 
       {error && !stats ? (
@@ -412,8 +487,106 @@ const Dashboard = () => {
             </Panel>
           </div>
 
+          {/* ── Super admin ka decision queue ─────────────────────────────── */}
+          {isSuperAdmin && (
+            <Panel
+              className="mb-4"
+              title="Decision pending"
+              subtitle="A regular admin checked these records and suggested a decision — approve or reject from the record."
+              action={
+                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 tabular-nums">
+                  {stats.pendingDecisions?.total ?? 0}
+                </span>
+              }
+            >
+              {(stats.pendingDecisions?.items ?? []).length === 0 ? (
+                <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-500">
+                    <CheckCircle2 size={20} />
+                  </span>
+                  <p className="text-sm font-semibold text-slate-700">No decisions pending</p>
+                  <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+                    A regular admin record check karke suggestion dega, wo yahan aayega.
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {(stats.pendingDecisions?.items ?? []).slice(0, 5).map((item) => {
+                    const reviewPath =
+                      item.entity === "customer"
+                        ? `/customers?customer=${encodeURIComponent(item.id)}`
+                        : `/franchises/${item.id}`;
+                    return (
+                      <li
+                        key={`${item.entity}-${item.id}`}
+                        className="flex items-start gap-3 px-5 py-3 transition hover:bg-slate-50/70"
+                      >
+                        <span
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                          style={{ background: avatarGradient(item.name || item.referenceNo || item.id) }}
+                          aria-hidden
+                        >
+                          {initialsOf(item.name || "Record")}
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                              {item.entity === "customer" ? "Customer" : "Franchise"}
+                            </span>
+                            <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
+                              {item.name || "Unnamed"}
+                            </span>
+                            {item.referenceNo && (
+                              <span className="hidden shrink-0 font-mono text-[10px] text-slate-400 sm:inline">
+                                {item.referenceNo}
+                              </span>
+                            )}
+                            <Link
+                              to={reviewPath}
+                              className="ml-auto shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap text-slate-600 transition hover:border-[rgb(6,106,156)] hover:text-[rgb(6,106,156)]"
+                            >
+                              Review
+                            </Link>
+                          </div>
+
+                          <p className="mt-0.5 truncate text-[11px] text-slate-500" title={item.note}>
+                            {item.note || "No note added."}
+                            <span className="text-slate-400">
+                              {" · "}
+                              {adminLabel(item.requestedByName)}
+                              {item.requestedAt ? ` · ${shortDateTime(item.requestedAt)}` : ""}
+                            </span>
+                          </p>
+
+                          {/* Current → suggested, ek hi line me. */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                              Current: {item.status || "—"}
+                            </span>
+                            <ArrowRight size={12} className="shrink-0 text-slate-300" />
+                            {item.suggestedStatus && (
+                              <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-200">
+                                {item.suggestedStatus}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {(stats.pendingDecisions?.total ?? 0) > 5 && (
+                <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">
+                  Showing 5 of {stats.pendingDecisions?.total} pending decisions.
+                </p>
+              )}
+            </Panel>
+          )}
+
           {/* ── Latest admin activity ─────────────────────────────────────── */}
-          {stats.recentUpdates.length > 0 && (
+          {(isSuperAdmin || stats.recentUpdates.length > 0) && (
             <Panel
               className="mb-4"
               title="Admin updates"
@@ -433,11 +606,25 @@ const Dashboard = () => {
                 ) : undefined
               }
             >
-              <ul className="divide-y divide-slate-100">
-                {stats.recentUpdates.slice(0, 5).map((update) => (
-                  <AdminUpdateRow key={update._id} update={update} />
-                ))}
-              </ul>
+              {stats.recentUpdates.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                    <MessageSquare size={18} />
+                  </span>
+                  <p className="text-sm font-semibold text-slate-700">No admin updates yet</p>
+                  <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+                    Jaise hi koi admin note, recommendation ya decision likhega, wo yahan dikhega.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <ul className="divide-y divide-slate-100">
+                    {stats.recentUpdates.slice(0, 5).map((update) => (
+                      <AdminUpdateRow key={update._id} update={update} />
+                    ))}
+                  </ul>
+                </>
+              )}
               {stats.recentUpdates.length > 5 && (
                 <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">
                   Showing the 5 most recent of {stats.recentUpdates.length} updates.
@@ -465,22 +652,22 @@ const Dashboard = () => {
                     aria-controls={`dashboard-panel-${id}`}
                     onClick={() => setTab(id)}
                     className={`relative shrink-0 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition ${
-                      active ? "bg-white text-[rgb(6,106,156)]" : "text-slate-500 hover:text-slate-700"
+                      active ? "bg-white" : "text-slate-500 hover:text-slate-700"
                     }`}
+                    style={active ? { color: theme.accent } : undefined}
                   >
                     {active && (
                       <span
                         className="absolute inset-x-0 top-0 h-[2px] rounded-t"
-                        style={{ background: BRAND.gradient }}
+                        style={{ background: theme.gradient }}
                       />
                     )}
                     {label}
                     <span
                       className={`ml-2 rounded-full px-2 py-0.5 text-[11px] tabular-nums ${
-                        active
-                          ? "bg-[rgba(6,106,156,0.1)] text-[rgb(6,106,156)]"
-                          : "bg-slate-200/70 text-slate-500"
+                        active ? "" : "bg-slate-200/70 text-slate-500"
                       }`}
+                      style={active ? { background: theme.soft, color: theme.accent } : undefined}
                     >
                       {tabCount(id)}
                     </span>

@@ -49,12 +49,18 @@ export const KpiCard = ({
   /** Icon tile background. */
   tint: string;
 }) => (
-  <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div className="relative flex items-start justify-between gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 pt-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    {/* Rang ki patli patti — number ka pehchan turant dikhta hai. */}
+    <span
+      aria-hidden
+      className="absolute inset-x-0 top-0 h-1"
+      style={{ background: `linear-gradient(90deg, ${color}, ${color}1a)` }}
+    />
     <div className="min-w-0">
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-bold leading-none tabular-nums text-slate-900">{value}</p>
       {sub && (
-        <p className="mt-2 truncate text-xs text-slate-400" title={sub}>
+        <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-400" title={sub}>
           {sub}
         </p>
       )}
