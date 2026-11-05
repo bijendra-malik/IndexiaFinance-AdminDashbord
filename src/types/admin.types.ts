@@ -33,6 +33,11 @@ export interface AdminUpdate {
   addedAt?: string;
   /** Suggested status (only for recommendation kind) */
   suggestedStatus?: string | null;
+  /**
+   * Category chip on customer/franchise threads:
+   * verification | document | visit | correction | flag | escalation | general
+   */
+  tag?: string;
 }
 
 // ── Status Recommendation ────────────────────────────────────────────────────
@@ -94,6 +99,7 @@ export const parseAdminUpdates = (value: unknown): AdminUpdate[] | undefined => 
       addedByRole: typeof raw.addedByRole === "string" ? raw.addedByRole : undefined,
       addedAt: typeof raw.addedAt === "string" ? raw.addedAt : undefined,
       suggestedStatus: typeof raw.suggestedStatus === "string" ? raw.suggestedStatus : null,
+      tag: typeof raw.tag === "string" ? raw.tag : "general",
     });
   }
   
