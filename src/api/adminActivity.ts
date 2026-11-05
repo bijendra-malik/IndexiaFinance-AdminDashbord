@@ -11,9 +11,15 @@ kaun admin, kis loan par, kya update kiya aur kab.
 
 export type AdminActivityKind = "note" | "recommendation" | "status";
 
+/** Customers aur franchises ke rows `entity` ke saath aate hain (loans par undefined). */
+export type AdminActivityEntity = "customer" | "franchise";
+
 export interface AdminActivityUpdate {
   id: string;
   applicationId: string;
+  entity?: AdminActivityEntity;
+  entityId?: string;
+  tag?: string;
   productKey: string;
   slug: string;
   label: string;
@@ -80,6 +86,10 @@ const asNumber = (value: unknown): number =>
 const toUpdate = (raw: Record<string, unknown>): AdminActivityUpdate => ({
   id: asString(raw.id),
   applicationId: asString(raw.applicationId),
+  ...(raw.entity === "customer" || raw.entity === "franchise"
+    ? { entity: raw.entity, entityId: asString(raw.entityId) || asString(raw.applicationId) }
+    : {}),
+  ...(typeof raw.tag === "string" ? { tag: raw.tag } : {}),
   productKey: asString(raw.productKey),
   slug: asString(raw.slug),
   label: asString(raw.label) || "Loan application",

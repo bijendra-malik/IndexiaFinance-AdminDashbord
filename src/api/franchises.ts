@@ -1,5 +1,7 @@
 import axiosInstance from "./axiosInstance";
 import { getApiErrorMessage } from "../utils/apiError";
+import { parseAdminUpdates, type AdminUpdate } from "../types/admin.types";
+import { toStatusRecommendation } from "./adminUpdates";
 
 export { getApiErrorMessage };
 
@@ -50,6 +52,10 @@ export interface Franchise {
   experience?: string;
   loanCount?: number;
   credentials?: FranchiseCredentials | null;
+  /** Admin work trail — document check, visit, verification, flag, decision. */
+  adminUpdates?: AdminUpdate[];
+  /** Latest pending decision suggested by a regular admin (super admin ke liye). */
+  statusRecommendation?: import("../types/admin.types").StatusRecommendation | null;
 }
 
 export interface FranchiseCredentials {
@@ -193,6 +199,8 @@ const toFranchise = (value: unknown): Franchise => {
     experience: firstText(item.experience, business.experience),
     loanCount: typeof item.loanCount === "number" ? item.loanCount : undefined,
     credentials,
+    adminUpdates: parseAdminUpdates(item.adminUpdates),
+    statusRecommendation: toStatusRecommendation(item.statusRecommendation),
   };
 };
 
@@ -309,6 +317,22 @@ export const approveFranchise = async (id: string): Promise<FranchiseActionResul
 
 export const rejectFranchise = async (id: string, note: string): Promise<void> => {
   await axiosInstance.patch(`/franchises/${encodeURIComponent(id)}/reject`, { note });
+};
+
+/**
+ * POST /api/admin/franchises/:id/updates
+ * Sirf regular admin likh sakta hai (super admin ko 403 milta hai).
+ */
+export const addFranchiseUpdate = async (
+  id: string,
+  payload: { text: string; tag?: string; suggestedStatus?: string }
+): Promise<AdminUpdate[]> => {
+  /* Response loan jaisa hi shape deta hai: `{ success, message, franchise }`. */
+  const res = await axiosInstance.post<{ franchise?: { adminUpdates?: unknown } }>(
+    `/franchises/${encodeURIComponent(id)}/updates`,
+    payload
+  );
+  return parseAdminUpdates(res.data?.franchise?.adminUpdates) ?? [];
 };
 
 export const resetFranchisePassword = async (id: string): Promise<FranchiseActionResult> => {

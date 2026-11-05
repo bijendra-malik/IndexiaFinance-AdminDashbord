@@ -38,10 +38,16 @@ export interface RecentApplication {
   lastUpdateAt?: string | null;
 }
 
+/** Customer / franchise rows carry which record the update belongs to. */
+export type AdminActivityEntity = "customer" | "franchise";
+
 /** One row of the dashboard "Admin Updates" feed. */
 export interface AdminActivityUpdate {
   _id: string;
   applicationId: string;
+  entity?: AdminActivityEntity;
+  entityId?: string;
+  tag?: string;
   slug?: string;
   label: string;
   fullName?: string;
@@ -99,6 +105,9 @@ interface RawRecentApplication {
 interface RawAdminActivity {
   _id?: string;
   applicationId?: string;
+  entity?: string;
+  entityId?: string;
+  tag?: string;
   resource?: string;
   slug?: string;
   product?: string;
@@ -176,9 +185,13 @@ const toRecentApplication = (raw: RawRecentApplication): RecentApplication => {
 
 const toAdminActivity = (raw: RawAdminActivity): AdminActivityUpdate => {
   const slug = raw.slug ?? resourceToSlug(raw.resource);
+  const entity =
+    raw.entity === "customer" || raw.entity === "franchise" ? raw.entity : undefined;
   return {
     _id: raw._id ?? `${raw.applicationId ?? ""}-${raw.addedAt ?? ""}`,
     applicationId: raw.applicationId ?? "",
+    ...(entity ? { entity, entityId: raw.entityId ?? raw.applicationId ?? "" } : {}),
+    ...(typeof raw.tag === "string" ? { tag: raw.tag } : {}),
     ...(slug ? { slug } : {}),
     label: raw.product ?? raw.resource ?? "Loan application",
     fullName: raw.applicantName ?? raw.fullName ?? "",
@@ -226,8 +239,57 @@ export interface DashboardOverviewAccount {
   createdAt: string;
 }
 
+/**
+ * Super admin ka decision queue — jin customers/franchises par regular admin ne
+ * final decision suggest kiya hai aur abhi decision nahi hua.
+ */
+export interface PendingDecision {
+  entity: AdminActivityEntity;
+  id: string;
+  name: string;
+  referenceNo: string | null;
+  status: string;
+  suggestedStatus: string | null;
+  note: string;
+  tag: string;
+  requestedByName: string;
+  requestedAt: string | null;
+}
+
+interface RawPendingDecision {
+  entity?: string;
+  id?: string;
+  name?: string;
+  referenceNo?: string | null;
+  status?: string;
+  suggestedStatus?: string | null;
+  note?: string;
+  tag?: string;
+  requestedByName?: string;
+  requestedAt?: string | null;
+}
+
+const toPendingDecision = (raw: RawPendingDecision): PendingDecision | null => {
+  if (raw.entity !== "customer" && raw.entity !== "franchise") return null;
+  if (!raw.id) return null;
+  return {
+    entity: raw.entity,
+    id: raw.id,
+    name: raw.name ?? "",
+    referenceNo: raw.referenceNo ?? null,
+    status: raw.status ?? "",
+    suggestedStatus: raw.suggestedStatus ?? null,
+    note: raw.note ?? "",
+    tag: raw.tag ?? "general",
+    requestedByName: raw.requestedByName ?? "Admin",
+    requestedAt: raw.requestedAt ?? null,
+  };
+};
+
 export interface DashboardStats {
   dashboardMode?: "customers" | "franchises" | "accounts";
+  /** Super admin only. */
+  pendingDecisions?: { total: number; items: PendingDecision[] };
   totalCustomers: number;
   activeCustomers?: number;
   inactiveCustomers?: number;
@@ -285,6 +347,10 @@ interface DashboardStatsResponse {
     products?: RawProductStat[];
     recent?: RawRecentApplication[];
     recentUpdates?: RawAdminActivity[];
+    pendingDecisions?: {
+      total?: number;
+      items?: RawPendingDecision[];
+    };
     generatedAt: string;
   };
 }
@@ -413,9 +479,18 @@ export const getDashboardStats = async (
       ? getApiErrorMessage(franchisesResult.reason, "Could not load franchise accounts.")
       : "",
   ].filter(Boolean);
-  const normalizedStats = { ...stats };
-  delete normalizedStats.recentCustomers;
-  delete normalizedStats.recentFranchises;
+  /*
+  Ye teen raw shapes neeche map hote hain — spread se pehle nikaal dete hain,
+  warna TS unka raw type hi final object me maan leta hai.
+  */
+  const {
+    recentCustomers: _rawRecentCustomers,
+    recentFranchises: _rawRecentFranchises,
+    pendingDecisions: rawPendingDecisions,
+    ...normalizedStats
+  } = stats;
+  void _rawRecentCustomers;
+  void _rawRecentFranchises;
 
   return {
     ...normalizedStats,
@@ -430,6 +505,16 @@ export const getDashboardStats = async (
     approvedAmount: toCount(stats.approvedAmount),
     approvalRate: toCount(stats.approvalRate),
     recentUpdates: (stats.recentUpdates ?? []).map(toAdminActivity),
+    ...(rawPendingDecisions
+      ? {
+          pendingDecisions: {
+            total: toCount(rawPendingDecisions.total),
+            items: (rawPendingDecisions.items ?? [])
+              .map(toPendingDecision)
+              .filter((item): item is PendingDecision => item !== null),
+          },
+        }
+      : {}),
     recentCustomers: toOverviewAccounts(stats.recentCustomers, "customer"),
     recentFranchises: toOverviewAccounts(stats.recentFranchises, "franchise"),
     totalCustomers:

@@ -1,6 +1,7 @@
 import axiosInstance from "./axiosInstance";
 import type { PersonalLoan } from "./personalLoans";
 import { parseAdminUpdates, type AdminUpdate } from "../types/admin.types";
+import { toStatusRecommendation } from "./adminUpdates";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ export interface Customer {
   package?: string;
   /** Admin work trail — verification, correction, flag, escalation, status. */
   adminUpdates?: AdminUpdate[];
+  /** Latest pending decision suggested by a regular admin (super admin ke liye). */
+  statusRecommendation?: import("../types/admin.types").StatusRecommendation | null;
 }
 
 export interface CustomerApplicationGroup {
@@ -72,6 +75,7 @@ const toCustomer = (value: unknown): Customer => {
     panNumber: optionalText(item.panNumber ?? item.pan),
     package: optionalText(item.package ?? item.packageName),
     adminUpdates: parseAdminUpdates(item.adminUpdates),
+    statusRecommendation: toStatusRecommendation(item.statusRecommendation),
   };
 };
 
@@ -109,13 +113,14 @@ export const updateCustomerStatus = async (
  */
 export const addCustomerUpdate = async (
   id: string,
-  payload: { text: string; tag?: string }
+  payload: { text: string; tag?: string; suggestedStatus?: string }
 ): Promise<AdminUpdate[]> => {
-  const res = await axiosInstance.post<{
-    adminUpdates?: unknown;
-    update?: unknown;
-  }>(`/customers/${encodeURIComponent(id)}/updates`, payload);
-  return parseAdminUpdates(res.data?.adminUpdates ?? [res.data?.update]) ?? [];
+  /* Response loan jaisa hi shape deta hai: `{ success, message, customer }`. */
+  const res = await axiosInstance.post<{ customer?: { adminUpdates?: unknown } }>(
+    `/customers/${encodeURIComponent(id)}/updates`,
+    payload
+  );
+  return parseAdminUpdates(res.data?.customer?.adminUpdates) ?? [];
 };
 
 export const getCustomer = async (id: string): Promise<Customer> => {
