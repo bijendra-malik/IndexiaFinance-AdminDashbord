@@ -244,7 +244,6 @@ export const getLoansBySlug = async (slug: string): Promise<PersonalLoan[]> => {
   if (!endpoint) throw new Error(`No endpoint mapped for slug: ${slug}`);
 
   const res = await axiosInstance.get<Record<string, unknown>>(endpoint);
-  if (import.meta.env.DEV) console.log(`[loans] GET ${endpoint}:`, res.data);
   return extractList(res.data);
 };
 
@@ -255,7 +254,6 @@ export const getLoanBySlug = async (slug: string, id: string): Promise<PersonalL
 
   const path = `${endpoint}/${id}`;
   const res = await axiosInstance.get<Record<string, unknown>>(path);
-  if (import.meta.env.DEV) console.log(`[loans] GET ${path}:`, res.data);
   return extractItem(res.data, path);
 };
 
@@ -298,6 +296,5 @@ export const deleteLoanBySlug = async (slug: string, id: string): Promise<void> 
   if (!endpoint) throw new Error(`No endpoint mapped for slug: ${slug}`);
 
   const path = `${endpoint}/${id}`;
-  if (import.meta.env.DEV) console.log(`[loans] DELETE ${path}`);
   await axiosInstance.delete(path);
 };
