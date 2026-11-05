@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   BadgeCheck, Banknote, Calendar, Check, ChevronRight,
   Clock, Eye, FileText, LoaderCircle, Mail, Phone,
@@ -14,11 +14,12 @@ import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
 import SearchBar from "../../components/common/SearchBar";
 import StatusBadge from "../../components/common/StatusBadge";
+import AdminUpdateThread from "../../components/common/AdminUpdateThread";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import {
-  deleteCustomer, getApiErrorMessage, getCustomer,
+  addCustomerUpdate, deleteCustomer, getApiErrorMessage, getCustomer,
   getCustomerApplications, getCustomers, updateCustomerStatus,
   type Customer, type CustomerApplicationGroup,
 } from "../../api/customers";
@@ -84,6 +85,10 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
   const [decisionNote, setDecisionNote]         = useState("");
   const [pendingDelete, setPendingDelete]       = useState<Customer | null>(null);
   const [isDeleting, setIsDeleting]             = useState(false);
+  /* Account decision always needs a reason — wahi super admin ke trail me jaata hai. */
+  const [statusPrompt, setStatusPrompt]         = useState<{ customer: Customer; next: boolean } | null>(null);
+  const [statusNote, setStatusNote]             = useState("");
+  const [searchParams, setSearchParams]         = useSearchParams();
 
   // ── Data loading ─────────────────────────────────────────────────────────
   const load = () =>
@@ -192,21 +197,70 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
     } finally { setIsDeleting(false); }
   };
 
-  const handleToggle = async (c: Customer) => {
-    const next = !c.isActive;
-    setUpdatingId(c._id);
+  /* Enable/disable super admin ka final decision hai — pehle reason poochhte hain. */
+  const handleToggle = (c: Customer) => {
+    setStatusNote("");
+    setStatusPrompt({ customer: c, next: !c.isActive });
+  };
+
+  const submitStatusChange = async () => {
+    if (!statusPrompt) return;
+    const { customer, next } = statusPrompt;
+    setUpdatingId(customer._id);
     try {
-      await updateCustomerStatus(c._id, next);
+      await updateCustomerStatus(customer._id, next, statusNote.trim() || undefined);
       setCustomers((cur) => cur?.flatMap((item) => {
-        if (item._id !== c._id) return [item];
+        if (item._id !== customer._id) return [item];
         if (activeFilter !== "all" && (activeFilter === "active") !== next) return [];
         return [{ ...item, isActive: next }];
       }) ?? cur);
-      showToast(`Customer ${next ? "activated" : "deactivated"}.`, "success");
+      setCustomerDetail((cur) => (cur && cur._id === customer._id ? { ...cur, isActive: next } : cur));
+      setViewingCustomer((cur) => (cur && cur._id === customer._id ? { ...cur, isActive: next } : cur));
+      if (viewingCustomer?._id === customer._id) setAppsRefreshKey((k) => k + 1);
+      showToast(
+        `Customer ${next ? "activated" : "deactivated"}. Reason saved to the audit trail.`,
+        "success"
+      );
+      setStatusPrompt(null);
+      setStatusNote("");
     } catch (e) {
       showToast(getApiErrorMessage(e, "Unable to update account status."), "error");
     } finally { setUpdatingId(null); }
   };
+
+  /* Regular admin ka note / recommendation — super admin ko decision ke liye jaata hai. */
+  const handleAddUpdate = async (payload: {
+    text: string; tag: string; suggestedStatus?: string;
+  }) => {
+    if (!viewingCustomer?._id) return false;
+    await addCustomerUpdate(viewingCustomer._id, payload);
+    setAppsRefreshKey((k) => k + 1);
+    showToast(
+      payload.suggestedStatus
+        ? "Update saved and sent to the super admin for a decision."
+        : "Update saved to the customer trail.",
+      "success"
+    );
+    return true;
+  };
+
+  /* /customers?customer=<id> — activity feed se seedha is customer ka drawer khulta hai. */
+  const focusedCustomerId = searchParams.get("customer");
+  useEffect(() => {
+    if (!focusedCustomerId) return;
+    let cancelled = false;
+    getCustomer(focusedCustomerId)
+      .then((customer) => { if (!cancelled) openDrawer(customer); })
+      .catch(() => undefined)
+      .finally(() => {
+        if (cancelled) return;
+        const next = new URLSearchParams(searchParams);
+        next.delete("customer");
+        setSearchParams(next, { replace: true });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedCustomerId]);
 
   const handleDecision = async (
     group: CustomerApplicationGroup, app: PersonalLoan,
@@ -400,10 +454,23 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
                     </div>
                   </div>
                 </div>
-                <button onClick={closeDrawer} disabled={isDeleting || !!updatingAppId} aria-label="Close"
-                  className="mt-1 rounded-xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-100 disabled:opacity-50">
-                  <X size={18} />
-                </button>
+                <div className="mt-1 flex items-center gap-2">
+                  {/* Super admin ka final decision seedha record se — feed ka "Review" yahin pura hota hai. */}
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => { setStatusNote(""); setStatusPrompt({ customer: viewingCustomer, next: !viewingCustomer.isActive }); }}
+                      disabled={isDeleting || !!updatingAppId || updatingId === viewingCustomer._id}
+                      className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold shadow-sm transition disabled:opacity-50 ${viewingCustomer.isActive ? "border-amber-200 bg-white text-amber-700 hover:bg-amber-50" : "border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"}`}
+                    >
+                      {viewingCustomer.isActive ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                      {viewingCustomer.isActive ? "Deactivate" : "Activate"}
+                    </button>
+                  )}
+                  <button onClick={closeDrawer} disabled={isDeleting || !!updatingAppId} aria-label="Close"
+                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-100 disabled:opacity-50">
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
             </header>
 
@@ -451,6 +518,17 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
                     ))}
                   </dl>
                 </div>
+              )}
+
+              {/* Admin work trail — regular admin likhta hai, super admin padhta + decide karta hai. */}
+              {customerDetail && (
+                <AdminUpdateThread
+                  entity="customer"
+                  updates={customerDetail.adminUpdates}
+                  recommendation={customerDetail.statusRecommendation}
+                  canWrite={!isSuperAdmin}
+                  onSubmit={handleAddUpdate}
+                />
               )}
 
               {/* Applications are visible only to Super Admins. */}
@@ -594,6 +672,49 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
               </div>
             </footer>}
           </section>
+        </div>
+      )}
+
+      {/* ── Account status reason (super admin decision) ───────────────────── */}
+      {statusPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <form
+            onSubmit={(e) => { e.preventDefault(); void submitStatusChange(); }}
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+          >
+            <h2 className="text-lg font-bold text-slate-800">
+              {statusPrompt.next ? "Activate" : "Deactivate"} {statusPrompt.customer.name}?
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {statusPrompt.next
+                ? "The customer can log in and apply again once their account is active."
+                : "The account is blocked and cannot log in or apply. This decision is recorded in the admin trail."}
+            </p>
+            <label className="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Reason {statusPrompt.next ? "(optional)" : "(required)"}
+            </label>
+            <textarea
+              autoFocus
+              value={statusNote}
+              onChange={(e) => setStatusNote(e.target.value)}
+              maxLength={500}
+              rows={3}
+              placeholder={statusPrompt.next ? "Why is this account being re-enabled?" : "Why is this account being blocked?"}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-100"
+            />
+            <p className="mt-1 text-right text-xs text-slate-400">{statusNote.length}/500</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setStatusPrompt(null)} disabled={!!updatingId}
+                className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Cancel</button>
+              <button
+                type="submit"
+                disabled={!!updatingId || (!statusPrompt.next && !statusNote.trim())}
+                className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${statusPrompt.next ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}`}
+              >
+                {updatingId ? "Saving…" : statusPrompt.next ? "Activate account" : "Deactivate account"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
