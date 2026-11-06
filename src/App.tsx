@@ -19,6 +19,7 @@ import FranchiseList from "./pages/franchises/FranchiseList";
 import FranchiseDetail from "./pages/franchises/FranchiseDetail";
 import FranchiseCustomers from "./pages/franchises/FranchiseCustomers";
 import FranchisePlans from "./pages/franchises/FranchisePlans";
+import ContactEnquiries from "./pages/contact/ContactEnquiries";
 
 function App() {
   return (
@@ -63,6 +64,16 @@ function App() {
               element={
                 <ProtectedRoute requireSuperAdmin>
                   <AdminUpdates />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Website contact form ki enquiries — dono admin types ke liye */}
+            <Route
+              path="/contact"
+              element={
+                <ProtectedRoute>
+                  <ContactEnquiries />
                 </ProtectedRoute>
               }
             />
