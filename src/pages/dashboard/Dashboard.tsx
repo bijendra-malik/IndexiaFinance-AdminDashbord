@@ -512,8 +512,11 @@ const Dashboard = () => {
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {(stats.pendingDecisions?.items ?? []).slice(0, 5).map((item) => {
+                    /* Loan row ka apna application detail page hota hai. */
                     const reviewPath =
-                      item.entity === "customer"
+                      item.entity === "loan"
+                        ? applicationDetailPath(item.slug, item.id) ?? "/applications"
+                        : item.entity === "customer"
                         ? `/customers?customer=${encodeURIComponent(item.id)}`
                         : `/franchises/${item.id}`;
                     return (
@@ -532,7 +535,11 @@ const Dashboard = () => {
                         <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 items-center gap-1.5">
                             <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                              {item.entity === "customer" ? "Customer" : "Franchise"}
+                              {item.entity === "loan"
+                                ? item.productLabel ?? "Loan"
+                                : item.entity === "customer"
+                                  ? "Customer"
+                                  : "Franchise"}
                             </span>
                             <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
                               {item.name || "Unnamed"}
