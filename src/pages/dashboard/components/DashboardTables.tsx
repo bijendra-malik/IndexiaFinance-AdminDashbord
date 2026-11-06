@@ -52,6 +52,9 @@ export const RecentApplicationsTable = ({
             const bucket = asBucket(application.status);
             const detailPath = applicationDetailPath(application.slug, application._id);
             const updatesCount = application.adminUpdatesCount ?? 0;
+            const updateTitle = application.lastUpdateAt
+              ? "Last update: " + formatDateTime(application.lastUpdateAt)
+              : undefined;
             const avatar = (
               <>
                 <span
@@ -91,7 +94,10 @@ export const RecentApplicationsTable = ({
                 </td>
                 <td className="px-5 py-3">
                   {updatesCount > 0 ? (
-                    <span className="inline-flex items-center rounded-full bg-[rgba(6,106,156,0.08)] px-2 py-0.5 text-xs font-semibold text-[rgb(6,106,156)]">
+                    <span
+                      className="inline-flex items-center rounded-full bg-[rgba(6,106,156,0.08)] px-2 py-0.5 text-xs font-semibold text-[rgb(6,106,156)]"
+                      title={updateTitle}
+                    >
                       {updatesCount} {updatesCount === 1 ? "update" : "updates"}
                     </span>
                   ) : (
