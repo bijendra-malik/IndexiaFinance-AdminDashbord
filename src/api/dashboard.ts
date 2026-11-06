@@ -38,8 +38,11 @@ export interface RecentApplication {
   lastUpdateAt?: string | null;
 }
 
-/** Customer / franchise rows carry which record the update belongs to. */
-export type AdminActivityEntity = "customer" | "franchise";
+/**
+ * Customer / franchise rows carry which record the update belongs to; loan rows
+ * arrive with entity "loan" plus the product resource.
+ */
+export type AdminActivityEntity = "customer" | "franchise" | "loan";
 
 /** One row of the dashboard "Admin Updates" feed. */
 export interface AdminActivityUpdate {
@@ -100,6 +103,8 @@ interface RawRecentApplication {
   status?: string;
   loanAmount?: number | null;
   createdAt?: string;
+  adminUpdatesCount?: number;
+  lastUpdateAt?: string | null;
 }
 
 interface RawAdminActivity {
@@ -180,6 +185,10 @@ const toRecentApplication = (raw: RawRecentApplication): RecentApplication => {
     status: raw.status ?? "Submitted",
     ...(typeof raw.loanAmount === "number" ? { loanAmount: raw.loanAmount } : {}),
     createdAt: raw.createdAt ?? "",
+    ...(typeof raw.adminUpdatesCount === "number"
+      ? { adminUpdatesCount: raw.adminUpdatesCount }
+      : {}),
+    lastUpdateAt: raw.lastUpdateAt ?? null,
   };
 };
 
@@ -254,6 +263,14 @@ export interface PendingDecision {
   tag: string;
   requestedByName: string;
   requestedAt: string | null;
+  /** Loan rows only: product slug for the application detail route. */
+  slug?: string;
+  /** Loan rows only: display label of the product ("Personal loan"). */
+  productLabel?: string;
+  /** Loan rows only. */
+  mobile?: string;
+  /** Loan rows only. */
+  loanAmount?: number;
 }
 
 interface RawPendingDecision {
@@ -267,11 +284,29 @@ interface RawPendingDecision {
   tag?: string;
   requestedByName?: string;
   requestedAt?: string | null;
+  /* Loan rows: product identity + amount; customer/franchise rows omit these. */
+  resource?: string;
+  slug?: string;
+  product?: string;
+  productLabel?: string;
+  mobile?: string;
+  loanAmount?: number | null;
 }
 
+const isDecisionEntity = (value: unknown): value is AdminActivityEntity =>
+  value === "customer" || value === "franchise" || value === "loan";
+
+/*
+Loan suggestions bhi isi queue me aate hain (backend entity "loan" + resource
+bhejta hai). Pehle yahan sirf customer/franchise allowed the, isliye regular
+admin ki loan recommendation UI me chup-chaap drop ho jaati thi.
+*/
 const toPendingDecision = (raw: RawPendingDecision): PendingDecision | null => {
-  if (raw.entity !== "customer" && raw.entity !== "franchise") return null;
+  if (!isDecisionEntity(raw.entity)) return null;
   if (!raw.id) return null;
+
+  const slug = raw.slug ?? resourceToSlug(raw.resource);
+
   return {
     entity: raw.entity,
     id: raw.id,
@@ -283,6 +318,14 @@ const toPendingDecision = (raw: RawPendingDecision): PendingDecision | null => {
     tag: raw.tag ?? "general",
     requestedByName: raw.requestedByName ?? "Admin",
     requestedAt: raw.requestedAt ?? null,
+    ...(raw.entity === "loan"
+      ? {
+          ...(slug ? { slug } : {}),
+          productLabel: raw.productLabel ?? raw.product ?? "Loan application",
+          mobile: raw.mobile ?? "",
+          ...(typeof raw.loanAmount === "number" ? { loanAmount: raw.loanAmount } : {}),
+        }
+      : {}),
   };
 };
 
