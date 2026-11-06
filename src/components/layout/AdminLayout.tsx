@@ -4,7 +4,7 @@ import {
   Activity, ArrowLeftRight, BarChart3, Bell, Briefcase,
   Building2, Car, ChevronDown, ChevronRight, CreditCard,
   Database, FileText, Globe, GraduationCap,
-  Home, Landmark, LayoutDashboard, LogOut,
+  Home, Landmark, LayoutDashboard, LogOut, MessageSquare,
   Settings, ShieldCheck, TrendingUp, UserCircle, Users,
   Wallet, Coins, XCircle,
 } from "lucide-react";
@@ -210,6 +210,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             ...(!isSuperAdmin && canAccessModule("franchises")
               ? [{ to: "/franchises", label: "Franchises", icon: Building2 }]
               : []),
+            /* Website contact form ki enquiries — dono admin types ke liye. */
+            { to: "/contact", label: "Contact", icon: MessageSquare },
           ].map(({ to, label, icon: Icon }) => {
             const isActive = location.pathname === to;
             return (
