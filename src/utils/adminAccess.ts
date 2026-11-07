@@ -1,4 +1,9 @@
 import { LOAN_TYPES, type LoanTypeDef, type LoanTypeSlug } from "../constants/loanTypes";
+import {
+  ALL_ADMIN_PERMISSIONS,
+  normalizePermissions,
+  type AdminPermission,
+} from "../constants/adminPermissions";
 import type { AdminRole, LoanAccess, ManagedAdmin, ModuleAccess } from "../api/adminUsers";
 
 /** The sign-in handle that always keeps super-admin rights. */
@@ -60,6 +65,7 @@ export interface SignedInAdmin {
   loginId?: string;
   loanAccess?: unknown;
   moduleAccess?: unknown;
+  permissions?: unknown;
 }
 
 /** Directory entry for the signed-in admin, matched by email or login handle. */
@@ -112,6 +118,54 @@ export const isSuperAdminSession = (
 
 export const resolveRole = (isSuper: boolean): AdminRole =>
   isSuper ? "super_admin" : "admin";
+
+/**
+ * Three-way role resolution. `sub` pehle dekha jaata hai, warna `sub_admin`
+ * backend role ko `isSuperAdminSession` ka `/^admin$/i` check regular admin
+ * maan leta — aur supervisor ke saare permissions gum ho jaate.
+ */
+export const resolveAdminRole = (
+  admins: ManagedAdmin[],
+  admin: SignedInAdmin | null
+): AdminRole => {
+  if (!admin) return "admin";
+  const backendRole = (admin.role ?? "").trim();
+  if (/sub/i.test(backendRole)) return "sub_admin";
+  if (/super/i.test(backendRole)) return "super_admin";
+  if (/^admin$/i.test(backendRole)) {
+    /*
+    Backend sirf `super_admin | admin` store karta hai, isliye sub admin ka
+    account wahan `admin` dikhta hai aur uska asli role local access map me
+    hota hai. Yahan sirf sub_admin tak upgrade allowed hai — super_admin yahan
+    se kabhi nahi milta, isliye purana safety rule intact rehta hai.
+    */
+    const record = findAccessRecord(admins, admin);
+    return record?.role === "sub_admin" ? "sub_admin" : "admin";
+  }
+
+  // Legacy backend (role missing): local directory decides, same as before.
+  const record = findAccessRecord(admins, admin);
+  if (record?.role === "sub_admin") return "sub_admin";
+  return isSuperAdminSession(admins, admin) ? "super_admin" : "admin";
+};
+
+/**
+ * Effective capabilities. Super admin ke paas sab kuch hai; regular admin ke
+ * paas kuch nahi; sub admin ko sirf super admin ke tick kiye kaam milte hain.
+ * Backend list pehle, local directory fallback — role resolution jaisa hi rule.
+ */
+export const resolvePermissions = (
+  admins: ManagedAdmin[],
+  admin: SignedInAdmin | null,
+  role: AdminRole
+): AdminPermission[] => {
+  if (role === "super_admin") return ALL_ADMIN_PERMISSIONS;
+  if (role !== "sub_admin") return [];
+
+  if (admin?.permissions !== undefined) return normalizePermissions(admin.permissions);
+  const record = findAccessRecord(admins, admin);
+  return normalizePermissions(record?.permissions);
+};
 
 /** Super admins always see every loan; everyone else gets their assignment. */
 export const resolveLoanAccess = (

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { fetchAdminProfile, type ApiAdmin } from "../api/auth";
 import { claimSuperAdminRecord, readManagedAdmins, type ManagedAdmin } from "../api/adminUsers";
+import type { AdminPermission } from "../constants/adminPermissions";
 import {
   canAccessLoan as loanIsAllowed,
   canAccessModule as moduleIsAllowed,
   isSuperAdminSession,
   loanTypesFor,
+  resolveAdminRole,
   resolveLoanAccess,
   resolveModuleAccess,
-  resolveRole,
+  resolvePermissions,
 } from "../utils/adminAccess";
 import { AuthContext } from "./AuthContext";
 
@@ -139,8 +141,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [token, logout]);
 
-  const isSuperAdmin = isSuperAdminSession(directory, admin);
-  const role = resolveRole(isSuperAdmin);
+  const role = resolveAdminRole(directory, admin);
+  const isSuperAdmin = role === "super_admin";
+  const isSubAdmin = role === "sub_admin";
+  const permissions = resolvePermissions(directory, admin, role);
+  const can = (permission: AdminPermission) => permissions.includes(permission);
   const loanAccess = resolveLoanAccess(directory, admin, isSuperAdmin);
   const accessibleLoanTypes = loanTypesFor(loanAccess);
   const canAccessLoan = (slug?: string) => loanIsAllowed(loanAccess, slug);
@@ -159,6 +164,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         updateAdmin,
         role,
         isSuperAdmin,
+        isSubAdmin,
+        permissions,
+        can,
         loanAccess,
         accessibleLoanTypes,
         canAccessLoan,

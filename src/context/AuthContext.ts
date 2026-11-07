@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { ApiAdmin } from "../api/auth";
 import type { AdminRole, LoanAccess, ModuleAccess } from "../api/adminUsers";
+import type { AdminPermission } from "../constants/adminPermissions";
 import type { LoanTypeDef } from "../constants/loanTypes";
 
 export interface AuthContextType {
@@ -15,6 +16,11 @@ export interface AuthContextType {
   /** Effective role for this session: backend role + team directory. */
   role: AdminRole;
   isSuperAdmin: boolean;
+  /** Super admin ka supervisor — permissions se limited. */
+  isSubAdmin: boolean;
+  /** Capabilities granted to this sub admin; super admins hold every one. */
+  permissions: AdminPermission[];
+  can: (permission: AdminPermission) => boolean;
   /** `"all"` or the loan slugs a super admin assigned to this account. */
   loanAccess: LoanAccess;
   accessibleLoanTypes: LoanTypeDef[];
