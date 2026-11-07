@@ -1,5 +1,6 @@
 import axiosInstance from "./axiosInstance";
 import type { LoanTypeSlug } from "../constants/loanTypes";
+import { normalizePermissions, type AdminPermission } from "../constants/adminPermissions";
 
 /**
  * Admin accounts managed by a super admin.
@@ -10,7 +11,7 @@ import type { LoanTypeSlug } from "../constants/loanTypes";
  * `docs/BACKEND_API.md` §1.1 for the contract the client calls.
  */
 
-export type AdminRole = "super_admin" | "admin";
+export type AdminRole = "super_admin" | "sub_admin" | "admin";
 
 /** `"all"` means every loan product; otherwise the explicit allowed slugs. */
 export type LoanAccess = "all" | LoanTypeSlug[];
@@ -33,6 +34,8 @@ export interface ManagedAdmin {
   role: AdminRole;
   loanAccess: LoanAccess;
   moduleAccess?: ModuleAccess;
+  /** Sub-admin capabilities granted by a super admin; empty for regular admins. */
+  permissions?: AdminPermission[];
   isActive: boolean;
   createdAt: string;
   lastLogin: string | null;
@@ -48,6 +51,7 @@ export interface CreateAdminInput {
   role: AdminRole;
   loanAccess: LoanAccess;
   moduleAccess?: ModuleAccess;
+  permissions?: AdminPermission[];
 }
 
 export interface ListAdminsResult {
@@ -73,6 +77,7 @@ interface AccessOverride {
   role: AdminRole;
   loanAccess: LoanAccess;
   moduleAccess?: ModuleAccess;
+  permissions?: AdminPermission[];
   updatedAt: string;
 }
 
@@ -82,8 +87,17 @@ const isLoanAccess = (value: unknown): value is LoanAccess =>
 const isModuleAccess = (value: unknown): value is ModuleAccess =>
   value === "all" || (Array.isArray(value) && value.every((v) => typeof v === "string"));
 
-const normalizeRole = (value: unknown): AdminRole =>
-  typeof value === "string" && /super/i.test(value) ? "super_admin" : "admin";
+/**
+ * Backend `role` string → the three roles the UI knows. `sub` is checked first:
+ * "sub_admin" / "SubAdmin" must never be collapsed into a regular admin, warna
+ * supervisor ko na review queue milegi na uske permissions.
+ */
+const normalizeRole = (value: unknown): AdminRole => {
+  if (typeof value !== "string") return "admin";
+  if (/sub/i.test(value)) return "sub_admin";
+  if (/super/i.test(value)) return "super_admin";
+  return "admin";
+};
 
 const newId = (): string => {
   try {
@@ -133,6 +147,7 @@ const toManaged = (raw: unknown, storage: DirectoryMode): ManagedAdmin | null =>
     role: normalizeRole(value.role),
     loanAccess: isLoanAccess(access) ? access : "all",
     moduleAccess: isModuleAccess(moduleAcc) ? moduleAcc : undefined,
+    permissions: normalizePermissions(value.permissions ?? value.capabilities),
     isActive: value.isActive !== false,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : "",
     lastLogin: typeof value.lastLogin === "string" ? value.lastLogin : null,
@@ -168,6 +183,7 @@ const applyOverride = (admin: ManagedAdmin): ManagedAdmin => {
     role: override.role ?? admin.role,
     loanAccess: override.loanAccess ?? admin.loanAccess,
     moduleAccess: override.moduleAccess ?? admin.moduleAccess,
+    permissions: override.permissions ?? admin.permissions,
   };
 };
 
@@ -182,6 +198,7 @@ export const rememberAdminAccess = (admin: {
   role: AdminRole;
   loanAccess: LoanAccess;
   moduleAccess?: ModuleAccess;
+  permissions?: AdminPermission[];
 }): void => {
   const email = accessKey(admin.email);
   if (!email) return;
@@ -192,6 +209,7 @@ export const rememberAdminAccess = (admin: {
     role: admin.role,
     loanAccess: admin.loanAccess,
     moduleAccess: admin.moduleAccess,
+    permissions: admin.permissions,
     updatedAt: new Date().toISOString(),
   };
   writeJson(ACCESS_KEY, overrides);
@@ -315,13 +333,25 @@ const pickAdmin = (payload: unknown): unknown => {
   return record?.admin ?? record?.data ?? payload;
 };
 
+/**
+ * Backend contract (`docs/BACKEND_API.md` §1.1) me role sirf `super_admin | admin`
+ * hai — `sub_admin` bhejne par `POST /admins` 400 deta hai. Isliye sub admin ka
+ * account backend par `admin` ke roop me banta hai, aur uska asli role +
+ * permissions local access map me rehte hain (bilkul loanAccess ki tarah).
+ *
+ * `permissions` network payload me nahi jaate: backend unhe jaanta hi nahi, aur
+ * unknown field strict validation par poora create fail kar deti hai.
+ */
+const toBackendRole = (role: AdminRole): "super_admin" | "admin" =>
+  role === "super_admin" ? "super_admin" : "admin";
+
 const toBackendPayload = (input: Partial<CreateAdminInput>): Record<string, unknown> => {
   const payload: Record<string, unknown> = {};
   if (input.loginId !== undefined) payload.loginId = input.loginId;
   if (input.name !== undefined) payload.name = input.name;
   if (input.email !== undefined) payload.email = input.email;
   if (input.password !== undefined) payload.password = input.password;
-  if (input.role !== undefined) payload.role = input.role;
+  if (input.role !== undefined) payload.role = toBackendRole(input.role);
   if (input.loanAccess !== undefined) payload.loanAccess = input.loanAccess;
   if (input.moduleAccess !== undefined) payload.moduleAccess = input.moduleAccess;
   return payload;
@@ -362,8 +392,17 @@ export const createManagedAdmin = async (
     const response = await axiosInstance.post("/admins", toBackendPayload(input));
     const parsed = toManaged(pickAdmin(response.data), "backend");
     if (!parsed) throw new Error("The backend created the admin but returned no record.");
-    rememberAdminAccess(parsed);
-    return parsed;
+    // Backend ne `admin` banaya hoga (sub admin ke liye) — UI ko wahi role
+    // dikhna chahiye jo super admin ne choose kiya, isliye local view merge.
+    const granted: ManagedAdmin = {
+      ...parsed,
+      role: input.role,
+      loanAccess: input.loanAccess,
+      moduleAccess: input.moduleAccess ?? parsed.moduleAccess,
+      permissions: normalizePermissions(input.permissions),
+    };
+    rememberAdminAccess(granted);
+    return granted;
   } catch (error) {
     if (isAuthError(error) || !isMissingEndpoint(error)) throw error;
     const record: ManagedAdmin = {
@@ -374,6 +413,7 @@ export const createManagedAdmin = async (
       role: input.role,
       loanAccess: input.loanAccess,
       moduleAccess: input.moduleAccess,
+      permissions: normalizePermissions(input.permissions),
       isActive: true,
       createdAt: new Date().toISOString(),
       lastLogin: null,
@@ -387,7 +427,14 @@ export const createManagedAdmin = async (
 
 export const updateManagedAdmin = async (
   id: string,
-  patch: { name?: string; email?: string; role?: AdminRole; loanAccess?: LoanAccess; moduleAccess?: ModuleAccess }
+  patch: {
+    name?: string;
+    email?: string;
+    role?: AdminRole;
+    loanAccess?: LoanAccess;
+    moduleAccess?: ModuleAccess;
+    permissions?: AdminPermission[];
+  }
 ): Promise<ManagedAdmin> => {
   const localRecords = readLocalRecords();
   const local = localRecords.find((record) => record.id === id);
@@ -399,11 +446,28 @@ export const updateManagedAdmin = async (
     return next;
   }
 
-  const response = await axiosInstance.patch(`/admins/${encodeURIComponent(id)}`, patch);
+  // Contract me `permissions` nahi hai aur role enum sirf super_admin | admin
+  // hai — sub admin locally save hota hai, isliye payload filter karke bhejte
+  // hain warna PATCH bhi 400 deta hai.
+  const backendPatch: Record<string, unknown> = {};
+  if (patch.name !== undefined) backendPatch.name = patch.name;
+  if (patch.email !== undefined) backendPatch.email = patch.email;
+  if (patch.role !== undefined) backendPatch.role = toBackendRole(patch.role);
+  if (patch.loanAccess !== undefined) backendPatch.loanAccess = patch.loanAccess;
+  if (patch.moduleAccess !== undefined) backendPatch.moduleAccess = patch.moduleAccess;
+
+  const response = await axiosInstance.patch(`/admins/${encodeURIComponent(id)}`, backendPatch);
   const parsed = toManaged(pickAdmin(response.data), "backend");
   if (!parsed) throw new Error("The backend updated the admin but returned no record.");
-  rememberAdminAccess(parsed);
-  return parsed;
+  const granted: ManagedAdmin = {
+    ...parsed,
+    role: patch.role ?? parsed.role,
+    loanAccess: patch.loanAccess ?? parsed.loanAccess,
+    moduleAccess: patch.moduleAccess ?? parsed.moduleAccess,
+    permissions: patch.permissions ?? parsed.permissions,
+  };
+  rememberAdminAccess(granted);
+  return granted;
 };
 
 /**
