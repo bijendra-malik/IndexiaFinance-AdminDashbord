@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { LOAN_TYPES, getLoanTypeLabel } from "../../constants/loanTypes";
+import { permissionLabel, permissionShortLabel } from "../../constants/adminPermissions";
 import {
   claimSuperAdminRecord,
   createManagedAdmin,
@@ -104,6 +105,46 @@ const ModuleAccessCell = ({ admin }: { admin: ManagedAdmin }) => {
           {label}
         </span>
       ))}
+    </div>
+  );
+};
+
+const PermissionsCell = ({ admin }: { admin: ManagedAdmin }) => {
+  if (admin.role === "super_admin") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(6,106,156,0.08)] px-2.5 py-1 text-[11px] font-bold text-[rgb(6,106,156)]">
+        <ShieldCheck size={11} /> Everything
+      </span>
+    );
+  }
+
+  if (admin.role !== "sub_admin") {
+    return <span className="text-xs font-medium text-slate-400">—</span>;
+  }
+
+  const granted = admin.permissions ?? [];
+  if (granted.length === 0) {
+    return <span className="text-xs font-medium text-amber-600">No permissions</span>;
+  }
+
+  return (
+    <div
+      className="flex max-w-[15rem] flex-wrap items-center gap-1"
+      title={granted.map(permissionLabel).join(", ")}
+    >
+      {granted.slice(0, 3).map((permission) => (
+        <span
+          key={permission}
+          className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600"
+        >
+          {permissionShortLabel(permission)}
+        </span>
+      ))}
+      {granted.length > 3 && (
+        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
+          +{granted.length - 3}
+        </span>
+      )}
     </div>
   );
 };
@@ -294,10 +335,14 @@ const AdminDetailDialog = ({
           </div>
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-              isSuper ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
+              isSuper
+                ? "bg-amber-50 text-amber-700"
+                : admin.role === "sub_admin"
+                  ? "bg-sky-50 text-sky-700"
+                  : "bg-slate-100 text-slate-600"
             }`}
           >
-            {isSuper ? "Super admin" : "Admin"}
+            {isSuper ? "Super admin" : admin.role === "sub_admin" ? "Sub admin" : "Admin"}
           </span>
         </div>
 
@@ -307,7 +352,11 @@ const AdminDetailDialog = ({
           </DetailItem>
           <DetailItem label="Email">{admin.email || "—"}</DetailItem>
           <DetailItem label="Role">
-            {isSuper ? "Super admin — every product & module" : "Admin — assigned access only"}
+            {isSuper
+            ? "Super admin — every product & module"
+            : admin.role === "sub_admin"
+              ? `Sub admin — ${(admin.permissions ?? []).length} supervision permission(s), assigned scope`
+              : "Admin — assigned access only"}
           </DetailItem>
           <DetailItem label="Status">
             <span
@@ -350,6 +399,19 @@ const AdminDetailDialog = ({
               </div>
             )}
           </DetailItem>
+          {admin.role === "sub_admin" && (
+            <DetailItem label={`Supervision permissions (${(admin.permissions ?? []).length})`}>
+              {(admin.permissions ?? []).length === 0 ? (
+                <span className="font-normal text-amber-600">None granted</span>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {(admin.permissions ?? []).map((permission) => (
+                    <DetailChip key={permission} label={permissionShortLabel(permission)} />
+                  ))}
+                </div>
+              )}
+            </DetailItem>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
@@ -424,6 +486,7 @@ const TeamAccess = () => {
   const admins = result?.admins ?? [];
   const mode = result?.mode ?? "local";
   const superAdmins = admins.filter((record) => record.role === "super_admin");
+  const subAdmins = admins.filter((record) => record.role === "sub_admin");
   const restricted = admins.filter(
     (record) => record.role === "admin" && record.loanAccess !== "all"
   );
@@ -481,6 +544,7 @@ const TeamAccess = () => {
         email: values.email,
         role: values.role as AdminRole,
         loanAccess: values.loanAccess,
+        permissions: values.permissions,
       });
       showToast(
         values.password
@@ -545,8 +609,8 @@ const TeamAccess = () => {
         )}
       >
         <StatPill label="Admins" value={admins.length} />
-        <StatPill label="Super admins" value={superAdmins.length} />
-        <StatPill label="Limited access" value={restricted.length} />
+        <StatPill label="Super admins" value={superAdmins.length} />          <StatPill label="Sub admins" value={subAdmins.length} />
+          <StatPill label="Limited access" value={restricted.length} />
         <StatPill label="Loans covered" value={`${assignedLoans.size}/${LOAN_TYPES.length}`} />
         <StatPill label="Admin limit" value={`${regularAdmins.length}/${adminLimit}`} />
       </PageHeader>
@@ -614,6 +678,7 @@ const TeamAccess = () => {
                   <Th>Role</Th>
                   <Th>Loan access</Th>
                   <Th>Modules</Th>
+                  <Th>Permissions</Th>
                   <Th>Created</Th>
                   <Th right>Actions</Th>
                 </tr>
@@ -650,7 +715,9 @@ const TeamAccess = () => {
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold capitalize ${
                             record.role === "super_admin"
                               ? "bg-amber-50 text-amber-700"
-                              : "bg-slate-100 text-slate-600"
+                              : record.role === "sub_admin"
+                                ? "bg-sky-50 text-sky-700"
+                                : "bg-slate-100 text-slate-600"
                           }`}
                         >
                           {record.role === "super_admin" && <ShieldCheck size={11} />}
@@ -662,6 +729,9 @@ const TeamAccess = () => {
                       </td>
                       <td className="px-4 py-3.5">
                         <ModuleAccessCell admin={record} />
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <PermissionsCell admin={record} />
                       </td>
                       <td className="px-4 py-3.5 text-xs text-slate-500">{fmtDate(record.createdAt)}</td>
                       <td className="px-4 py-3.5">

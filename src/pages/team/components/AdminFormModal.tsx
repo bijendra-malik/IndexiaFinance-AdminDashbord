@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { Check, ChevronDown, Eye, EyeOff, Loader2, ShieldCheck, X } from "lucide-react";
 import { LOAN_TYPES, type LoanTypeSlug } from "../../../constants/loanTypes";
+import {
+  DEFAULT_SUB_ADMIN_PERMISSIONS,
+  SCOPE_META,
+  appliesToScope,
+  filterPermissionsForScope,
+  permissionsForScope,
+  scopeLabel,
+  type AdminPermission,
+  type PermissionScope,
+} from "../../../constants/adminPermissions";
 import type { AdminRole, LoanAccess, ManagedAdmin, ModuleAccess, ModuleKey } from "../../../api/adminUsers";
 
 export interface AdminFormValues {
@@ -14,6 +24,8 @@ export interface AdminFormValues {
   role: AdminRole;
   loanAccess: LoanAccess;
   moduleAccess?: ModuleAccess;
+  /** Sub-admin capabilities; ignored for every other role. */
+  permissions: AdminPermission[];
 }
 
 const MODULE_OPTIONS: Array<{ key: ModuleKey; label: string; description: string }> = [
@@ -89,6 +101,7 @@ const buildAutoLoginId = (
   // A super admin sees every product, so the handle is `super-admin` — never a
   // product list.
   if (role === "super_admin") return withFreeSuffix("super", ID_SUFFIX, takenIds);
+  if (role === "sub_admin") return withFreeSuffix("sub", ID_SUFFIX, takenIds);
   // Module-only access (`customers-admin` / `franchises-admin`) — loans and
   // modules are never assigned together.
   if (selected.length === 0) {
@@ -205,6 +218,11 @@ const AdminFormModal = ({
   const [currentPassword, setCurrentPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<AdminRole>(admin?.role ?? "admin");
+  // Sub admin ke capabilities. Create me khaali; role switch par safe defaults
+  // (review loop, final decision nahi) — super admin baad me badal sakta hai.
+  const [permissions, setPermissions] = useState<AdminPermission[]>(() =>
+    admin?.role === "sub_admin" ? admin.permissions ?? DEFAULT_SUB_ADMIN_PERMISSIONS : []
+  );
   // New admins start with nothing assigned — the super admin ticks the products.
   // Editing one who already has every product must show all of them ticked.
   const [selected, setSelected] = useState<LoanTypeSlug[]>(() => {
@@ -222,6 +240,7 @@ const AdminFormModal = ({
   const [loanMenuOpen, setLoanMenuOpen] = useState(false);
 
   const isSuperRole = role === "super_admin";
+  const isSubRole = role === "sub_admin";
   const allSelected = selected.length === LOAN_TYPES.length;
   const allModulesSelected = selectedModules.length === MODULE_OPTIONS.length;
   // Access is exactly one of three: loan products, Customers or Franchises.
@@ -231,18 +250,42 @@ const AdminFormModal = ({
     .filter((record) => record.id !== admin?.id)
     .map((record) => record.loginId);
 
+  /*
+  Sub admin ka scope wahi hai jo regular admin ka access hota hai: Loan products
+  YA Customers/Franchises. Permissions bhi usi scope ke hisaab se dikhti hain —
+  module scope me loan ka final decision relevant hi nahi hai.
+  */
+  const supervisionScope: PermissionScope | null =
+    selectedModules.length > 0 ? "modules" : selected.length > 0 ? "loans" : null;
+  const scopedPermissionDefs = supervisionScope ? permissionsForScope(supervisionScope) : [];
+  const scopedSelectedCount = scopedPermissionDefs.filter((def) =>
+    permissions.includes(def.key)
+  ).length;
+
+  /** Scope badalne par sirf usi scope ki permissions rakho. */
+  const prunePermissionsToScope = (nextLoans: LoanTypeSlug[], nextModules: ModuleKey[]) => {
+    const scope: PermissionScope | null =
+      nextModules.length > 0 ? "modules" : nextLoans.length > 0 ? "loans" : null;
+    if (!scope) return;
+    setPermissions((current) => filterPermissionsForScope(current, scope));
+  };
+
   /**
    * Tick/untick a loan product. While the ID is still auto, it is regenerated so
    * the handle always matches the current selection.
    */
   const applyLoans = (next: LoanTypeSlug[]) => {
     setSelected(next);
+    prunePermissionsToScope(next, selectedModules);
     if (autoLoginId) setLoginId(buildAutoLoginId(next, selectedModules, role, takenIds));
   };
 
   /** The role is part of the generated handle, so switching it re-generates the ID. */
   const applyRole = (next: AdminRole) => {
     setRole(next);
+    if (next === "sub_admin") {
+      setPermissions((current) => (current.length > 0 ? current : DEFAULT_SUB_ADMIN_PERMISSIONS));
+    }
     if (autoLoginId) setLoginId(buildAutoLoginId(selected, selectedModules, next, takenIds));
   };
 
@@ -269,8 +312,15 @@ const AdminFormModal = ({
     const nextLoans: LoanTypeSlug[] = nextModules.length > 0 ? [] : selected;
     setSelectedModules(nextModules);
     setSelected(nextLoans);
+    prunePermissionsToScope(nextLoans, nextModules);
     setLoanMenuOpen(false);
     if (autoLoginId) setLoginId(buildAutoLoginId(nextLoans, nextModules, role, takenIds));
+  };
+
+  const togglePermission = (key: AdminPermission) => {
+    setPermissions((current) =>
+      current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]
+    );
   };
 
   const validate = (): boolean => {
@@ -319,6 +369,14 @@ const AdminFormModal = ({
       next.access = "Choose one: loan products, Customers or Franchises.";
     }
 
+    if (isSubRole) {
+      if (!supervisionScope) {
+        next.access = "Sub admin ke liye scope chuno: Loan products ya Customers / Franchises.";
+      } else if (!permissions.some((key) => appliesToScope(key, supervisionScope))) {
+        next.permissions = `${scopeLabel(supervisionScope)} scope ke liye kam se kam ek permission chuno.`;
+      }
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -334,6 +392,10 @@ const AdminFormModal = ({
       role,
       loanAccess: isSuperRole || allSelected ? "all" : selected,
       moduleAccess: isSuperRole || allModulesSelected ? "all" : selectedModules,
+      permissions:
+        isSubRole && supervisionScope
+          ? filterPermissionsForScope(permissions, supervisionScope)
+          : [],
     });
   };
 
@@ -521,9 +583,10 @@ const AdminFormModal = ({
         {mode === "create" && (
           <div className="px-6 pb-1">
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Role</label>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               {([
-                { value: "admin", title: "Admin", desc: "Only the loans you assign below" },
+                { value: "admin", title: "Admin", desc: "Only the loans you assign" },
+                { value: "sub_admin", title: "Sub admin", desc: "Supervises admins, permission ke andar" },
                 { value: "super_admin", title: "Super admin", desc: "Every loan + team management" },
               ] as const).map((option) => {
                 const active = role === option.value;
@@ -540,6 +603,7 @@ const AdminFormModal = ({
                   >
                     <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                       {option.value === "super_admin" && <ShieldCheck size={14} className="text-[rgb(6,106,156)]" />}
+                      {option.value === "sub_admin" && <ShieldCheck size={14} className="text-sky-600" />}
                       {option.title}
                     </span>
                     <span className="mt-0.5 block text-xs text-slate-500">{option.desc}</span>
@@ -547,6 +611,75 @@ const AdminFormModal = ({
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Sub-admin capabilities — sirf tab dikhte hain jab role sub admin ho */}
+        {isSubRole && (
+          <div className="px-6 pb-1">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-700">Supervision permissions</p>
+              <p className="text-[11px] font-medium text-slate-400">
+                {supervisionScope
+                  ? `${scopedSelectedCount} of ${scopedPermissionDefs.length} · ${scopeLabel(supervisionScope)}`
+                  : "Scope chuno"}
+              </p>
+            </div>
+            {supervisionScope ? (
+              <>
+                <p className="text-[11px] leading-relaxed text-slate-400">
+                  Scope:{" "}
+                  <span className="font-semibold text-slate-600">
+                    {scopeLabel(supervisionScope)}
+                  </span>{" "}
+                  — {SCOPE_META[supervisionScope].permissionHint} Scope badalne par sirf usi scope
+                  ki permissions rehti hain.
+                </p>
+                <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                  {scopedPermissionDefs.map((permission) => {
+                const checked = permissions.includes(permission.key);
+                return (
+                  <button
+                    key={permission.key}
+                    type="button"
+                    onClick={() => togglePermission(permission.key)}
+                    aria-pressed={checked}
+                    title={permission.description}
+                    className={`flex items-start gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition ${
+                      checked
+                        ? "border-[rgba(6,106,156,0.35)] bg-[rgba(6,106,156,0.05)] text-slate-800"
+                        : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                        checked ? "border-transparent text-white" : "border-slate-300 bg-white"
+                      }`}
+                      style={checked ? { background: BRAND_GRADIENT } : undefined}
+                    >
+                      {checked && <Check size={11} strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-semibold">{permission.label}</span>
+                      <span className="block text-[10px] font-normal leading-snug text-slate-400">
+                        {permission.description}
+                      </span>
+                    </span>
+                  </button>
+                );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                Pehle upar se scope chuno — <span className="font-semibold">Loan products</span> ya{" "}
+                <span className="font-semibold">Customers &amp; Franchises</span>. Uske baad usi
+                scope ki permissions tick karo.
+              </p>
+            )}
+            {errors.permissions && (
+              <p className="mt-1.5 text-xs text-red-600">{errors.permissions}</p>
+            )}
           </div>
         )}
 
@@ -594,6 +727,7 @@ const AdminFormModal = ({
                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm focus:border-[rgb(6,106,156)] focus:outline-none focus:ring-2 focus:ring-[rgba(6,106,156,0.2)]"
               >
                 <option value="admin">Admin — only the assigned loans</option>
+                <option value="sub_admin">Sub admin — supervises admins within permissions</option>
                 <option value="super_admin">Super admin — everything + team management</option>
               </select>
             </div>
