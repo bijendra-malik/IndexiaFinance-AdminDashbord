@@ -22,6 +22,14 @@ import {
 } from "../../api/adminActivity";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { updateTagLabel } from "../../api/adminUpdates";
+import { useAuth } from "../../context/AuthContext";
+import {
+  REVIEW_STATE_META,
+  readReviews,
+  reviewKey,
+  type ReviewRecord,
+} from "../../api/adminReviews";
+import ReviewDialog from "../review/components/ReviewDialog";
 import {
   adminLabel,
   avatarGradient,
@@ -238,6 +246,11 @@ const RailRow = ({
 );
 
 const AdminUpdates = () => {
+  const { isSuperAdmin, can, accessibleLoanTypes } = useAuth();
+  const canReview = isSuperAdmin || can("updates.review");
+  const [reviews, setReviews] = useState<Record<string, ReviewRecord>>(readReviews);
+  const [reviewing, setReviewing] = useState<AdminActivityUpdate | null>(null);
+
   const [result, setResult] = useState<AdminActivityResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -285,14 +298,25 @@ const AdminUpdates = () => {
     [result]
   );
   /* Zero-activity products leaderboard me noise hain — sirf jinme kaam hua. */
+  /* Sub admin ka view uske assigned products tak — org-wide numbers nahi. */
+  const scopedSlugs = useMemo(() => {
+    if (isSuperAdmin || accessibleLoanTypes.length === 0) return null;
+    return new Set<string>(accessibleLoanTypes.map((loan) => loan.slug));
+  }, [isSuperAdmin, accessibleLoanTypes]);
+
   const products = useMemo(
     () =>
       [...(result?.products ?? [])]
         .filter((entry) => entry.total > 0)
+        .filter((entry) => !scopedSlugs || !entry.slug || scopedSlugs.has(entry.slug))
         .sort((left, right) => right.total - left.total),
-    [result]
+    [result, scopedSlugs]
   );
-  const updates = useMemo(() => result?.updates ?? [], [result]);
+  const updates = useMemo(() => {
+    const all = result?.updates ?? [];
+    if (!scopedSlugs) return all;
+    return all.filter((update) => !update.slug || scopedSlugs.has(update.slug));
+  }, [result, scopedSlugs]);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -366,12 +390,14 @@ const AdminUpdates = () => {
           <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/90 backdrop-blur">
-                <ShieldCheck size={11} /> Super admin view
+                <ShieldCheck size={11} /> {isSuperAdmin ? "Super admin view" : "Supervisor view"}
               </span>
               <h1 className="mt-2 text-2xl font-bold leading-tight">Admin Updates</h1>
               <p className="mt-1 max-w-xl text-xs leading-relaxed text-white/80">
                 Har admin ka kaam ek timeline me — notes, status recommendations aur
                 final decisions, saath me kis record par kya hua.
+                {!isSuperAdmin &&
+                  " Aapke scope ke updates; review karke verify, return ya escalate karo."}
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                 <span className="rounded-lg bg-white/15 px-2.5 py-1 font-semibold backdrop-blur">
@@ -405,7 +431,7 @@ const AdminUpdates = () => {
           <StatCard
             icon={Activity}
             label="Total updates"
-            value={result?.total ?? 0}
+            value={isSuperAdmin ? result?.total ?? 0 : updates.length}
             hint={`Activity in the selected ${windowLabel === "All" ? "all-time" : windowLabel} window`}
             tile="bg-sky-50 text-sky-600"
             accent="from-sky-400 to-cyan-300"
@@ -626,6 +652,8 @@ const AdminUpdates = () => {
                         const KindIcon = kind.icon;
                         const target = targetFor(update);
                         const name = adminLabel(update.adminName);
+                        const reviewRecord = reviews[reviewKey(update)];
+                        const reviewMeta = REVIEW_STATE_META[reviewRecord?.state ?? "pending"];
                         return (
                           <li
                             key={update.id}
@@ -696,6 +724,22 @@ const AdminUpdates = () => {
                                   <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
                                     {updateTagLabel(update.tag)}
                                   </span>
+                                )}
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ring-1 ${reviewMeta.chip}`}
+                                >
+                                  <span className={`h-1.5 w-1.5 rounded-full ${reviewMeta.dot}`} />
+                                  {reviewMeta.label}
+                                </span>
+                                {canReview && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setReviewing(update)}
+                                    title="Verify, return or escalate this update"
+                                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 font-semibold text-slate-600 transition hover:border-[rgb(6,106,156)] hover:text-[rgb(6,106,156)]"
+                                  >
+                                    <ShieldCheck size={11} /> Review
+                                  </button>
                                 )}
                                 <span className="inline-flex items-center gap-1 tabular-nums text-slate-400 xl:hidden">
                                   <Clock3 size={11} /> {formatDateTime(update.addedAt)}
@@ -817,6 +861,18 @@ const AdminUpdates = () => {
           </aside>
         </div>
       </div>
+
+      {reviewing && (
+        <ReviewDialog
+          update={reviewing}
+          existing={reviews[reviewKey(reviewing)]}
+          onClose={() => setReviewing(null)}
+          onSaved={(records) => {
+            setReviews(records);
+            setReviewing(null);
+          }}
+        />
+      )}
     </AdminLayout>
   );
 };

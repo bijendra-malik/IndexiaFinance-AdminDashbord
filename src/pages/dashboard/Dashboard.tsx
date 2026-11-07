@@ -25,6 +25,7 @@ import StatusDonut from "./components/StatusDonut";
 import { AdminUpdatesTable, RecentAccountsTable, RecentApplicationsTable } from "./components/DashboardTables";
 import ProductExplorer from "./components/ProductExplorer";
 import ModuleDashboardOverview from "./ModuleDashboardOverview";
+import SupervisorDashboard from "./SupervisorDashboard";
 
 /** Product rows have no dependable slug, so fall back to matching the label. */
 const productSlug = (row: { slug?: string; label?: string }): string | undefined =>
@@ -207,7 +208,7 @@ const AdminUpdateRow = ({ update }: { update: AdminActivityUpdate }) => {
   );
 };
 
-const Dashboard = () => {
+const AdminDashboard = () => {
   const { admin, loanAccess, canAccessLoan, isSuperAdmin } = useAuth();
 
   const [rawStats, setRawStats] = useState<DashboardStats | null>(null);
@@ -700,6 +701,16 @@ const Dashboard = () => {
       ) : null}
     </AdminLayout>
   );
+};
+
+/**
+ * Role ke hisaab se do dashboard:
+ *   sub admin -> supervision console (review queue, escalations, admins)
+ *   baaki sab -> yahi purana loan/application dashboard
+ */
+const Dashboard = () => {
+  const { isSubAdmin } = useAuth();
+  return isSubAdmin ? <SupervisorDashboard /> : <AdminDashboard />;
 };
 
 export default Dashboard;
