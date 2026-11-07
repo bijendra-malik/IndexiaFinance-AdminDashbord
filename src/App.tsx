@@ -8,6 +8,7 @@ import Profile from "./pages/Profile";
 import Dashboard from "./pages/dashboard/Dashboard";
 import TeamAccess from "./pages/team/TeamAccess";
 import AdminUpdates from "./pages/activity/AdminUpdates";
+import ReviewQueue from "./pages/review/ReviewQueue";
 import MastersList from "./pages/masters/MastersList";
 import MasterDetail from "./pages/masters/MasterDetail";
 import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
@@ -58,12 +59,23 @@ function App() {
               }
             />
 
-            {/* Admin updates feed — kis admin ne kis loan par kya update kiya */}
+            {/* Admin updates feed — super admin sab dekhta hai, sub admin apne
+                scope me (permission: updates.view). */}
             <Route
               path="/activity"
               element={
-                <ProtectedRoute requireSuperAdmin>
+                <ProtectedRoute requirePermission="updates.view">
                   <AdminUpdates />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Sub admin ka review queue — verify / return / escalate */}
+            <Route
+              path="/review"
+              element={
+                <ProtectedRoute requirePermission="updates.review">
+                  <ReviewQueue />
                 </ProtectedRoute>
               }
             />
