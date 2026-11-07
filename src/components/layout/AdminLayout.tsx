@@ -155,7 +155,9 @@ const ProfileDropdown = ({
 
 // ── Main Layout ───────────────────────────────────────────────────────────────
 const AdminLayout = ({ children }: { children: ReactNode }) => {
-  const { admin, logout, accessibleLoanTypes, isSuperAdmin, canAccessModule } = useAuth();
+  const { admin, logout, accessibleLoanTypes, isSuperAdmin, isSubAdmin, can, canAccessModule } =
+    useAuth();
+  const roleText = isSuperAdmin ? "Super admin" : isSubAdmin ? "Sub admin" : "Admin";
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -443,6 +445,43 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             )}
           </div>}
 
+          {/* Supervision — sub admin ka kaam, sirf granted permissions ke saath */}
+          {isSubAdmin && (can("updates.review") || can("updates.view")) && (
+            <div className="pt-3 pb-1 px-3">
+              <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">
+                Supervision
+              </p>
+            </div>
+          )}
+          {isSubAdmin && can("updates.review") && (
+            <Link to="/review"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={location.pathname === "/review"
+                ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
+                : { color: "rgba(255,255,255,0.75)" }}
+              onMouseEnter={e => hoverOn(e, location.pathname === "/review")}
+              onMouseLeave={e => hoverOff(e, location.pathname === "/review")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/review" ? "bg-white/20" : "bg-white/10"}`}>
+                <ShieldCheck size={15} />
+              </div>
+              <span className="flex-1">Review Queue</span>
+            </Link>
+          )}
+          {isSubAdmin && can("updates.view") && (
+            <Link to="/activity"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={location.pathname === "/activity"
+                ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
+                : { color: "rgba(255,255,255,0.75)" }}
+              onMouseEnter={e => hoverOn(e, location.pathname === "/activity")}
+              onMouseLeave={e => hoverOff(e, location.pathname === "/activity")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/activity" ? "bg-white/20" : "bg-white/10"}`}>
+                <Activity size={15} />
+              </div>
+              <span className="flex-1">Admin Updates</span>
+            </Link>
+          )}
+
           {/* Admin updates — super admins only: kis admin ne kis loan par kya kiya */}
           {isSuperAdmin && (
             <Link to="/activity"
@@ -456,6 +495,22 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                 <Activity size={15} />
               </div>
               <span className="flex-1">Admin Updates</span>
+            </Link>
+          )}
+
+          {/* Super admin bhi supervisor queue dekh sake — sub admin ka review record */}
+          {isSuperAdmin && (
+            <Link to="/review"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={location.pathname === "/review"
+                ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
+                : { color: "rgba(255,255,255,0.75)" }}
+              onMouseEnter={e => hoverOn(e, location.pathname === "/review")}
+              onMouseLeave={e => hoverOff(e, location.pathname === "/review")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/review" ? "bg-white/20" : "bg-white/10"}`}>
+                <ShieldCheck size={15} />
+              </div>
+              <span className="flex-1">Review Queue</span>
             </Link>
           )}
 
@@ -491,7 +546,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-semibold text-white truncate leading-tight">{admin?.name}</p>
-              <p className="text-[11px] text-white/50 capitalize truncate">{isSuperAdmin ? "Super admin" : "Admin"}</p>
+              <p className="text-[11px] text-white/50 capitalize truncate">{roleText}</p>
             </div>
             <Settings size={14} className="text-white/30 group-hover:text-white/60 transition shrink-0" />
           </button>
@@ -525,7 +580,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               <ProfileDropdown
                 name={admin?.name}
                 email={admin?.email}
-                role={isSuperAdmin ? "Super admin" : "Admin"}
+                role={roleText}
                 onLogout={handleLogout}
               />
             </div>

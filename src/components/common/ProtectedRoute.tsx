@@ -1,19 +1,23 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import type { AdminPermission } from "../../constants/adminPermissions";
 
 const ProtectedRoute = ({
   children,
   requireSuperAdmin = false,
   requireModule,
+  requirePermission,
 }: {
   children: ReactNode;
   /** Team / access management is reserved for super admins. */
   requireSuperAdmin?: boolean;
   /** Restrict a route to admins assigned this module (super admins included). */
   requireModule?: string;
+  /** Sub-admin capability gate (super admins hold every permission). */
+  requirePermission?: AdminPermission;
 }) => {
-  const { isLoggedIn, isLoading, isSuperAdmin, canAccessModule } = useAuth();
+  const { isLoggedIn, isLoading, isSuperAdmin, canAccessModule, can } = useAuth();
 
   if (isLoading) {
     return (
@@ -32,6 +36,10 @@ const ProtectedRoute = ({
   }
 
   if (requireModule && !canAccessModule(requireModule)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requirePermission && !can(requirePermission)) {
     return <Navigate to="/dashboard" replace />;
   }
 

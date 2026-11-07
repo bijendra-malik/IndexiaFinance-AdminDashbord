@@ -45,6 +45,7 @@ export const roleLabel = (role?: string) => {
   const raw = (role ?? "").replace(/[_-]+/g, " ").trim();
   if (!raw) return "";
   if (/^super\s*admin$/i.test(raw)) return "Super admin";
+  if (/^sub\s*admin$/i.test(raw)) return "Sub admin";
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 };
 
