@@ -66,6 +66,8 @@ export interface AdminActivityFilters {
   adminId?: string;
   product?: string;
   days?: number;
+  /** Backend max 500. Review counts ke liye poori window chahiye. */
+  limit?: number;
 }
 
 interface RawActivity {
@@ -134,6 +136,7 @@ export const getAdminActivity = async (
         ...(filters.adminId ? { adminId: filters.adminId } : {}),
         ...(filters.product ? { product: filters.product } : {}),
         ...(filters.days !== undefined ? { days: filters.days } : {}),
+        ...(filters.limit !== undefined ? { limit: filters.limit } : {}),
       },
     }
   );
