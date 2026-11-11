@@ -3,6 +3,7 @@ import {
   ChevronLeft, ChevronRight, Inbox, Mail, MessageSquare, Phone, RefreshCw, Search, Trash2, X,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 import {
@@ -63,6 +64,9 @@ const initialsOf = (name: string) =>
 
 const ContactEnquiries = () => {
   const { showToast } = useToast();
+  /* Enquiry handle karna permission se hota hai, par permanent delete
+     destructive hai — wo sirf super admin ke paas rehta hai. */
+  const { isSuperAdmin } = useAuth();
 
   const [status, setStatus] = useState<ContactStatusFilter>("all");
   const [topic, setTopic] = useState("all");
@@ -462,14 +466,16 @@ const ContactEnquiries = () => {
                         >
                           View
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setPendingDelete(enquiry)}
-                          title="Delete enquiry"
-                          className="rounded-lg border border-slate-200 p-1.5 text-slate-400 transition hover:border-rose-200 hover:text-rose-600"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {isSuperAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete(enquiry)}
+                            title="Delete enquiry"
+                            className="rounded-lg border border-slate-200 p-1.5 text-slate-400 transition hover:border-rose-200 hover:text-rose-600"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -633,13 +639,15 @@ const ContactEnquiries = () => {
               </div>
             </section>
 
-            <button
-              type="button"
-              onClick={() => setPendingDelete(selected)}
-              className="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:underline"
-            >
-              <Trash2 size={13} /> Delete this enquiry
-            </button>
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => setPendingDelete(selected)}
+                className="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:underline"
+              >
+                <Trash2 size={13} /> Delete this enquiry
+              </button>
+            )}
           </aside>
         </div>
       )}

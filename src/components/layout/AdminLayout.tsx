@@ -212,8 +212,11 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             ...(!isSuperAdmin && canAccessModule("franchises")
               ? [{ to: "/franchises", label: "Franchises", icon: Building2 }]
               : []),
-            /* Website contact form ki enquiries — dono admin types ke liye. */
-            { to: "/contact", label: "Contact", icon: MessageSquare },
+            /* Contact enquiries — super admin, ya jise `contacts.manage` mila ho.
+               Regular admin ko ye section dikhta hi nahi. */
+            ...(isSuperAdmin || can("contacts.manage")
+              ? [{ to: "/contact", label: "Contact", icon: MessageSquare }]
+              : []),
           ].map(({ to, label, icon: Icon }) => {
             const isActive = location.pathname === to;
             return (
