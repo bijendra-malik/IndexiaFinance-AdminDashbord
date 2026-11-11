@@ -42,11 +42,26 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Admin tokens that are expired, invalid, or no longer authorised must sign out.
+/*
+Admin tokens that are expired, invalid, or no longer authorised must sign out.
+
+Har 403 par sign-out karna galat tha: sub admin ke paas kisi page ki permission
+na ho to woh 403 khaata hai, session clear ho jaata hai aur wo wapas /login par
+chala jaata hai — bahar se lagta hai "login hi nahi ho raha". Ab sirf session
+invalid karne wale 403 (deactivated account / wrong token type) sign out karte
+hain; permission denial page par error ban kar dikhta hai.
+*/
+const endsSession = (status?: number, message = ""): boolean => {
+  if (status === 401) return true;
+  if (status !== 403) return false;
+  return /deactivated|invalid token|admin access only|unauthorized/i.test(message);
+};
+
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    const message = String(error.response?.data?.message ?? "");
+    if (endsSession(error.response?.status, message)) {
       clearToken();
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
