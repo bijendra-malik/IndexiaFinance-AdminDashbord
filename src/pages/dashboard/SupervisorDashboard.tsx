@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
@@ -16,6 +16,7 @@ import { getApiErrorMessage } from "../../utils/apiError";
 import { getAdminActivity, type AdminActivityResult } from "../../api/adminActivity";
 import { ADMIN_PERMISSION_DEFS } from "../../constants/adminPermissions";
 import {
+  fetchReviews,
   readReviews,
   reviewKey,
   type ReviewRecord,
@@ -42,7 +43,8 @@ par load hai.
 Isliye `Dashboard` route hi role ke hisaab se do view deta hai:
   super / admin -> Dashboard.tsx (jaise tha)
   sub_admin     -> ye file
-Backend kuch nahi badla — data wahi /activity feed aur local review store hai.
+Data scoped `/activity` feed se aata hai, aur review state backend (`/reviews`)
+se — local cache sirf offline fallback hai.
 ==========================================
 */
 
@@ -85,7 +87,8 @@ const SupervisorDashboard = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-    getAdminActivity({ days: 30 })
+    /* Backend default limit 100 hai — counts poore window ke chahiye. */
+    getAdminActivity({ days: 30, limit: 500 })
       .then((data) => {
         if (controller.signal.aborted) return;
         setResult(data);
@@ -99,6 +102,17 @@ const SupervisorDashboard = () => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
+  }, [reloadKey]);
+
+  /* Review state backend se — local cache sirf offline fallback hai. */
+  useEffect(() => {
+    let cancelled = false;
+    fetchReviews().then((records) => {
+      if (!cancelled) setReviews(records);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [reloadKey]);
 
   const refresh = () => {
@@ -115,8 +129,11 @@ const SupervisorDashboard = () => {
     return updates.filter((update) => !update.slug || allowed.has(update.slug));
   }, [result, accessibleLoanTypes]);
 
-  const stateOf = (update: AdminActivityResult["updates"][number]): ReviewState =>
-    reviews[reviewKey(update)]?.state ?? "pending";
+  const stateOf = useCallback(
+    (update: AdminActivityResult["updates"][number]): ReviewState =>
+      reviews[reviewKey(update)]?.state ?? "pending",
+    [reviews]
+  );
 
   const counts = useMemo(() => {
     const base: Record<ReviewState, number> = {
@@ -130,8 +147,7 @@ const SupervisorDashboard = () => {
       base[stateOf(update)] += 1;
     });
     return base;
-    // stateOf reviews par depend karta hai
-  }, [scoped, reviews]);
+  }, [scoped, stateOf]);
 
   const pending = useMemo(
     () =>
@@ -139,7 +155,7 @@ const SupervisorDashboard = () => {
         .filter((update) => stateOf(update) === "pending")
         .sort((left, right) => right.addedAt.localeCompare(left.addedAt))
         .slice(0, 6),
-    [scoped, reviews]
+    [scoped, stateOf]
   );
 
   const admins = useMemo(

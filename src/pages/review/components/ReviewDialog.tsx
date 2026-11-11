@@ -20,6 +20,7 @@ import {
 } from "../../../api/adminReviews";
 import type { AdminActivityUpdate } from "../../../api/adminActivity";
 import { adminLabel, formatDateTime } from "../../../utils/auditFormat";
+import { getApiErrorMessage } from "../../../utils/apiError";
 
 /*
 ==========================================
@@ -63,10 +64,20 @@ const ReviewDialog = ({
   const { showToast } = useToast();
 
   const key = reviewKey(update);
-  const allowed = REVIEW_ACTIONS.filter((action) => can(action.permission));
+  /*
+  `loans.decide` sirf loan application par lagti hai. Customer / franchise row
+  par ye action backend se 403 deta hai, isliye button dikhana hi nahi chahiye.
+  */
+  const isLoanUpdate = (update.entity ?? "loan") === "loan";
+  const allowed = REVIEW_ACTIONS.filter(
+    (action) =>
+      can(action.permission) &&
+      (action.permission !== "loans.decide" || isLoanUpdate)
+  );
   const [state, setState] = useState<ReviewState>(allowed[0]?.state ?? "verified");
   const [note, setNote] = useState(existing?.note ?? "");
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const action = REVIEW_ACTIONS.find((entry) => entry.state === state);
   // Supervisor apna hi kaam verify/decide na kare — warna quality-check layer
@@ -75,8 +86,8 @@ const ReviewDialog = ({
     !isSuperAdmin &&
     (update.adminName ?? "").trim().toLowerCase() === (admin?.name ?? "").trim().toLowerCase();
 
-  const submit = () => {
-    if (!action) return;
+  const submit = async () => {
+    if (!action || saving) return;
     if (isOwnUpdate) return setError("Aap apne hi update ko review nahi kar sakte.");
     if (action.requireNote && note.trim().length < 5) {
       return setError("Wajah / summary likho (kam se kam 5 characters).");
@@ -90,15 +101,39 @@ const ReviewDialog = ({
       reviewedByRole: admin?.role ?? "sub_admin",
       reviewedAt: new Date().toISOString(),
     };
-    const records = writeReview(record);
-    showToast(`${adminLabel(update.adminName)} ka update — ${REVIEW_STATE_META[action.state].label}.`);
-    onSaved(records);
+    setSaving(true);
+    setError("");
+    try {
+      const records = await writeReview(record, {
+        entity: update.entity ?? "loan",
+        applicationId: update.applicationId,
+        updateId: update.id,
+        slug: update.slug,
+        updateAdminId: update.adminId,
+        updateAdminName: update.adminName,
+      });
+      showToast(`${adminLabel(update.adminName)} ka update — ${REVIEW_STATE_META[action.state].label}.`);
+      onSaved(records);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Review save nahi hua. Dobara try karo."));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const reset = () => {
-    const records = clearReview(key);
-    showToast("Review state cleared — update wapas queue me hai.");
-    onSaved(records);
+  const reset = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const records = await clearReview(key);
+      showToast("Review state cleared — update wapas queue me hai.");
+      onSaved(records);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Review clear nahi hua."));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -263,11 +298,11 @@ const ReviewDialog = ({
             <button
               type="button"
               onClick={submit}
-              disabled={allowed.length === 0 || isOwnUpdate}
+              disabled={allowed.length === 0 || isOwnUpdate || saving}
               className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: BRAND_GRADIENT }}
             >
-              Save review
+              {saving ? "Saving…" : "Save review"}
             </button>
           </div>
         </div>

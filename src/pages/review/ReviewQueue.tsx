@@ -18,6 +18,7 @@ import { getApiErrorMessage } from "../../utils/apiError";
 import { getAdminActivity, type AdminActivityResult, type AdminActivityUpdate } from "../../api/adminActivity";
 import {
   REVIEW_STATE_META,
+  fetchReviews,
   readReviews,
   reviewKey,
   type ReviewRecord,
@@ -40,8 +41,8 @@ recommendations jo abhi verify hone baaki hain.
   escalated -> super admin ke decision ke liye
   decided   -> decision record ho gaya
 
-Review state `loan_admin_reviews_v1` me local hai (backend endpoint abhi nahi),
-isliye ye page bina API change kiye poora kaam karta hai.
+Review state backend (`GET /reviews`) se aata hai; browser ka
+`loan_admin_reviews_v1` cache sirf offline fallback hai.
 ==========================================
 */
 
@@ -80,7 +81,8 @@ const ReviewQueue = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-    getAdminActivity({ days })
+    /* Backend default limit 100 hai — queue aur counts poore window ke chahiye. */
+    getAdminActivity({ days, limit: 500 })
       .then((data) => {
         if (controller.signal.aborted) return;
         setResult(data);
@@ -95,6 +97,17 @@ const ReviewQueue = () => {
       });
     return () => controller.abort();
   }, [days, reloadKey]);
+
+  /* Review state server par hai — local cache sirf offline fallback hai. */
+  useEffect(() => {
+    let cancelled = false;
+    fetchReviews().then((records) => {
+      if (!cancelled) setReviews(records);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   const reload = () => {
     setLoading(true);
@@ -468,7 +481,7 @@ const ReviewQueue = () => {
 
             <p className="flex items-start gap-1.5 rounded-xl bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-400">
               <Info size={13} className="mt-0.5 shrink-0" />
-              Review state is browser me save hota hai jab tak backend review endpoint nahi aata.
+              Review state server par save hota hai, isliye doosre device par bhi wahi dikhta hai.
             </p>
           </aside>
         </div>

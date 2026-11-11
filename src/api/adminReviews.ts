@@ -1,19 +1,19 @@
+import axiosInstance from "./axiosInstance";
 import type { AdminPermission } from "../constants/adminPermissions";
 import type { AdminRole } from "./adminUsers";
 
 /*
 ==========================================
-Sub-admin review state (local until the API exists)
+Sub-admin review state
 
 Super admin ka aaj ka flow: admin ka note/recommendation padho, phir record
 khol kar decision lo. Sub admin uske aage ek quality-check layer lagata hai:
-Verify / Return / Escalate / Decide. Backend me abhi ye fields nahi hain, aur
-admin directory bhi local fallback par chalti hai — isliye review state bhi
-usi tarah is browser me store hota hai (`loan_admin_reviews_v1`).
+Verify / Return / Escalate / Decide. Ye state backend (`/reviews`) me save hoti
+hai, isliye supervisor ka kaam device badalne par bhi wahi rehta hai.
 
 Key update ki identity par banti hai (entity + applicationId + update id), isliye
-page reload / re-fetch par wahi row wahi state dikhati hai. Backend jab ready
-ho, sirf in functions ke andar network call lagani hai — UI same rahega.
+page reload / re-fetch par wahi row wahi state dikhati hai. Browser ka
+`loan_admin_reviews_v1` cache sirf offline fallback hai.
 ==========================================
 */
 
@@ -64,14 +64,124 @@ const writeAll = (records: Record<string, ReviewRecord>): void => {
 
 export const readReviews = (): Record<string, ReviewRecord> => readAll();
 
-export const writeReview = (record: ReviewRecord): Record<string, ReviewRecord> => {
-  const records = readAll();
-  records[record.key] = record;
-  writeAll(records);
-  return records;
+const isReviewState = (value: unknown): value is ReviewState =>
+  value === "pending" ||
+  value === "verified" ||
+  value === "returned" ||
+  value === "escalated" ||
+  value === "decided";
+
+interface RawReview {
+  key?: string;
+  state?: string;
+  note?: string;
+  reviewedByName?: string;
+  reviewedByRole?: string;
+  reviewedAt?: string;
+}
+
+const fromRaw = (raw: unknown): ReviewRecord | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as RawReview;
+  if (!row.key || !isReviewState(row.state)) return null;
+  return {
+    key: row.key,
+    state: row.state,
+    note: row.note ?? "",
+    reviewedBy: "",
+    reviewedByName: row.reviewedByName ?? "",
+    reviewedByRole: row.reviewedByRole ?? "",
+    reviewedAt: row.reviewedAt ?? "",
+  };
 };
 
-export const clearReview = (key: string): Record<string, ReviewRecord> => {
+/** Network hi nahi (server down / offline) — tab local cache par kaam chalta hai. */
+const isOffline = (error: unknown): boolean =>
+  !(error as { response?: unknown })?.response;
+
+/**
+ * Backend review state (`GET /reviews`). Ye ab source of truth hai; local cache
+ * sirf offline fallback hai. Purana behaviour — browser me state save karna —
+ * supervisor ke doosre device par gum ho jaata tha.
+ */
+export const fetchReviews = async (): Promise<Record<string, ReviewRecord>> => {
+  try {
+    const { data } = await axiosInstance.get<{ reviews?: unknown[] }>("/reviews", {
+      params: { limit: 500 },
+    });
+    const remote: Record<string, ReviewRecord> = {};
+    (Array.isArray(data.reviews) ? data.reviews : []).forEach((row) => {
+      const record = fromRaw(row);
+      if (record) remote[record.key] = record;
+    });
+    writeAll(remote);
+    return remote;
+  } catch {
+    return readAll();
+  }
+};
+
+export interface ReviewTargetMeta {
+  entity?: string;
+  applicationId?: string;
+  updateId?: string;
+  slug?: string;
+  updateAdminId?: string | null;
+  updateAdminName?: string;
+}
+
+/**
+ * Save a review. Success par backend record local cache me mirror hota hai;
+ * sirf offline hone par local record banta hai. 403/400 error upar jaata hai
+ * taaki UI galat "saved" na dikhaye.
+ */
+export const writeReview = async (
+  record: ReviewRecord,
+  meta: ReviewTargetMeta = {}
+): Promise<Record<string, ReviewRecord>> => {
+  const [entity, applicationId, updateId] = record.key.split(":");
+  try {
+    const { data } = await axiosInstance.post<{ review?: unknown }>("/reviews", {
+      entity: meta.entity ?? entity,
+      applicationId: meta.applicationId ?? applicationId,
+      updateId: meta.updateId ?? updateId,
+      slug: meta.slug ?? "",
+      ...(meta.updateAdminId ? { updateAdminId: meta.updateAdminId } : {}),
+      /*
+      `updateAdminName` us admin ka hai jiska update review ho raha hai — reviewer
+      ka naam nahi. Pehle yahan `record.reviewedByName` fallback tha, jisse backend
+      ka self-review check galat admin par lag sakta tha.
+      */
+      ...(meta.updateAdminName ? { updateAdminName: meta.updateAdminName } : {}),
+      state: record.state,
+      note: record.note,
+    });
+
+    const saved = fromRaw(data.review);
+    const records = readAll();
+    records[record.key] = saved
+      ? { ...record, ...saved, reviewedBy: record.reviewedBy }
+      : record;
+    writeAll(records);
+    return records;
+  } catch (error) {
+    if (!isOffline(error)) throw error;
+    const records = readAll();
+    records[record.key] = record;
+    writeAll(records);
+    return records;
+  }
+};
+
+export const clearReview = async (key: string): Promise<Record<string, ReviewRecord>> => {
+  try {
+    await axiosInstance.delete(`/reviews/${encodeURIComponent(key)}`);
+  } catch (error) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    // 404 = pehle se clear hai; offline me local hi clear karte hain.
+    if (status !== undefined && status !== 404) throw error;
+  }
+
   const records = readAll();
   delete records[key];
   writeAll(records);
