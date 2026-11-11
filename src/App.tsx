@@ -80,11 +80,12 @@ function App() {
               }
             />
 
-            {/* Website contact form ki enquiries — dono admin types ke liye */}
+            {/* Website contact form ki enquiries — super admin, ya jise
+                `contacts.manage` permission mili ho. Regular admin ke liye nahi. */}
             <Route
               path="/contact"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute requirePermission="contacts.manage">
                   <ContactEnquiries />
                 </ProtectedRoute>
               }
