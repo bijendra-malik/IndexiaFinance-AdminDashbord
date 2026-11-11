@@ -16,6 +16,10 @@ export interface ApiAdmin {
   loginId?: string;
   /** Per-loan permission from the backend: `"all"` or the allowed slugs. */
   loanAccess?: "all" | string[];
+  /** Module access (`"all"` or `["customers","franchises"]`) for sub admins. */
+  moduleAccess?: "all" | string[];
+  /** Sub-admin capabilities granted by a super admin. */
+  permissions?: string[];
   isActive: boolean;
   lastLogin: string | null;
   createdAt: string;

@@ -5,10 +5,10 @@ import { normalizePermissions, type AdminPermission } from "../constants/adminPe
 /**
  * Admin accounts managed by a super admin.
  *
- * The account list itself is backend data (`/admins`); the *loan access* a super
- * admin assigns is kept in a local access map keyed by email, so a restriction
- * still applies even while the backend has no field to store it. See
- * `docs/BACKEND_API.md` §1.1 for the contract the client calls.
+ * The account list itself is backend data (`/admins`), and role / loan access /
+ * module access / permissions server par save hote hain. Local access map sirf
+ * fallback hai — backend na ho to bhi restriction is browser me lagti rahe.
+ * See `docs/BACKEND_API.md` §1.1 for the contract the client calls.
  */
 
 export type AdminRole = "super_admin" | "sub_admin" | "admin";
@@ -290,6 +290,7 @@ export const readManagedAdmins = (): ManagedAdmin[] => {
         role: override.role ?? "admin",
         loanAccess: override.loanAccess ?? "all",
         moduleAccess: override.moduleAccess,
+        permissions: normalizePermissions(override.permissions),
         isActive: true,
         createdAt: override.updatedAt ?? "",
         lastLogin: null,
@@ -334,16 +335,13 @@ const pickAdmin = (payload: unknown): unknown => {
 };
 
 /**
- * Backend contract (`docs/BACKEND_API.md` §1.1) me role sirf `super_admin | admin`
- * hai — `sub_admin` bhejne par `POST /admins` 400 deta hai. Isliye sub admin ka
- * account backend par `admin` ke roop me banta hai, aur uska asli role +
- * permissions local access map me rehte hain (bilkul loanAccess ki tarah).
- *
- * `permissions` network payload me nahi jaate: backend unhe jaanta hi nahi, aur
- * unknown field strict validation par poora create fail kar deti hai.
+ * Backend contract (`docs/BACKEND_API.md` §1.1) ab teen roles jaanta hai:
+ * `super_admin | sub_admin | admin`. Sub admin ka scope (`loanAccess` ya
+ * `moduleAccess`) aur `permissions` dono server par save hote hain, isliye
+ * supervisor ka dashboard/login har device par same rehta hai.
  */
-const toBackendRole = (role: AdminRole): "super_admin" | "admin" =>
-  role === "super_admin" ? "super_admin" : "admin";
+const toBackendRole = (role: AdminRole): "super_admin" | "sub_admin" | "admin" =>
+  role === "super_admin" ? "super_admin" : role === "sub_admin" ? "sub_admin" : "admin";
 
 const toBackendPayload = (input: Partial<CreateAdminInput>): Record<string, unknown> => {
   const payload: Record<string, unknown> = {};
@@ -354,6 +352,9 @@ const toBackendPayload = (input: Partial<CreateAdminInput>): Record<string, unkn
   if (input.role !== undefined) payload.role = toBackendRole(input.role);
   if (input.loanAccess !== undefined) payload.loanAccess = input.loanAccess;
   if (input.moduleAccess !== undefined) payload.moduleAccess = input.moduleAccess;
+  if (input.role === "sub_admin" && input.permissions !== undefined) {
+    payload.permissions = input.permissions;
+  }
   return payload;
 };
 
@@ -392,14 +393,15 @@ export const createManagedAdmin = async (
     const response = await axiosInstance.post("/admins", toBackendPayload(input));
     const parsed = toManaged(pickAdmin(response.data), "backend");
     if (!parsed) throw new Error("The backend created the admin but returned no record.");
-    // Backend ne `admin` banaya hoga (sub admin ke liye) — UI ko wahi role
-    // dikhna chahiye jo super admin ne choose kiya, isliye local view merge.
+    // Backend ab SubAdmin + permissions dono return karta hai; response hi
+    // source of truth hai, isliye role ko dobara input se override nahi karte.
     const granted: ManagedAdmin = {
       ...parsed,
-      role: input.role,
       loanAccess: input.loanAccess,
       moduleAccess: input.moduleAccess ?? parsed.moduleAccess,
-      permissions: normalizePermissions(input.permissions),
+      permissions: normalizePermissions(
+        parsed.permissions?.length ? parsed.permissions : input.permissions
+      ),
     };
     rememberAdminAccess(granted);
     return granted;
@@ -446,25 +448,26 @@ export const updateManagedAdmin = async (
     return next;
   }
 
-  // Contract me `permissions` nahi hai aur role enum sirf super_admin | admin
-  // hai — sub admin locally save hota hai, isliye payload filter karke bhejte
-  // hain warna PATCH bhi 400 deta hai.
+  // Contract me ab sub_admin + permissions dono hain; payload sirf known
+  // fields bhejta hai warna strict backend PATCH reject kar deta hai.
   const backendPatch: Record<string, unknown> = {};
   if (patch.name !== undefined) backendPatch.name = patch.name;
   if (patch.email !== undefined) backendPatch.email = patch.email;
   if (patch.role !== undefined) backendPatch.role = toBackendRole(patch.role);
   if (patch.loanAccess !== undefined) backendPatch.loanAccess = patch.loanAccess;
   if (patch.moduleAccess !== undefined) backendPatch.moduleAccess = patch.moduleAccess;
+  if (patch.permissions !== undefined) backendPatch.permissions = patch.permissions;
 
   const response = await axiosInstance.patch(`/admins/${encodeURIComponent(id)}`, backendPatch);
   const parsed = toManaged(pickAdmin(response.data), "backend");
   if (!parsed) throw new Error("The backend updated the admin but returned no record.");
   const granted: ManagedAdmin = {
     ...parsed,
-    role: patch.role ?? parsed.role,
     loanAccess: patch.loanAccess ?? parsed.loanAccess,
     moduleAccess: patch.moduleAccess ?? parsed.moduleAccess,
-    permissions: patch.permissions ?? parsed.permissions,
+    permissions: normalizePermissions(
+      patch.permissions ?? parsed.permissions ?? []
+    ),
   };
   rememberAdminAccess(granted);
   return granted;
@@ -483,7 +486,7 @@ export const resetManagedAdminPassword = async (
     password,
     currentPassword,
   });
-};;
+};
 
 export const deleteManagedAdmin = async (id: string): Promise<void> => {
   const localRecords = readLocalRecords();
