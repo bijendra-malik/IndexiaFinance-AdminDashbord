@@ -16,7 +16,8 @@ export type AdminPermission =
   | "updates.return"
   | "updates.escalate"
   | "admins.view"
-  | "loans.decide";
+  | "loans.decide"
+  | "contacts.manage";
 
 /**
  * Sub admin ka scope wahi do categories hain jo regular admin ka access hota hai:
@@ -88,6 +89,14 @@ export const ADMIN_PERMISSION_DEFS: AdminPermissionDef[] = [
     key: "admins.view",
     label: "View admin details",
     description: "Scope ke regular admins ki profile, access aur workload dekhna (read-only).",
+    group: "Oversight",
+    scope: "both",
+  },
+  {
+    key: "contacts.manage",
+    label: "Handle contact enquiries",
+    description:
+      "Website contact form ki enquiries dekhna aur status/note update karna. Delete sirf super admin kar sakta hai.",
     group: "Oversight",
     scope: "both",
   },
@@ -169,6 +178,8 @@ export const permissionShortLabel = (key: AdminPermission): string => {
       return "Admins";
     case "loans.decide":
       return "Decide";
+    case "contacts.manage":
+      return "Contacts";
     default:
       return key;
   }
