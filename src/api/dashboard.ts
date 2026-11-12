@@ -560,10 +560,12 @@ export const getDashboardStats = async (
       : {}),
     recentCustomers: toOverviewAccounts(stats.recentCustomers, "customer"),
     recentFranchises: toOverviewAccounts(stats.recentFranchises, "franchise"),
-    totalCustomers:
-      customersResult.status === "fulfilled" && customersResult.value
-        ? customers.length
-        : toCount(stats.totalCustomers),
+    /*
+    Backend ka countDocuments hi total hai. Pehle yahan list ki length jaati
+    thi — list unbounded thi, isliye aaj to sahi tha, par bade data par payload
+    phatta aur limit lagte hi KPI galat ho jaata.
+    */
+    totalCustomers: toCount(stats.totalCustomers),
     totalFranchises:
       franchisesResult.status === "fulfilled" && franchisesResult.value
         ? franchisesResult.value.total
