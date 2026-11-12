@@ -544,6 +544,12 @@ const TeamAccess = () => {
         email: values.email,
         role: values.role as AdminRole,
         loanAccess: values.loanAccess,
+        /*
+        Module access bhi bhejna zaroori hai — pehle ye field chhoot rahi thi,
+        isliye Customers/Franchises tick karne par bhi save nahi hote the
+        (sirf loan products update hote the).
+        */
+        moduleAccess: values.moduleAccess,
         permissions: values.permissions,
       });
       showToast(
