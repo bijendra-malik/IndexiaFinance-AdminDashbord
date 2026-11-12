@@ -28,6 +28,11 @@ export interface ReviewRecord {
   reviewedByName: string;
   reviewedByRole: AdminRole | string;
   reviewedAt: string;
+  /* Target record — received feedback ko sahi page par link karne ke liye. */
+  entity?: string;
+  applicationId?: string;
+  updateId?: string;
+  slug?: string;
 }
 
 export interface ReviewTarget {
@@ -75,9 +80,14 @@ interface RawReview {
   key?: string;
   state?: string;
   note?: string;
+  reviewedBy?: string;
   reviewedByName?: string;
   reviewedByRole?: string;
   reviewedAt?: string;
+  entity?: string;
+  applicationId?: string;
+  updateId?: string;
+  slug?: string;
 }
 
 const fromRaw = (raw: unknown): ReviewRecord | null => {
@@ -88,10 +98,15 @@ const fromRaw = (raw: unknown): ReviewRecord | null => {
     key: row.key,
     state: row.state,
     note: row.note ?? "",
-    reviewedBy: "",
+    /* Reviewer ka email — dashboard "your recent reviews" isi par filter karta hai. */
+    reviewedBy: row.reviewedBy ?? "",
     reviewedByName: row.reviewedByName ?? "",
     reviewedByRole: row.reviewedByRole ?? "",
     reviewedAt: row.reviewedAt ?? "",
+    ...(row.entity ? { entity: row.entity } : {}),
+    ...(row.applicationId ? { applicationId: row.applicationId } : {}),
+    ...(row.updateId ? { updateId: row.updateId } : {}),
+    ...(row.slug ? { slug: row.slug } : {}),
   };
 };
 
@@ -118,6 +133,24 @@ export const fetchReviews = async (): Promise<Record<string, ReviewRecord>> => {
     return remote;
   } catch {
     return readAll();
+  }
+};
+
+/**
+ * Mere updates par aaye reviews — super admin / sub admin ka feedback.
+ * `/reviews/mine` sirf `updateAdminId = me` wale records deta hai, isliye ye
+ * kisi doosre admin ka data nahi laata.
+ */
+export const fetchReceivedReviews = async (): Promise<ReviewRecord[]> => {
+  try {
+    const { data } = await axiosInstance.get<{ reviews?: unknown[] }>("/reviews/mine", {
+      params: { limit: 50 },
+    });
+    return (Array.isArray(data.reviews) ? data.reviews : [])
+      .map(fromRaw)
+      .filter((record): record is ReviewRecord => Boolean(record));
+  } catch {
+    return [];
   }
 };
 
