@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Activity,
   ArrowUpRight,
   CheckCircle2,
   Clock3,
   Info,
+  MessageSquare,
   RefreshCw,
   ShieldCheck,
   Users,
@@ -13,15 +13,16 @@ import {
 import AdminLayout from "../../components/layout/AdminLayout";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../utils/apiError";
-import { getAdminActivity, type AdminActivityResult } from "../../api/adminActivity";
 import { ADMIN_PERMISSION_DEFS } from "../../constants/adminPermissions";
 import {
+  REVIEW_STATE_META,
+  fetchReceivedReviews,
   fetchReviews,
-  readReviews,
   reviewKey,
   type ReviewRecord,
-  type ReviewState,
 } from "../../api/adminReviews";
+import { getSupervisorStats, type SupervisorStats } from "../../api/supervisorDashboard";
+import type { AdminActivityUpdate } from "../../api/adminActivity";
 import {
   adminLabel,
   avatarGradient,
@@ -33,22 +34,29 @@ import ReviewDialog from "../review/components/ReviewDialog";
 
 /*
 ==========================================
-Sub admin dashboard
+Sub admin dashboard — supervision console
 
-Regular admin ko loan counts aur product charts dikhte hain; super admin ko
-poori organisation. Sub admin ka kaam alag hai — uska dashboard ek **supervision
-console** hai: kitna kaam review hone ko pada hai, kya escalate hua, kis admin
-par load hai.
+Regular admin ko loan counts aur product charts dikhte hain; sub admin ka kaam
+alag hai. Uska main dashboard ek **kaam ki list** hona chahiye:
 
-Isliye `Dashboard` route hi role ke hisaab se do view deta hai:
-  super / admin -> Dashboard.tsx (jaise tha)
-  sub_admin     -> ye file
-Data scoped `/activity` feed se aata hai, aur review state backend (`/reviews`)
-se — local cache sirf offline fallback hai.
+  1. Kitna kaam review hone ko pada hai (aur kitna purana hai)
+  2. Kis admin par kitna load hai
+  3. Uske areas — loan products aur modules dono
+  4. Usne khud kya review kiya
+  5. Uske paas kaunsi permissions hain
+
+Data ab `/dashboard/stats` ke supervisor payload se aata hai (server counts),
+`/activity` ke 500 rows se nahi — isliye numbers queue se match karte hain aur
+bade data par adhoore nahi hote.
 ==========================================
 */
 
 const BRAND_GRADIENT = "linear-gradient(135deg, rgb(49,46,129), rgb(6,106,156), rgb(38,174,144))";
+
+const MODULE_LABELS: Record<"customers" | "franchises", string> = {
+  customers: "Customers",
+  franchises: "Franchises",
+};
 
 const StatCard = ({
   icon: Icon,
@@ -57,7 +65,7 @@ const StatCard = ({
   hint,
   tile,
 }: {
-  icon: typeof Activity;
+  icon: typeof Clock3;
   label: string;
   value: number;
   hint: string;
@@ -75,28 +83,69 @@ const StatCard = ({
   </div>
 );
 
-const SupervisorDashboard = () => {
-  const { admin, can, accessibleLoanTypes, permissions, isSuperAdmin } = useAuth();
+/* Super admin ke review ka record sahi page par le jaane ke liye. */
+const feedbackPath = (record: ReviewRecord): string | null => {
+  if (!record.applicationId) return null;
+  if (record.entity === "franchise") return `/franchises/${record.applicationId}`;
+  if (record.entity === "customer") {
+    return `/customers?customer=${encodeURIComponent(record.applicationId)}`;
+  }
+  return record.slug
+    ? `/applications/${encodeURIComponent(record.slug)}/${encodeURIComponent(record.applicationId)}`
+    : null;
+};
 
-  const [result, setResult] = useState<AdminActivityResult | null>(null);
+const daysOld = (iso: string): number => {
+  const time = new Date(iso).getTime();
+  if (!Number.isFinite(time)) return 0;
+  return Math.max(0, Math.floor((Date.now() - time) / (24 * 60 * 60 * 1000)));
+};
+
+const ageChip = (iso: string) => {
+  const age = daysOld(iso);
+  if (age <= 0) {
+    return { label: "Today", className: "bg-slate-100 text-slate-500" };
+  }
+  if (age >= 5) {
+    return { label: `${age}d old`, className: "bg-rose-50 text-rose-600 ring-1 ring-rose-200/70" };
+  }
+  if (age >= 2) {
+    return { label: `${age}d old`, className: "bg-amber-50 text-amber-700 ring-1 ring-amber-200/70" };
+  }
+  return { label: "1d old", className: "bg-slate-100 text-slate-500" };
+};
+
+const scopeText = (stats: SupervisorStats | null): string => {
+  if (!stats) return "Scope load ho raha hai";
+  if (stats.scope === "both") return "Loans + Modules";
+  if (stats.scope === "modules") return "Customers & Franchises";
+  if (stats.scope === "loans") return "Loan products";
+  if (stats.scope === "all") return "All areas";
+  return "Koi area assign nahi";
+};
+
+const SupervisorDashboard = () => {
+  const { admin, can, permissions } = useAuth();
+
+  const [stats, setStats] = useState<SupervisorStats | null>(null);
+  const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
+  const [received, setReceived] = useState<ReviewRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const [reviews, setReviews] = useState<Record<string, ReviewRecord>>(readReviews);
-  const [reviewing, setReviewing] = useState<AdminActivityResult["updates"][number] | null>(null);
+  const [reviewing, setReviewing] = useState<AdminActivityUpdate | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    /* Backend default limit 100 hai — counts poore window ke chahiye. */
-    getAdminActivity({ days: 30, limit: 500 })
+    getSupervisorStats()
       .then((data) => {
         if (controller.signal.aborted) return;
-        setResult(data);
+        setStats(data);
         setError("");
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        setError(getApiErrorMessage(err, "Could not load the supervision feed."));
+        setError(getApiErrorMessage(err, "Could not load the supervision dashboard."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -104,11 +153,13 @@ const SupervisorDashboard = () => {
     return () => controller.abort();
   }, [reloadKey]);
 
-  /* Review state backend se — local cache sirf offline fallback hai. */
   useEffect(() => {
     let cancelled = false;
     fetchReviews().then((records) => {
       if (!cancelled) setReviews(records);
+    });
+    fetchReceivedReviews().then((records) => {
+      if (!cancelled) setReceived(records);
     });
     return () => {
       cancelled = true;
@@ -120,54 +171,36 @@ const SupervisorDashboard = () => {
     setReloadKey((key) => key + 1);
   };
 
-  /* Scope: assigned products. Module-only sub admin ko saare records dikhte
-     hain, kyunki uska kaam customers/franchises ka review hai. */
-  const scoped = useMemo(() => {
-    const updates = result?.updates ?? [];
-    if (accessibleLoanTypes.length === 0) return updates;
-    const allowed = new Set<string>(accessibleLoanTypes.map((loan) => loan.slug));
-    return updates.filter((update) => !update.slug || allowed.has(update.slug));
-  }, [result, accessibleLoanTypes]);
+  const counts = stats?.counts ?? {
+    pending: 0,
+    verified: 0,
+    returned: 0,
+    escalated: 0,
+    decided: 0,
+  };
+  const pending = stats?.pending ?? [];
+  const products = stats?.products ?? [];
+  const modules = stats?.modules ?? [];
 
-  const stateOf = useCallback(
-    (update: AdminActivityResult["updates"][number]): ReviewState =>
-      reviews[reviewKey(update)]?.state ?? "pending",
-    [reviews]
-  );
-
-  const counts = useMemo(() => {
-    const base: Record<ReviewState, number> = {
-      pending: 0,
-      verified: 0,
-      returned: 0,
-      escalated: 0,
-      decided: 0,
-    };
-    scoped.forEach((update) => {
-      base[stateOf(update)] += 1;
-    });
-    return base;
-  }, [scoped, stateOf]);
-
-  const pending = useMemo(
-    () =>
-      scoped
-        .filter((update) => stateOf(update) === "pending")
-        .sort((left, right) => right.addedAt.localeCompare(left.addedAt))
-        .slice(0, 6),
-    [scoped, stateOf]
-  );
+  /* Review record me reviewer ka email server se aata hai — usse "mera kaam". */
+  const myReviews = useMemo(() => {
+    const email = (admin?.email ?? "").trim().toLowerCase();
+    if (!email) return [];
+    return Object.values(reviews)
+      .filter((record) => (record.reviewedBy ?? "").trim().toLowerCase() === email)
+      .sort((left, right) => String(right.reviewedAt).localeCompare(String(left.reviewedAt)))
+      .slice(0, 5);
+  }, [reviews, admin?.email]);
 
   const admins = useMemo(
-    () =>
-      [...(result?.admins ?? [])]
-        .filter((entry) => entry.total > 0)
-        .sort((left, right) => right.total - left.total)
-        .slice(0, 5),
-    [result]
+    () => [...(stats?.admins ?? [])].filter((entry) => entry.total > 0).sort((a, b) => b.total - a.total),
+    [stats?.admins]
   );
 
-  const granted = ADMIN_PERMISSION_DEFS.filter((permission) => permissions.includes(permission.key));
+  const grantedKeys = stats?.permissions.length ? stats.permissions : permissions;
+  const granted = ADMIN_PERMISSION_DEFS.filter((permission) =>
+    grantedKeys.includes(permission.key)
+  );
 
   return (
     <AdminLayout>
@@ -193,9 +226,10 @@ const SupervisorDashboard = () => {
                   {counts.pending} needs review
                 </span>
                 <span className="rounded-lg bg-white/15 px-2.5 py-1 font-semibold backdrop-blur">
-                  {accessibleLoanTypes.length > 0
-                    ? `${accessibleLoanTypes.length} products in scope`
-                    : "Module scope"}
+                  {scopeText(stats)}
+                </span>
+                <span className="rounded-lg bg-white/10 px-2.5 py-1 text-white/85 backdrop-blur">
+                  Last {stats?.windowDays || 30} days
                 </span>
                 <span className="rounded-lg bg-white/10 px-2.5 py-1 text-white/85 backdrop-blur">
                   {granted.length} permissions granted
@@ -224,13 +258,13 @@ const SupervisorDashboard = () => {
           </div>
         </section>
 
-        {/* KPI */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* KPI — final decision bhi count hona chahiye */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <StatCard
             icon={Clock3}
             label="Needs review"
             value={counts.pending}
-            hint="Aapke scope ke updates jo abhi verify nahi hue"
+            hint="Aapke areas me jo abhi verify nahi hue"
             tile="bg-amber-50 text-amber-600"
           />
           <StatCard
@@ -241,6 +275,13 @@ const SupervisorDashboard = () => {
             tile="bg-emerald-50 text-emerald-600"
           />
           <StatCard
+            icon={RefreshCw}
+            label="Returned"
+            value={counts.returned}
+            hint="Correction ke liye admin ko wapas"
+            tile="bg-rose-50 text-rose-600"
+          />
+          <StatCard
             icon={ArrowUpRight}
             label="Escalated"
             value={counts.escalated}
@@ -248,29 +289,39 @@ const SupervisorDashboard = () => {
             tile="bg-sky-50 text-sky-600"
           />
           <StatCard
-            icon={Activity}
-            label="Returned"
-            value={counts.returned}
-            hint="Correction ke liye admin ko wapas"
-            tile="bg-rose-50 text-rose-600"
+            icon={ShieldCheck}
+            label="Decision recorded"
+            value={counts.decided}
+            hint="Final call record ho chuka"
+            tile="bg-indigo-50 text-indigo-600"
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,19rem)]">
-          {/* Needs review list */}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+          {/* Priority queue */}
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <header className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[rgba(6,106,156,0.08)] text-[rgb(6,106,156)]">
                   <Clock3 size={14} />
                 </span>
-                <h2 className="text-sm font-semibold text-slate-700">Needs your review</h2>
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-700">Needs your review</h2>
+                  <p className="text-[11px] text-slate-400">
+                    Purana kaam pehle — 5 din se zyada pending laal dikhta hai.
+                  </p>
+                </div>
               </div>
-              {can("updates.review") && (
-                <Link to="/review" className="text-[11px] font-semibold text-[rgb(6,106,156)] hover:underline">
-                  View all
-                </Link>
-              )}
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200/70">
+                  {stats?.pendingTotal ?? counts.pending} pending
+                </span>
+                {can("updates.review") && (
+                  <Link to="/review" className="text-[11px] font-semibold text-[rgb(6,106,156)] hover:underline">
+                    View all
+                  </Link>
+                )}
+              </div>
             </header>
 
             {error ? (
@@ -284,9 +335,9 @@ const SupervisorDashboard = () => {
                   Try again
                 </button>
               </div>
-            ) : loading && !result ? (
+            ) : loading && !stats ? (
               <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-400">
-                <RefreshCw size={16} className="animate-spin" /> Loading supervision feed…
+                <RefreshCw size={16} className="animate-spin" /> Loading supervision data…
               </div>
             ) : pending.length === 0 ? (
               <div className="px-4 py-16 text-center">
@@ -302,6 +353,7 @@ const SupervisorDashboard = () => {
               <ul className="divide-y divide-slate-100">
                 {pending.map((update) => {
                   const key = reviewKey(update);
+                  const age = ageChip(update.addedAt);
                   return (
                     <li key={key} className="flex gap-3 border-l-[3px] border-l-amber-400 p-3.5 transition hover:bg-sky-50/30">
                       <span
@@ -337,6 +389,9 @@ const SupervisorDashboard = () => {
                               Suggested: {update.suggestedStatus}
                             </span>
                           )}
+                          <span className={`rounded-full px-2 py-0.5 font-semibold ${age.className}`}>
+                            {age.label}
+                          </span>
                           <span className="inline-flex items-center gap-1 text-slate-400">
                             <Clock3 size={11} /> {formatDateTime(update.addedAt)}
                           </span>
@@ -360,6 +415,187 @@ const SupervisorDashboard = () => {
 
           {/* Right rail */}
           <aside className="space-y-4">
+            {/* Scope — dono areas */}
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="mb-1.5 flex items-center justify-between px-1">
+                <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Your areas
+                </h2>
+                <Info size={13} className="text-slate-300" />
+              </div>
+              <p className="px-1 pb-1 text-[11px] font-semibold text-slate-600">{scopeText(stats)}</p>
+
+              {products.length > 0 && (
+                <>
+                  <p className="px-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Loan products ({products.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1 px-1 py-1">
+                    {products.slice(0, 6).map((product) => (
+                      <span
+                        key={product.key || product.slug || product.label}
+                        className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600"
+                      >
+                        {product.label}
+                      </span>
+                    ))}
+                    {products.length > 6 && (
+                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                        +{products.length - 6}
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {modules.length > 0 && (
+                <>
+                  <p className="px-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Modules ({modules.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1 px-1 py-1">
+                    {modules.map((module) => (
+                      <span
+                        key={module}
+                        className="rounded-md bg-[rgba(6,106,156,0.08)] px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(6,106,156)]"
+                      >
+                        {MODULE_LABELS[module]}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {products.length === 0 && modules.length === 0 && (
+                <p className="px-1 py-2 text-xs text-slate-400">
+                  Super admin ne abhi koi area assign nahi kiya.
+                </p>
+              )}
+            </section>
+
+            {/* Aapka apna review kaam */}
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="mb-1.5 flex items-center justify-between px-1">
+                <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Your recent reviews
+                </h2>
+                <CheckCircle2 size={13} className="text-slate-300" />
+              </div>
+              {myReviews.length === 0 ? (
+                <p className="px-1 py-2 text-xs text-slate-400">
+                  Abhi tak koi review nahi kiya. Queue se pehla update uthao.
+                </p>
+              ) : (
+                <ul className="space-y-1.5 px-1 py-1">
+                  {myReviews.map((record) => {
+                    const meta = REVIEW_STATE_META[record.state];
+                    return (
+                      <li key={record.key} className="rounded-lg border border-slate-100 px-2 py-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ring-1 ${meta.chip}`}>
+                            {meta.label}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {formatDateTime(record.reviewedAt)}
+                          </span>
+                        </div>
+                        {record.note && (
+                          <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-slate-600">
+                            {record.note}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+
+            {/* Super admin ka feedback mere updates par */}
+            {received.length > 0 && (
+              <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="mb-1.5 flex items-center justify-between px-1">
+                  <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Feedback from super admin
+                  </h2>
+                  <MessageSquare size={13} className="text-slate-300" />
+                </div>
+                <ul className="space-y-1.5 px-1 py-1">
+                  {received.slice(0, 5).map((record) => {
+                    const meta = REVIEW_STATE_META[record.state];
+                    const path = feedbackPath(record);
+                    return (
+                      <li key={record.key} className="rounded-lg border border-slate-100 px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ring-1 ${meta.chip}`}
+                          >
+                            {meta.label}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {formatDateTime(record.reviewedAt)}
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-slate-600">
+                          {record.note || "Koi note nahi likha."}
+                        </p>
+                        {path && (
+                          <Link
+                            to={path}
+                            className="mt-1 inline-block text-[10px] font-semibold text-[rgb(6,106,156)] hover:underline"
+                          >
+                            Open record
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+
+            {/* Team workload — sirf regular admins */}
+            {can("admins.view") && (
+              <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="mb-1.5 flex items-center justify-between px-1">
+                  <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Admins in scope
+                  </h2>
+                  <Users size={13} className="text-slate-300" />
+                </div>
+                {admins.length === 0 ? (
+                  <p className="px-1 py-2 text-xs text-slate-400">No admin activity yet</p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {admins.slice(0, 5).map((entry) => (
+                      <div key={entry.id || entry.name} className="flex items-center gap-2 rounded-lg px-1 py-1.5">
+                        <span
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                          style={{ background: avatarGradient(entry.name) }}
+                          aria-hidden
+                        >
+                          {initialsOf(entry.name)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-slate-700">
+                            {adminLabel(entry.name)}
+                          </p>
+                          <p className="truncate text-[10px] text-slate-400">
+                            {roleLabel(entry.role) || "Admin"}
+                            {entry.loginId ? ` · ${entry.loginId}` : ""}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-500">
+                          {entry.total}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Permissions — server truth */}
             <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               <div className="mb-1.5 flex items-center justify-between px-1">
                 <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -381,80 +617,12 @@ const SupervisorDashboard = () => {
               )}
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="mb-1.5 flex items-center justify-between px-1">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Scope
-                </h2>
-                <Info size={13} className="text-slate-300" />
-              </div>
-              {accessibleLoanTypes.length === 0 ? (
-                <p className="px-1 py-2 text-xs text-slate-500">Module scope (customers / franchises)</p>
-              ) : (
-                <div className="flex flex-wrap gap-1 px-1 py-1">
-                  {accessibleLoanTypes.slice(0, 8).map((loan) => (
-                    <span
-                      key={loan.slug}
-                      className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600"
-                    >
-                      {loan.label}
-                    </span>
-                  ))}
-                  {accessibleLoanTypes.length > 8 && (
-                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
-                      +{accessibleLoanTypes.length - 8}
-                    </span>
-                  )}
-                </div>
-              )}
-            </section>
-
-            {can("admins.view") && (
-              <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                <div className="mb-1.5 flex items-center justify-between px-1">
-                  <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Admins in scope
-                  </h2>
-                  <Users size={13} className="text-slate-300" />
-                </div>
-                {admins.length === 0 ? (
-                  <p className="px-1 py-2 text-xs text-slate-400">No activity yet</p>
-                ) : (
-                  <div className="space-y-0.5">
-                    {admins.map((entry) => (
-                      <div key={entry.id || entry.name} className="flex items-center gap-2 rounded-lg px-1 py-1.5">
-                        <span
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                          style={{ background: avatarGradient(entry.name) }}
-                          aria-hidden
-                        >
-                          {initialsOf(entry.name)}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-medium text-slate-700">
-                            {adminLabel(entry.name)}
-                          </p>
-                          <p className="truncate text-[10px] text-slate-400">
-                            {roleLabel(entry.role) || "Admin"}
-                          </p>
-                        </div>
-                        <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-500">
-                          {entry.total}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
-
-            {!isSuperAdmin && (
-              <p className="flex items-start gap-1.5 rounded-xl bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-400">
-                <Info size={13} className="mt-0.5 shrink-0" />
-                Ye dashboard sirf sub admin ko dikhta hai. Permissions aur scope super admin
-                Team &amp; Access se badalta hai.
-              </p>
-            )}
+            <p className="flex items-start gap-1.5 rounded-xl bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-400">
+              <Info size={13} className="mt-0.5 shrink-0" />
+              Sirf regular admins ka kaam queue me aata hai — apne updates aur super admin ke
+              decisions yahan nahi dikhte. Permissions aur areas super admin Team &amp; Access se
+              badalta hai.
+            </p>
           </aside>
         </div>
       </div>
@@ -467,6 +635,7 @@ const SupervisorDashboard = () => {
           onSaved={(records) => {
             setReviews(records);
             setReviewing(null);
+            refresh();
           }}
         />
       )}
