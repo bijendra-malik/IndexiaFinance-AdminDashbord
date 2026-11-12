@@ -132,16 +132,14 @@ export const resolveAdminRole = (
   const backendRole = (admin.role ?? "").trim();
   if (/sub/i.test(backendRole)) return "sub_admin";
   if (/super/i.test(backendRole)) return "super_admin";
-  if (/^admin$/i.test(backendRole)) {
-    /*
-    Backend sirf `super_admin | admin` store karta hai, isliye sub admin ka
-    account wahan `admin` dikhta hai aur uska asli role local access map me
-    hota hai. Yahan sirf sub_admin tak upgrade allowed hai — super_admin yahan
-    se kabhi nahi milta, isliye purana safety rule intact rehta hai.
-    */
-    const record = findAccessRecord(admins, admin);
-    return record?.role === "sub_admin" ? "sub_admin" : "admin";
-  }
+  /*
+  Backend role hi truth hai. Pehle yahan local access map se `Admin` ko
+  `sub_admin` bana diya jaata tha (us waqt backend sirf do roles jaanta tha).
+  Ab backend khud `SubAdmin` store karta hai, isliye local storage se role
+  upgrade allowed nahi hai — warna browser me entry edit karke supervisor UI
+  kholi ja sakti thi (backend phir bhi 403 deta, par UI galat dikhta).
+  */
+  if (/^admin$/i.test(backendRole)) return "admin";
 
   // Legacy backend (role missing): local directory decides, same as before.
   const record = findAccessRecord(admins, admin);
