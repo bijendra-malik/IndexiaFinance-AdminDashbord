@@ -123,21 +123,29 @@ export const appliesToScope = (key: AdminPermission, scope: PermissionScope): bo
   return !!def && (def.scope === "both" || def.scope === scope);
 };
 
-/** Form me sirf wahi permissions dikhengi jo chune hue scope par lagti hain. */
-export const permissionsForScope = (scope: PermissionScope): AdminPermissionDef[] =>
-  ADMIN_PERMISSION_DEFS.filter(
-    (permission) => permission.scope === "both" || permission.scope === scope
-  );
+/**
+ * Ek admin ke paas dono areas ho sakte hain (loan products + Customers/Franchises).
+ * Tab permission valid hai jab wo kisi bhi selected area par lagti ho.
+ */
+export const appliesToAnyScope = (
+  key: AdminPermission,
+  scopes: PermissionScope[]
+): boolean =>
+  scopes.length > 0 && scopes.some((scope) => appliesToScope(key, scope));
 
-/** Granted list ko scope tak seemit karo — doosre scope ki permission hata do. */
-export const filterPermissionsForScope = (
+/** Selected areas ke liye applicable permission definitions. */
+export const permissionsForScopes = (scopes: PermissionScope[]): AdminPermissionDef[] =>
+  ADMIN_PERMISSION_DEFS.filter((permission) => appliesToAnyScope(permission.key, scopes));
+
+/** Granted list ko selected areas ke union tak seemit karo. */
+export const filterPermissionsForScopes = (
   permissions: AdminPermission[],
-  scope: PermissionScope
-): AdminPermission[] => permissions.filter((key) => appliesToScope(key, scope));
+  scopes: PermissionScope[]
+): AdminPermission[] => permissions.filter((key) => appliesToAnyScope(key, scopes));
 
-/** Scope ke hisaab se default review-loop permission (final decision kabhi default nahi). */
-export const defaultPermissionsForScope = (scope: PermissionScope): AdminPermission[] =>
-  DEFAULT_SUB_ADMIN_PERMISSIONS.filter((key) => appliesToScope(key, scope));
+/** "Loan products + Customers & Franchises" jaisa readable label. */
+export const scopeLabels = (scopes: PermissionScope[]): string =>
+  scopes.map((scope) => scopeLabel(scope)).join(" + ");
 
 const VALID_PERMISSIONS = new Set<string>(ALL_ADMIN_PERMISSIONS);
 
@@ -148,7 +156,6 @@ export const DEFAULT_SUB_ADMIN_PERMISSIONS: AdminPermission[] = [
   "updates.return",
   "updates.escalate",
 ];
-
 
 /** Drops unknown / duplicate keys so a bad payload can never widen access. */
 export const normalizePermissions = (value: unknown): AdminPermission[] => {
