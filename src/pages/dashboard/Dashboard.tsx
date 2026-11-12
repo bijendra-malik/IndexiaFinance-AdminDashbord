@@ -18,6 +18,11 @@ import {
   percentOf, roleLabel, shortDateTime, type Bucket,
 } from "./dashboardUtils";
 import { updateTagLabel } from "../../api/adminUpdates";
+import {
+  REVIEW_STATE_META,
+  fetchReceivedReviews,
+  type ReviewRecord,
+} from "../../api/adminReviews";
 import { avatarGradient, initialsOf } from "../../utils/auditFormat";
 import { ContextStrip, DataWarning, KpiCard, Panel } from "./components/DashboardCards";
 import ProductBars from "./components/ProductBars";
@@ -79,6 +84,17 @@ const updateTargetPath = (update: AdminActivityUpdate): string | null | undefine
     return `/franchises/${update.entityId || update.applicationId}`;
   }
   return applicationDetailPath(update.slug, update.applicationId);
+};
+
+/* Review record se us record ka page — feedback card ka "Open" link. */
+const feedbackTargetPath = (record: ReviewRecord): string | null => {
+  if (record.entity === "franchise" && record.applicationId) {
+    return `/franchises/${record.applicationId}`;
+  }
+  if (record.entity === "customer" && record.applicationId) {
+    return `/customers?customer=${encodeURIComponent(record.applicationId)}`;
+  }
+  return applicationDetailPath(record.slug, record.applicationId);
 };
 
 const AdminUpdateRow = ({ update }: { update: AdminActivityUpdate }) => {
@@ -208,6 +224,81 @@ const AdminUpdateRow = ({ update }: { update: AdminActivityUpdate }) => {
   );
 };
 
+/*
+Super admin / sub admin ka feedback — loan dashboard aur module dashboard dono
+par same card. Pehle ye sirf loan branch ke andar tha, isliye customers /
+franchises wale admins ko review ka note dikhta hi nahi tha.
+*/
+const SupervisorFeedbackPanel = ({ records }: { records: ReviewRecord[] }) => {
+  if (records.length === 0) return null;
+
+  return (
+    <Panel
+      className="mb-4"
+      title="Supervisor feedback"
+      subtitle="Super admin / sub admin ne aapke updates par jo review kiya"
+    >
+      <ul className="divide-y divide-slate-100">
+        {records.slice(0, 5).map((record) => {
+          const meta = REVIEW_STATE_META[record.state];
+          const path = feedbackTargetPath(record);
+          return (
+            <li key={record.key} className="flex items-start gap-3 px-5 py-3">
+              <span
+                className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+                aria-hidden
+              >
+                <MessageSquare size={14} />
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${meta.chip}`}
+                  >
+                    {meta.label}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-700">
+                    {adminLabel(record.reviewedByName)}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {formatDateTime(record.reviewedAt)}
+                  </span>
+                </div>
+
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700">
+                  {record.note || "Koi note nahi likha."}
+                </p>
+
+                <div className="mt-1 flex items-center gap-2">
+                  {record.applicationId && (
+                    <span className="font-mono text-[10px] text-slate-400">
+                      {record.applicationId}
+                    </span>
+                  )}
+                  {path && (
+                    <Link
+                      to={path}
+                      className="ml-auto text-[11px] font-semibold text-sky-700 hover:underline"
+                    >
+                      Open record
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {records.length > 5 && (
+        <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">
+          Showing 5 of {records.length} reviews.
+        </p>
+      )}
+    </Panel>
+  );
+};
+
 const AdminDashboard = () => {
   const { admin, loanAccess, canAccessLoan, isSuperAdmin } = useAuth();
 
@@ -216,6 +307,8 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
   const [tab, setTab] = useState<TabId>("products");
+  /* Super admin / sub admin ne mere updates par kya review kiya. */
+  const [feedback, setFeedback] = useState<ReviewRecord[]>([]);
 
   // No synchronous setState in the effect body — the previous version needed an
   // eslint-disable comment to get away with exactly that. State only settles
@@ -232,6 +325,17 @@ const AdminDashboard = () => {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken, isSuperAdmin]);
+
+  useEffect(() => {
+    if (isSuperAdmin) return;
+    let cancelled = false;
+    fetchReceivedReviews().then((records) => {
+      if (!cancelled) setFeedback(records);
+    });
     return () => {
       cancelled = true;
     };
@@ -258,6 +362,14 @@ const AdminDashboard = () => {
             products.reduce((total, product) => total + pick(product), 0);
           const totalApplications = sum((product) => product.total);
           const approved = sum((product) => product.approved);
+          const rejected = sum((product) => product.rejected);
+          /*
+          Approval rate ka matlab decided applications me se approved — backend
+          bhi yahi formula use karta hai (approved / (approved + rejected)).
+          Pehle yahan approved / total tha, isliye restricted admin ka rate super
+          admin se different dikhta tha.
+          */
+          const decided = approved + rejected;
           return {
             ...rawStats,
             products,
@@ -266,10 +378,10 @@ const AdminDashboard = () => {
             submitted: sum((product) => product.submitted),
             pending: sum((product) => product.pending),
             approved,
-            rejected: sum((product) => product.rejected),
+            rejected,
             requestedAmount: sum((product) => product.requestedAmount),
             approvedAmount: sum((product) => product.approvedAmount),
-            approvalRate: totalApplications > 0 ? (approved / totalApplications) * 100 : 0,
+            approvalRate: decided > 0 ? (approved / decided) * 100 : 0,
           };
         })()
     : null;
@@ -387,6 +499,7 @@ const AdminDashboard = () => {
       ) : stats ? (
         <>
           <DataWarning messages={error ? [error, ...warnings] : warnings} />
+          {!isSuperAdmin && <SupervisorFeedbackPanel records={feedback} />}
           {stats.dashboardMode ? (
             <ModuleDashboardOverview stats={stats} />
           ) : (
