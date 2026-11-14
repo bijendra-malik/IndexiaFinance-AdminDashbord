@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity, ArrowLeftRight, BarChart3, Bell, Briefcase,
+  Activity, ArrowLeftRight, BarChart3, Briefcase,
   Building2, Car, ChevronDown, ChevronRight, CreditCard,
   Database, FileText, Globe, GraduationCap,
   Home, Landmark, LayoutDashboard, LogOut, MessageSquare,
@@ -9,6 +9,7 @@ import {
   Wallet, Coins, XCircle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import NotificationBell from "./NotificationBell";
 import logo from "../../assets/main-logo.gif";
 
 const APPLICATIONS_BASE = "/applications";
@@ -157,7 +158,8 @@ const ProfileDropdown = ({
 const AdminLayout = ({ children }: { children: ReactNode }) => {
   const { admin, logout, accessibleLoanTypes, isSuperAdmin, isSubAdmin, can, canAccessModule } =
     useAuth();
-  const roleText = isSuperAdmin ? "Super admin" : isSubAdmin ? "Sub admin" : "Admin";
+  /* "Admin" ki jagah "Normal admin" — warna sub admin se farq clear nahi hota. */
+  const roleText = isSuperAdmin ? "Super admin" : isSubAdmin ? "Sub admin" : "Normal admin";
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -572,11 +574,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
             {/* Right */}
             <div className="flex items-center gap-2">
-              {/* Bell */}
-              <button className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100 transition text-slate-500">
-                <Bell size={17} />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-              </button>
+              {/* Notifications — role ke hisaab se scoped feed (NotificationBell). */}
+              <NotificationBell key={admin?.email ?? admin?.loginId ?? "anon"} />
 
               <div className="w-px h-6 bg-slate-200" />
 
