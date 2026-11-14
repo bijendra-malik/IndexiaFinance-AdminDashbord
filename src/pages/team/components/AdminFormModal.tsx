@@ -497,11 +497,16 @@ const AdminFormModal = ({
 
   const handleSubmit = () => {
     if (isSubmitting) return;
-    if (!validateScope() || !validatePermissions() || !validateDetails()) {
-      // Pehla failing step kholo, taaki error kahin chhupa na rahe.
-      if (!validateScope()) setStepKey("scope");
-      else if (!validatePermissions()) setStepKey("permissions");
-      else setStepKey("details");
+    // Har validator ek hi baar chalta hai; jo pehle fail ho usi step par le jao.
+    const failing: StepKey | null = !validateScope()
+      ? "scope"
+      : !validatePermissions()
+        ? "permissions"
+        : !validateDetails()
+          ? "details"
+          : null;
+    if (failing) {
+      setStepKey(failing);
       return;
     }
     onSubmit({
@@ -511,18 +516,13 @@ const AdminFormModal = ({
       password,
       ...(mode === "edit" ? { currentPassword } : {}),
       role,
-      loanAccess: isSuperRole || allSelected ? "all" : selected,
-      moduleAccess: isSuperRole || allModulesSelected ? "all" : selectedModules,
+      loanAccess,
+      moduleAccess,
       permissions: isSubRole ? filterPermissionsForScopes(permissions, selectedScopes) : [],
     });
   };
 
   /* ------------------------------------------------------------------ render */
-
-  const scopeChips = [
-    ...LOAN_TYPES.filter((loan) => selected.includes(loan.slug)).map((loan) => loan.label),
-    ...MODULE_OPTIONS.filter((mod) => selectedModules.includes(mod.key)).map((mod) => mod.label),
-  ];
 
   return (
     <div
@@ -758,24 +758,6 @@ const AdminFormModal = ({
 
               {errors.access && <p className="text-xs text-red-600">{errors.access}</p>}
 
-              {scopeChips.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <span className="text-[11px] font-semibold text-slate-500">Scope:</span>
-                  {scopeChips.slice(0, 6).map((chip) => (
-                    <span
-                      key={chip}
-                      className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200"
-                    >
-                      {chip}
-                    </span>
-                  ))}
-                  {scopeChips.length > 6 && (
-                    <span className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">
-                      +{scopeChips.length - 6} more
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
