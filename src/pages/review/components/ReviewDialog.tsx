@@ -19,6 +19,7 @@ import {
   type ReviewState,
 } from "../../../api/adminReviews";
 import type { AdminActivityUpdate } from "../../../api/adminActivity";
+import { ENTITY_META, reviewEntity } from "../../../constants/entityMeta";
 import { adminLabel, formatDateTime } from "../../../utils/auditFormat";
 import { getApiErrorMessage } from "../../../utils/apiError";
 
@@ -64,11 +65,13 @@ const ReviewDialog = ({
   const { showToast } = useToast();
 
   const key = reviewKey(update);
+  const entityKind = reviewEntity(update.entity);
+  const entity = ENTITY_META[entityKind];
   /*
   `loans.decide` sirf loan application par lagti hai. Customer / franchise row
   par ye action backend se 403 deta hai, isliye button dikhana hi nahi chahiye.
   */
-  const isLoanUpdate = (update.entity ?? "loan") === "loan";
+  const isLoanUpdate = entityKind === "loan";
   const allowed = REVIEW_ACTIONS.filter(
     (action) =>
       can(action.permission) &&
@@ -151,7 +154,7 @@ const ReviewDialog = ({
           <div className="min-w-0">
             <h3 className="text-lg font-bold text-slate-800">Review update</h3>
             <p className="mt-0.5 truncate text-xs text-slate-500">
-              {adminLabel(update.adminName)} · {update.label}
+              {entity.label} · {adminLabel(update.adminName)}
               {update.applicationNo ? ` · ${update.applicationNo}` : ""}
             </p>
           </div>
@@ -168,6 +171,16 @@ const ReviewDialog = ({
         {/* Update being reviewed */}
         <div className="mx-6 mt-4 rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
           <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            <span
+              className={`rounded px-1.5 py-0.5 font-semibold uppercase tracking-wide ring-1 ${entity.chip}`}
+            >
+              {entity.label}
+            </span>
+            {entityKind === "loan" && (
+              <span className="rounded bg-white px-1.5 py-0.5 font-semibold text-slate-600 ring-1 ring-slate-200">
+                {update.label}
+              </span>
+            )}
             <span className="rounded bg-white px-1.5 py-0.5 font-semibold text-slate-600 ring-1 ring-slate-200">
               {kindLabel(update.kind)}
             </span>
