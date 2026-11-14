@@ -1,8 +1,7 @@
 import axios from "axios";
 
 const axiosInstance = axios.create({
-  baseURL:
-    import.meta.env.VITE_API_BASE_URL || "https://new-finance-back.onrender.com/api/admin",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/admin",
   headers: {
     "Content-Type": "application/json",
   },
