@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -20,7 +21,7 @@ import {
 } from "../../../api/adminReviews";
 import type { AdminActivityUpdate } from "../../../api/adminActivity";
 import { ENTITY_META, reviewEntity } from "../../../constants/entityMeta";
-import { adminLabel, formatDateTime } from "../../../utils/auditFormat";
+import { adminLabel, formatDateTime, roleLabel } from "../../../utils/auditFormat";
 import { getApiErrorMessage } from "../../../utils/apiError";
 
 /*
@@ -50,6 +51,28 @@ const ACTION_ICONS: Record<Exclude<ReviewState, "pending">, typeof CheckCircle2>
 const kindLabel = (kind: AdminActivityUpdate["kind"]) =>
   kind === "recommendation" ? "Recommendation" : kind === "status" ? "Decision" : "Note";
 
+/**
+ * Record ka full-detail route — notifications.ts ke targetForUpdate() jaisa hi
+ * rule, taaki super admin ek hi jagah se poori application / customer /
+ * franchise khol sake aur sirf review note par nahi atke.
+ */
+const detailTarget = (update: AdminActivityUpdate): { path: string; label: string } | null => {
+  const entity = reviewEntity(update.entity);
+  const recordId = update.entityId || update.applicationId;
+
+  if (entity === "loan") {
+    return update.slug && recordId
+      ? { path: `/applications/${update.slug}/${recordId}`, label: "Open loan application" }
+      : null;
+  }
+  if (entity === "customer") {
+    return recordId
+      ? { path: `/customers?customer=${encodeURIComponent(recordId)}`, label: "Open customer" }
+      : null;
+  }
+  return recordId ? { path: `/franchises/${recordId}`, label: "Open franchise" } : null;
+};
+
 const ReviewDialog = ({
   update,
   existing,
@@ -63,9 +86,11 @@ const ReviewDialog = ({
 }) => {
   const { admin, can, isSuperAdmin } = useAuth();
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const key = reviewKey(update);
   const entityKind = reviewEntity(update.entity);
+  const target = detailTarget(update);
   const entity = ENTITY_META[entityKind];
   /*
   `loans.decide` sirf loan application par lagti hai. Customer / franchise row
@@ -154,8 +179,9 @@ const ReviewDialog = ({
           <div className="min-w-0">
             <h3 className="text-lg font-bold text-slate-800">Review update</h3>
             <p className="mt-0.5 truncate text-xs text-slate-500">
-              {entity.label} · {adminLabel(update.adminName)}
+              {entity.label}
               {update.applicationNo ? ` · ${update.applicationNo}` : ""}
+              {entityKind === "loan" && update.label ? ` · ${update.label}` : ""}
             </p>
           </div>
           <button
@@ -194,10 +220,34 @@ const ReviewDialog = ({
           <p className="mt-2 text-sm leading-relaxed text-slate-700">
             {update.text || `${kindLabel(update.kind)} added`}
           </p>
+          {/* Kaun bola — naam ke saath role, taaki normal admin / sub admin /
+              super admin ka farq message me hi saaf ho. */}
+          <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+            <span className="font-semibold text-slate-600">{adminLabel(update.adminName)}</span>
+            <span className="rounded bg-white px-1.5 py-0.5 font-semibold text-slate-600 ring-1 ring-slate-200">
+              {roleLabel(update.adminRole) || "Normal admin"}
+            </span>
+            <span>added this {kindLabel(update.kind).toLowerCase()}</span>
+          </p>
           {update.suggestedStatus && (
             <p className="mt-1.5 text-[11px] font-semibold text-amber-700">
               Suggested status: {update.suggestedStatus}
             </p>
+          )}
+
+          {/* Full record — review note padhne ke baad hi picture clear hoti hai. */}
+          {target && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                navigate(target.path);
+              }}
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[rgb(6,106,156)] transition hover:border-[rgba(6,106,156,0.35)] hover:bg-[rgba(6,106,156,0.05)]"
+            >
+              {target.label}
+              <ArrowUpRight size={12} />
+            </button>
           )}
         </div>
 
@@ -210,8 +260,14 @@ const ReviewDialog = ({
               >
                 {REVIEW_STATE_META[existing.state].label}
               </span>
-              <span className="text-[10px] text-slate-400">
-                {adminLabel(existing.reviewedByName)} · {formatDateTime(existing.reviewedAt)}
+              <span className="flex flex-wrap items-center justify-end gap-1 text-[10px] text-slate-400">
+                <span className="font-semibold text-slate-600">
+                  {adminLabel(existing.reviewedByName)}
+                </span>
+                <span className="rounded bg-white px-1.5 py-0.5 font-semibold text-slate-600 ring-1 ring-slate-200">
+                  {roleLabel(existing.reviewedByRole) || "Sub admin"}
+                </span>
+                <span>· {formatDateTime(existing.reviewedAt)}</span>
               </span>
             </div>
             {existing.note && (
