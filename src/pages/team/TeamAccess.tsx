@@ -10,7 +10,8 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { LOAN_TYPES, getLoanTypeLabel } from "../../constants/loanTypes";
-import { permissionLabel, permissionShortLabel } from "../../constants/adminPermissions";
+import { permissionShortLabel } from "../../constants/adminPermissions";
+import { accessSummary, roleLabel, scopeChips } from "../../utils/accessSummary";
 import {
   claimSuperAdminRecord,
   createManagedAdmin,
@@ -43,111 +44,60 @@ const StatPill = ({ label, value }: { label: string; value: string | number }) =
   </span>
 );
 
-const LoanAccessCell = ({ admin }: { admin: ManagedAdmin }) => {
+/** Role badge — labels hamesha "Super admin" / "Sub admin" / "Normal admin". */
+const RoleBadge = ({ role }: { role: AdminRole }) => (
+  <span
+    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+      role === "super_admin"
+        ? "bg-amber-50 text-amber-700"
+        : role === "sub_admin"
+          ? "bg-sky-50 text-sky-700"
+          : "bg-slate-100 text-slate-600"
+    }`}
+  >
+    {role === "super_admin" && <ShieldCheck size={11} />}
+    {roleLabel(role)}
+  </span>
+);
+
+/** Loans + modules ek hi column me chips ke roop me. */
+const ScopeCell = ({ admin }: { admin: ManagedAdmin }) => {
   if (admin.role === "super_admin") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(6,106,156,0.08)] px-2.5 py-1 text-[11px] font-bold text-[rgb(6,106,156)]">
-        <ShieldCheck size={11} /> All {LOAN_TYPES.length} products
+        <ShieldCheck size={11} /> All {LOAN_TYPES.length} products + modules
       </span>
     );
   }
 
-  const slugs = admin.loanAccess === "all" ? LOAN_TYPES.map((loan) => loan.slug) : admin.loanAccess;
-  const labels = slugs.map(getLoanTypeLabel);
-  const hasModules =
-    admin.moduleAccess === "all" || (admin.moduleAccess ?? []).length > 0;
-
-  if (labels.length === 0) {
-    // Customers/Franchises admins never hold loans — that is by design, not a
-    // missing assignment, so it must not show the amber warning.
-    return hasModules ? (
-      <span className="text-xs font-medium text-slate-400">Module access only</span>
-    ) : (
-      <span className="text-xs font-medium text-amber-600">No loans assigned</span>
-    );
+  const chips = scopeChips(admin);
+  if (chips.length === 0) {
+    return <span className="text-xs font-medium text-amber-600">Nothing assigned</span>;
   }
 
   return (
-    <div className="flex max-w-[16rem] flex-wrap items-center gap-1" title={labels.join(", ")}>
-      {labels.slice(0, 2).map((label) => (
+    <div className="flex max-w-[17rem] flex-wrap items-center gap-1" title={chips.join(", ")}>
+      {chips.slice(0, 2).map((label) => (
         <span key={label} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
           {label}
         </span>
       ))}
-      {labels.length > 2 && (
+      {chips.length > 2 && (
         <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
-          +{labels.length - 2}
+          +{chips.length - 2}
         </span>
       )}
-      <span className="text-[11px] text-slate-400">({labels.length})</span>
+      <span className="text-[11px] text-slate-400">({chips.length})</span>
     </div>
   );
 };
 
-const ModuleAccessCell = ({ admin }: { admin: ManagedAdmin }) => {
-  if (admin.role === "super_admin") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(6,106,156,0.08)] px-2.5 py-1 text-[11px] font-bold text-[rgb(6,106,156)]">
-        <ShieldCheck size={11} /> All modules
-      </span>
-    );
-  }
-
-  const mods = admin.moduleAccess === "all" ? ["customers", "franchises"] : admin.moduleAccess ?? [];
-  if (mods.length === 0) {
-    return <span className="text-xs font-medium text-slate-400">Not assigned</span>;
-  }
-  const labels = mods.map((m) => (m === "customers" ? "Customers" : "Franchises"));
-  return (
-    <div className="flex flex-wrap items-center gap-1" title={labels.join(", ")}>
-      {labels.map((label) => (
-        <span key={label} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-};
-
-const PermissionsCell = ({ admin }: { admin: ManagedAdmin }) => {
-  if (admin.role === "super_admin") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(6,106,156,0.08)] px-2.5 py-1 text-[11px] font-bold text-[rgb(6,106,156)]">
-        <ShieldCheck size={11} /> Everything
-      </span>
-    );
-  }
-
-  if (admin.role !== "sub_admin") {
-    return <span className="text-xs font-medium text-slate-400">—</span>;
-  }
-
-  const granted = admin.permissions ?? [];
-  if (granted.length === 0) {
-    return <span className="text-xs font-medium text-amber-600">No permissions</span>;
-  }
-
-  return (
-    <div
-      className="flex max-w-[15rem] flex-wrap items-center gap-1"
-      title={granted.map(permissionLabel).join(", ")}
-    >
-      {granted.slice(0, 3).map((permission) => (
-        <span
-          key={permission}
-          className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600"
-        >
-          {permissionShortLabel(permission)}
-        </span>
-      ))}
-      {granted.length > 3 && (
-        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
-          +{granted.length - 3}
-        </span>
-      )}
-    </div>
-  );
-};
+/** Plain-language "what this admin can do" — tick-boxes ki jagah ek sentence. */
+const AbilityCell = ({ admin }: { admin: ManagedAdmin }) => (
+  <p className="max-w-[24rem] text-xs leading-snug text-slate-600" title={accessSummary(admin)}>
+    {accessSummary(admin)}
+  </p>
+);
 
 const PasswordField = ({
   value,
@@ -342,7 +292,7 @@ const AdminDetailDialog = ({
                   : "bg-slate-100 text-slate-600"
             }`}
           >
-            {isSuper ? "Super admin" : admin.role === "sub_admin" ? "Sub admin" : "Admin"}
+            {roleLabel(admin.role)}
           </span>
         </div>
 
@@ -356,8 +306,14 @@ const AdminDetailDialog = ({
             ? "Super admin — every product & module"
             : admin.role === "sub_admin"
               ? `Sub admin — ${(admin.permissions ?? []).length} supervision permission(s), assigned scope`
-              : "Admin — assigned access only"}
+              : "Normal admin — works on assigned products/modules, cannot record the final decision"}
           </DetailItem>
+          <div className="rounded-xl border border-[rgba(6,106,156,0.18)] bg-[rgba(6,106,156,0.04)] px-3 py-2.5 sm:col-span-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[rgb(6,106,156)]">
+              What they can do
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">{accessSummary(admin)}</p>
+          </div>
           <DetailItem label="Status">
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
@@ -484,7 +440,14 @@ const TeamAccess = () => {
   };
 
   const admins = result?.admins ?? [];
-  const mode = result?.mode ?? "local";
+  /*
+  `mode` sirf tab pata hota hai jab list actually load ho jaaye. Pehle iska
+  default "local" tha, isliye loading ke dauraan ya kisi bhi failed request par
+  amber "Backend admin endpoints are not live yet" banner galat se dikh jaata
+  tha — backend bilkul live ho tab bhi. Ab banner sirf sach me local fallback
+  par dikhta hai.
+  */
+  const mode = result?.mode;
   const superAdmins = admins.filter((record) => record.role === "super_admin");
   const subAdmins = admins.filter((record) => record.role === "sub_admin");
   const restricted = admins.filter(
@@ -507,7 +470,13 @@ const TeamAccess = () => {
     setBusy(true);
     try {
       const created = await createManagedAdmin(values);
-      showToast(`${created.loginId} created — ${created.loanAccess === "all" ? "all 18 loans" : `${created.loanAccess.length} loan product(s)`} assigned.`);
+      const scopeText =
+        created.role === "super_admin"
+          ? "all loans + modules"
+          : created.loanAccess === "all"
+            ? `all ${LOAN_TYPES.length} loans`
+            : `${created.loanAccess.length} loan product(s)`;
+      showToast(`${created.loginId} created as ${roleLabel(created.role)} — ${scopeText}.`);
       setForm(null);
       refreshAccess();
       reload();
@@ -596,7 +565,7 @@ const TeamAccess = () => {
       <PageHeader
         icon={ShieldCheck}
         title="Team & Access"
-        subtitle="Create admin logins and choose exactly which loan products each one can open."
+        subtitle="Pick a role, set the scope, then decide what this admin can do."
         actions={(
           <button
             type="button"
@@ -624,23 +593,50 @@ const TeamAccess = () => {
       {mode === "local" && (
         <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           <Info size={15} className="mt-0.5 shrink-0" />
-          <p>
-            <span className="font-semibold">Backend admin endpoints are not live yet.</span>{" "}
-            New admins and their loan access are saved in this browser, and the access rules apply
-            immediately. Accounts become sign-in ready once the backend exposes{" "}
-            <code className="rounded bg-white/70 px-1">POST /admins</code> — the full contract is in{" "}
-            <code className="rounded bg-white/70 px-1">docs/BACKEND_API.md</code>.
-          </p>
+          <div className="min-w-0 flex-1">
+            {result?.warning ? (
+              <p>
+                <span className="font-semibold">Backend admin endpoints are not live yet.</span>{" "}
+                New admins and their loan access are saved in this browser, and the access rules apply
+                immediately. Accounts become sign-in ready once the backend exposes{" "}
+                <code className="rounded bg-white/70 px-1">POST /admins</code> — the full contract is in{" "}
+                <code className="rounded bg-white/70 px-1">docs/BACKEND_API.md</code>.
+              </p>
+            ) : (
+              /* Endpoint missing nahi — backend tak pahunch hi nahi hua (network /
+                 Render cold start). Ye list browser ki local copy hai. */
+              <p>
+                <span className="font-semibold">Could not reach the backend.</span> A Render free
+                instance can take 30–60 seconds to wake up, so this list is the local copy in this
+                browser — the admins on the server are not shown here.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={reload}
+              className="mt-1.5 font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 transition hover:text-amber-950"
+            >
+              Try again
+            </button>
+          </div>
         </div>
       )}
 
       <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 text-xs text-slate-600">
-        <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[rgb(6,106,156)]" />          <p>
-            An admin only sees the loan products you tick here — in the sidebar, on the dashboard and
-            on every application page. Customers, Masters and the Franchise network are hidden from
-            them too. Super admins always see all {LOAN_TYPES.length} products and can manage this
-            team.
+        <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[rgb(6,106,156)]" />
+        <div className="space-y-1">
+          <p className="font-semibold text-slate-700">
+            Super admin on top · Sub admin reviews normal admins' work · Normal admin works on the
+            assigned scope.
           </p>
+          <p>
+            Only the loan products and modules you tick appear for that admin — in the sidebar, on
+            the dashboard and on every application page. Everything else stays hidden. A sub
+            admin&apos;s work is limited to the permissions granted, and the final decision is
+            recorded by a super admin (or a sub admin with{" "}
+            <code className="rounded bg-white/70 px-1">Record final decision</code>).
+          </p>
+        </div>
       </div>
 
       {atAdminLimit && (
@@ -680,12 +676,9 @@ const TeamAccess = () => {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/80">
                   <Th>Admin</Th>
-                  <Th>Email</Th>
                   <Th>Role</Th>
-                  <Th>Loan access</Th>
-                  <Th>Modules</Th>
-                  <Th>Permissions</Th>
-                  <Th>Created</Th>
+                  <Th>What they can do</Th>
+                  <Th>Scope</Th>
                   <Th right>Actions</Th>
                 </tr>
               </thead>
@@ -715,31 +708,15 @@ const TeamAccess = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-500">{record.email || "—"}</td>
                       <td className="px-4 py-3.5">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold capitalize ${
-                            record.role === "super_admin"
-                              ? "bg-amber-50 text-amber-700"
-                              : record.role === "sub_admin"
-                                ? "bg-sky-50 text-sky-700"
-                                : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {record.role === "super_admin" && <ShieldCheck size={11} />}
-                          {record.role.replace("_", " ")}
-                        </span>
+                        <RoleBadge role={record.role} />
                       </td>
                       <td className="px-4 py-3.5">
-                        <LoanAccessCell admin={record} />
+                        <AbilityCell admin={record} />
                       </td>
                       <td className="px-4 py-3.5">
-                        <ModuleAccessCell admin={record} />
+                        <ScopeCell admin={record} />
                       </td>
-                      <td className="px-4 py-3.5">
-                        <PermissionsCell admin={record} />
-                      </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-500">{fmtDate(record.createdAt)}</td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center justify-end gap-1">
                           <button
