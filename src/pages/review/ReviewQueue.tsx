@@ -17,6 +17,13 @@ import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { getAdminActivity, type AdminActivityResult, type AdminActivityUpdate } from "../../api/adminActivity";
 import {
+  ENTITY_META,
+  ENTITY_ORDER,
+  entityRecordTitle,
+  reviewEntity,
+  type ReviewEntityKind,
+} from "../../constants/entityMeta";
+import {
   REVIEW_STATE_META,
   fetchReviews,
   readReviews,
@@ -74,6 +81,8 @@ const ReviewQueue = () => {
   const [error, setError] = useState("");
   const [days, setDays] = useState(30);
   const [tab, setTab] = useState<ReviewState>("pending");
+  /* Loan / customer / franchise — state tab ke saath combine hota hai. */
+  const [entityFilter, setEntityFilter] = useState<ReviewEntityKind | "all">("all");
   const [search, setSearch] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [reviews, setReviews] = useState<Record<string, ReviewRecord>>(readReviews);
@@ -149,19 +158,37 @@ const ReviewQueue = () => {
     return base;
   }, [rows]);
 
+  const entityCounts = useMemo(() => {
+    const base: Record<ReviewEntityKind, number> = { loan: 0, customer: 0, franchise: 0 };
+    rows.forEach((row) => {
+      base[reviewEntity(row.update.entity)] += 1;
+    });
+    return base;
+  }, [rows]);
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows
       .filter((row) => row.state === tab)
+      .filter(
+        (row) => entityFilter === "all" || reviewEntity(row.update.entity) === entityFilter
+      )
       .filter((row) => {
         if (!needle) return true;
         const { update } = row;
-        return [update.adminName, update.customerName, update.applicationNo, update.text, update.label]
+        return [
+          update.adminName,
+          update.customerName,
+          update.applicationNo,
+          update.mobile,
+          update.text,
+          update.label,
+        ]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(needle));
       })
       .sort((left, right) => right.update.addedAt.localeCompare(left.update.addedAt));
-  }, [rows, tab, search]);
+  }, [rows, tab, entityFilter, search]);
 
   const windowLabel = WINDOWS.find((option) => option.days === days)?.label ?? `${days}D`;
 
@@ -250,6 +277,66 @@ const ReviewQueue = () => {
               ))}
             </div>
           </div>
+
+          {/* Entity type filter — loan, customer ya franchise */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2.5">
+            <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Type
+            </span>
+            <button
+              type="button"
+              onClick={() => setEntityFilter("all")}
+              aria-pressed={entityFilter === "all"}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                entityFilter === "all"
+                  ? "border-[rgb(6,106,156)] bg-[rgba(6,106,156,0.06)] text-[rgb(6,106,156)]"
+                  : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              All types
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${entityFilter === "all" ? "bg-[rgba(6,106,156,0.1)]" : "bg-slate-100 text-slate-600"}`}>
+                {rows.length}
+              </span>
+            </button>
+
+            {ENTITY_ORDER.map((kind) => {
+              const meta = ENTITY_META[kind];
+              const Icon = meta.icon;
+              const active = entityFilter === kind;
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => setEntityFilter(active ? "all" : kind)}
+                  aria-pressed={active}
+                  title={
+                    active ? `Clear ${meta.label} filter` : `Show only ${meta.label} rows`
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                    active
+                      ? "border-[rgb(6,106,156)] bg-[rgba(6,106,156,0.06)] text-[rgb(6,106,156)]"
+                      : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  <Icon size={12} className={active ? "text-[rgb(6,106,156)]" : "text-slate-400"} />
+                  {meta.short}
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${active ? "bg-[rgba(6,106,156,0.1)]" : "bg-slate-100 text-slate-600"}`}>
+                    {entityCounts[kind]}
+                  </span>
+                </button>
+              );
+            })}
+
+            {entityFilter !== "all" && (
+              <button
+                type="button"
+                onClick={() => setEntityFilter("all")}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:text-slate-700"
+              >
+                <X size={12} /> Clear
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,19rem)]">
@@ -289,36 +376,88 @@ const ReviewQueue = () => {
                 <TableEmpty
                   icon={CheckCircle2}
                   title={
-                    tab === "pending"
-                      ? "Queue clear hai"
-                      : `Koi ${REVIEW_STATE_META[tab].label.toLowerCase()} update nahi`
+                    entityFilter !== "all"
+                      ? `Is tab me ${ENTITY_META[entityFilter].label.toLowerCase()} rows nahi`
+                      : tab === "pending"
+                        ? "Queue clear hai"
+                        : `Koi ${REVIEW_STATE_META[tab].label.toLowerCase()} update nahi`
                   }
                   description={
-                    tab === "pending"
-                      ? "Naya admin note ya recommendation aate hi yahan dikhega."
-                      : "Doosra tab chuno ya time window badhao."
+                    entityFilter !== "all"
+                      ? "Type filter clear karo ya doosra tab chuno."
+                      : tab === "pending"
+                        ? "Naya admin note ya recommendation aate hi yahan dikhega."
+                        : "Doosra tab chuno ya time window badhao."
                   }
                 />
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {visible.map(({ update, key, state, record }) => {
                     const meta = REVIEW_STATE_META[state];
+                    const entityKind = reviewEntity(update.entity);
+                    const entity = ENTITY_META[entityKind];
+                    const EntityIcon = entity.icon;
                     return (
                       <li
                         key={key}
                         className={`flex gap-3 border-l-[3px] bg-white p-3.5 transition hover:bg-sky-50/30 ${meta.accent}`}
                       >
                         <span
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-sm ring-2 ring-white"
-                          style={{ background: avatarGradient(update.adminName) }}
-                          aria-hidden
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${entity.tile}`}
+                          title={entity.label}
+                          aria-label={entity.label}
                         >
-                          {initialsOf(update.adminName)}
+                          <EntityIcon size={16} />
                         </span>
 
                         <div className="min-w-0 flex-1">
+                          {/* Type + record identity — sabse pehle kya cheez hai */}
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                            <span className="text-sm font-semibold text-slate-800">
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ring-1 ${entity.chip}`}
+                            >
+                              {entity.label}
+                            </span>
+                            {entityKind === "loan" && (
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                                {update.label}
+                              </span>
+                            )}
+                            <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
+                              {entityRecordTitle(update)}
+                            </span>
+                            {update.applicationNo && (
+                              <span className="rounded bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+                                {update.applicationNo}
+                              </span>
+                            )}
+                            {entityKind === "loan" &&
+                              typeof update.loanAmount === "number" &&
+                              update.loanAmount > 0 && (
+                                <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                                  ₹{update.loanAmount.toLocaleString("en-IN")}
+                                </span>
+                              )}
+                            {entityKind !== "loan" && update.mobile && (
+                              <span className="text-[10px] font-medium text-slate-400">
+                                {update.mobile}
+                              </span>
+                            )}
+                            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-slate-400">
+                              <Clock3 size={10} /> {formatDateTime(update.addedAt)}
+                            </span>
+                          </div>
+
+                          {/* Actor — kis admin ne kya kiya */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                              style={{ background: avatarGradient(update.adminName) }}
+                              aria-hidden
+                            >
+                              {initialsOf(update.adminName)}
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-700">
                               {adminLabel(update.adminName)}
                             </span>
                             <span
@@ -332,20 +471,9 @@ const ReviewQueue = () => {
                             >
                               {roleLabel(update.adminRole) || "Admin"}
                             </span>
-                            <span className="text-[11px] text-slate-400">on</span>
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                              {update.label}
+                            <span className="text-[10px] text-slate-400">
+                              ne {kindLabel(update).toLowerCase()} add kiya
                             </span>
-                            {update.customerName && (
-                              <span className="min-w-0 truncate text-xs font-medium text-slate-700">
-                                {update.customerName}
-                              </span>
-                            )}
-                            {update.applicationNo && (
-                              <span className="rounded bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
-                                {update.applicationNo}
-                              </span>
-                            )}
                           </div>
 
                           <p className="mt-1.5 text-sm leading-relaxed text-slate-700">
@@ -365,9 +493,6 @@ const ReviewQueue = () => {
                               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ring-1 ${meta.chip}`}
                             >
                               <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} /> {meta.label}
-                            </span>
-                            <span className="inline-flex items-center gap-1 text-slate-400">
-                              <Clock3 size={11} /> {formatDateTime(update.addedAt)}
                             </span>
                             {record?.reviewedByName && (
                               <span className="text-slate-400">
