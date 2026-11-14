@@ -60,35 +60,35 @@ export const ADMIN_PERMISSION_DEFS: AdminPermissionDef[] = [
   {
     key: "updates.view",
     label: "View admin updates",
-    description: "Regular admins ke notes aur recommendations, apne scope me.",
+    description: "Reads normal admins' notes and recommendations within their scope.",
     group: "Review workflow",
     scope: "both",
   },
   {
     key: "updates.review",
     label: "Mark reviewed",
-    description: "Update ko verify karke apna note chhodna.",
+    description: "Verifies an update and adds their own note.",
     group: "Review workflow",
     scope: "both",
   },
   {
     key: "updates.return",
     label: "Return for correction",
-    description: "Ghalat / adhoora kaam admin ko wapas bhejna, wajah ke saath.",
+    description: "Sends incorrect or incomplete work back to the admin with a reason.",
     group: "Review workflow",
     scope: "both",
   },
   {
     key: "updates.escalate",
     label: "Escalate to super admin",
-    description: "Risky ya high-value case super admin ke decision ke liye bhejna.",
+    description: "Escalates risky or high-value cases to the super admin.",
     group: "Review workflow",
     scope: "both",
   },
   {
     key: "admins.view",
     label: "View admin details",
-    description: "Scope ke regular admins ki profile, access aur workload dekhna (read-only).",
+    description: "Views the profile, access and workload of admins in this scope (read-only).",
     group: "Oversight",
     scope: "both",
   },
@@ -96,14 +96,14 @@ export const ADMIN_PERMISSION_DEFS: AdminPermissionDef[] = [
     key: "contacts.manage",
     label: "Handle contact enquiries",
     description:
-      "Website contact form ki enquiries dekhna aur status/note update karna. Delete sirf super admin kar sakta hai.",
+      "Views website contact enquiries and updates their status or note. Only a super admin can delete them.",
     group: "Oversight",
     scope: "both",
   },
   {
     key: "loans.decide",
     label: "Record final decision",
-    description: "Loan application par final call record karna — sirf loan scope me.",
+    description: "Records the final decision on a loan application — loan scope only.",
     group: "Oversight",
     scope: "loans",
   },
@@ -156,6 +156,70 @@ export const DEFAULT_SUB_ADMIN_PERMISSIONS: AdminPermission[] = [
   "updates.return",
   "updates.escalate",
 ];
+
+/*
+Sub admin ke permissions ab checkbox jungle nahi, teen preset hain. `Custom`
+tab hi khulta hai jab super admin fine-tune karna chahe — isse pehla setup ek
+click me ho jaata hai aur galti se final decision on nahi ho jaata.
+*/
+export type PermissionPresetKey = "view" | "review" | "manage";
+
+export interface PermissionPreset {
+  key: PermissionPresetKey;
+  label: string;
+  description: string;
+  permissions: AdminPermission[];
+}
+
+export const PERMISSION_PRESETS: PermissionPreset[] = [
+  {
+    key: "view",
+    label: "View only",
+    description: "Reads admin updates, takes no action.",
+    permissions: ["updates.view"],
+  },
+  {
+    key: "review",
+    label: "Can review",
+    description: "Verifies work, returns it with a reason, escalates risky cases.",
+    permissions: DEFAULT_SUB_ADMIN_PERMISSIONS,
+  },
+  {
+    key: "manage",
+    label: "Full oversight",
+    description: "Review loop + admin details + contact enquiries + final decision on loans.",
+    permissions: [
+      ...DEFAULT_SUB_ADMIN_PERMISSIONS,
+      "admins.view",
+      "loans.decide",
+      "contacts.manage",
+    ],
+  },
+];
+
+export const presetPermissionsFor = (
+  preset: PermissionPresetKey,
+  scopes: PermissionScope[]
+): AdminPermission[] =>
+  filterPermissionsForScopes(
+    PERMISSION_PRESETS.find((entry) => entry.key === preset)?.permissions ?? [],
+    scopes
+  );
+
+/** Granted permissions kis preset se match karti hain (`custom` jab koi match na ho). */
+export const matchPermissionPreset = (
+  permissions: AdminPermission[],
+  scopes: PermissionScope[]
+): PermissionPresetKey | "custom" => {
+  const granted = filterPermissionsForScopes(permissions, scopes).sort();
+  for (const preset of PERMISSION_PRESETS) {
+    const wanted = presetPermissionsFor(preset.key, scopes).sort();
+    if (wanted.length === granted.length && wanted.every((key, index) => key === granted[index])) {
+      return preset.key;
+    }
+  }
+  return "custom";
+};
 
 /** Drops unknown / duplicate keys so a bad payload can never widen access. */
 export const normalizePermissions = (value: unknown): AdminPermission[] => {
