@@ -20,7 +20,7 @@ export interface AccessShape {
   permissions?: AdminPermission[];
 }
 
-export const MODULE_LABEL: Record<ModuleKey, string> = {
+const MODULE_LABEL: Record<ModuleKey, string> = {
   customers: "Customers",
   franchises: "Franchises",
 };
@@ -34,17 +34,11 @@ export const ROLE_LABEL: Record<AdminRole, string> = {
 /** Ek hi jagah role ka display name — "Admin" kabhi bare label me na dikhe. */
 export const roleLabel = (role: AdminRole): string => ROLE_LABEL[role];
 
-export const ROLE_HINT: Record<AdminRole, string> = {
-  super_admin: "Sab kuch — all loan products, customers, franchises aur team management.",
-  sub_admin: "Normal admins ka kaam review karta hai, sirf di gayi permissions ke andar.",
-  admin: "Sirf assigned loan products / modules par kaam karta hai.",
-};
-
 /** `"all"` = har product; warna wahi slugs jo assign hue hain. */
-export const loanSlugsOf = (access: LoanAccess): string[] =>
+const loanSlugsOf = (access: LoanAccess): string[] =>
   access === "all" ? LOAN_TYPES.map((loan) => loan.slug) : [...access];
 
-export const moduleKeysOf = (access?: ModuleAccess): ModuleKey[] =>
+const moduleKeysOf = (access?: ModuleAccess): ModuleKey[] =>
   access === "all" ? ["customers", "franchises"] : [...(access ?? [])];
 
 /** "A, B and C" — poora list, bina truncate (sentence ke liye). */
