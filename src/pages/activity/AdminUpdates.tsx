@@ -448,7 +448,7 @@ const AdminUpdates = () => {
             icon={Clock3}
             label="Recommendations"
             value={recommendations}
-            hint="Waiting for a super admin decision"
+            hint="Waiting for a super admin or sub admin decision"
             tile="bg-amber-50 text-amber-600"
             accent="from-amber-400 to-orange-300"
           />
