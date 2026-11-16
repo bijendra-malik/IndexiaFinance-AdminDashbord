@@ -20,6 +20,7 @@ import {
   type ReviewState,
 } from "../../../api/adminReviews";
 import type { AdminActivityUpdate } from "../../../api/adminActivity";
+import { updateLoanStatusBySlug, type LoanStatus } from "../../../api/personalLoans";
 import { ENTITY_META, reviewEntity } from "../../../constants/entityMeta";
 import { adminLabel, formatDateTime, roleLabel } from "../../../utils/auditFormat";
 import { getApiErrorMessage } from "../../../utils/apiError";
@@ -50,6 +51,14 @@ const ACTION_ICONS: Record<Exclude<ReviewState, "pending">, typeof CheckCircle2>
 
 const kindLabel = (kind: AdminActivityUpdate["kind"]) =>
   kind === "recommendation" ? "Recommendation" : kind === "status" ? "Decision" : "Note";
+
+/** Backend ka suggested status hi loan ka real status banega (`Rejected` etc.). */
+const LOAN_STATUSES: LoanStatus[] = ["Pending", "Approved", "Rejected", "Submitted"];
+const toLoanStatus = (value: string | null): LoanStatus | null => {
+  if (!value) return null;
+  const wanted = value.trim().toLowerCase();
+  return LOAN_STATUSES.find((status) => status.toLowerCase() === wanted) ?? null;
+};
 
 /**
  * Record ka full-detail route — notifications.ts ke targetForUpdate() jaisa hi
@@ -91,6 +100,17 @@ const ReviewDialog = ({
   const key = reviewKey(update);
   const entityKind = reviewEntity(update.entity);
   const target = detailTarget(update);
+
+  /*
+  Actor line: agar backend ka `adminName` khud role ka naam hai ("Super Admin"),
+  to wahi role chip me dikhta hai — naam dobara print karke confusion nahi failate.
+  */
+  const actorName = adminLabel(update.adminName);
+  const actorRole = roleLabel(update.adminRole) || "Normal admin";
+  const actorNameIsRole = actorName.trim().toLowerCase() === actorRole.toLowerCase();
+  const reviewerName = existing ? adminLabel(existing.reviewedByName) : "";
+  const reviewerRole = roleLabel(existing?.reviewedByRole) || "Sub admin";
+  const reviewerNameIsRole = reviewerName.trim().toLowerCase() === reviewerRole.toLowerCase();
   const entity = ENTITY_META[entityKind];
   /*
   `loans.decide` sirf loan application par lagti hai. Customer / franchise row
@@ -120,6 +140,23 @@ const ReviewDialog = ({
     if (action.requireNote && note.trim().length < 5) {
       return setError("Wajah / summary likho (kam se kam 5 characters).");
     }
+    /*
+    "Record decision" ka matlab sirf review note nahi — loan ka asli status badalna
+    hai. Pehle sirf POST /reviews hota tha, isliye suggested "Rejected" ke baad bhi
+    application "Submitted" hi rehti thi. Ab status endpoint bhi chalta hai.
+    */
+    const decisionStatus = action.state === "decided" ? toLoanStatus(update.suggestedStatus) : null;
+    if (action.state === "decided" && isLoanUpdate) {
+      if (!decisionStatus) {
+        return setError(
+          "This update has no suggested status (Approved / Rejected), so the loan status cannot be changed."
+        );
+      }
+      if (!update.slug || !update.applicationId) {
+        return setError("Loan type or application ID is missing — status cannot be updated.");
+      }
+    }
+
     const record: ReviewRecord = {
       key,
       state: action.state,
@@ -132,6 +169,14 @@ const ReviewDialog = ({
     setSaving(true);
     setError("");
     try {
+      if (decisionStatus && update.slug && update.applicationId) {
+        await updateLoanStatusBySlug(
+          update.slug,
+          update.applicationId,
+          decisionStatus,
+          note.trim()
+        );
+      }
       const records = await writeReview(record, {
         entity: update.entity ?? "loan",
         applicationId: update.applicationId,
@@ -140,7 +185,11 @@ const ReviewDialog = ({
         updateAdminId: update.adminId,
         updateAdminName: update.adminName,
       });
-      showToast(`${adminLabel(update.adminName)} ka update — ${REVIEW_STATE_META[action.state].label}.`);
+      showToast(
+        `${actorName} (${actorRole}) — ${REVIEW_STATE_META[action.state].label}${
+          decisionStatus ? ` · loan marked ${decisionStatus}` : ""
+        }.`
+      );
       onSaved(records);
     } catch (err) {
       setError(getApiErrorMessage(err, "Review save nahi hua. Dobara try karo."));
@@ -223,11 +272,11 @@ const ReviewDialog = ({
           {/* Kaun bola — naam ke saath role, taaki normal admin / sub admin /
               super admin ka farq message me hi saaf ho. */}
           <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-            <span className="font-semibold text-slate-600">{adminLabel(update.adminName)}</span>
+            <span>Added by</span>
+            {!actorNameIsRole && <span className="font-semibold text-slate-600">{actorName}</span>}
             <span className="rounded bg-white px-1.5 py-0.5 font-semibold text-slate-600 ring-1 ring-slate-200">
-              {roleLabel(update.adminRole) || "Normal admin"}
+              {actorRole}
             </span>
-            <span>added this {kindLabel(update.kind).toLowerCase()}</span>
           </p>
           {update.suggestedStatus && (
             <p className="mt-1.5 text-[11px] font-semibold text-amber-700">
@@ -261,11 +310,11 @@ const ReviewDialog = ({
                 {REVIEW_STATE_META[existing.state].label}
               </span>
               <span className="flex flex-wrap items-center justify-end gap-1 text-[10px] text-slate-400">
-                <span className="font-semibold text-slate-600">
-                  {adminLabel(existing.reviewedByName)}
-                </span>
+                {!reviewerNameIsRole && (
+                  <span className="font-semibold text-slate-600">{reviewerName}</span>
+                )}
                 <span className="rounded bg-white px-1.5 py-0.5 font-semibold text-slate-600 ring-1 ring-slate-200">
-                  {roleLabel(existing.reviewedByRole) || "Sub admin"}
+                  {reviewerRole}
                 </span>
                 <span>· {formatDateTime(existing.reviewedAt)}</span>
               </span>
