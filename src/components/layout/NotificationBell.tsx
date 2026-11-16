@@ -20,8 +20,8 @@ import {
   VIEWER_ROLE_LABEL,
   actorLevel,
   loadNotifications,
-  loadReadIds,
-  saveReadIds,
+  markAllNotificationsRead,
+  markNotificationsRead,
   type ActorLevel,
   type AppNotification,
   type NotificationKind,
@@ -38,13 +38,13 @@ Pehle yahan ek dummy bell thi: koi click handler nahi aur ek permanent red dot,
 isliye har admin ko lagta tha ki ek notification pending hai. Ab ye real feed
 dikhati hai — role ke hisaab se tabs, rows aur actions.
 
-Role split (data layer `src/api/notifications.ts` me hai):
-  super admin   -> sab updates + escalated reviews, decision/escalation tabs
-  sub admin     -> sirf scope ke pending reviews, review queue par jaata hai
-  regular admin -> sirf apne updates par aaya feedback
+Role split `src/api/notifications.ts` se aati hai, aur uska source server hai
+(`GET /api/admin/notifications`) — client koi allow-list nahi rakhta:
+  super admin   -> escalated high, baaki sab low
+  sub admin     -> apne scope ke naye update / recommendation / flag
+  regular admin -> apne update par aaya feedback (returned sabse upar)
 
-Phase 1 limitation: read state browser-local hai, aur unread count loaded rows
-se banta hai (server me `/notifications` endpoint aane par server count hoga).
+Read state server par per admin hai, isliye unread count device-independent hai.
 ==========================================
 */
 
@@ -59,7 +59,11 @@ interface NotificationTab {
 const TABS_BY_ROLE: Record<AdminRole, NotificationTab[]> = {
   super_admin: [
     { key: "all", label: "All", match: () => true },
-    { key: "decision", label: "Decisions", match: (item) => item.kind === "recommendation" },
+    {
+      key: "decision",
+      label: "Decisions",
+      match: (item) => item.kind === "recommendation" || item.kind === "decided",
+    },
     { key: "escalation", label: "Escalations", match: (item) => item.kind === "escalation" },
   ],
   sub_admin: [
@@ -85,7 +89,6 @@ const KIND_META: Record<
   note: { icon: MessageSquare, tile: "bg-slate-100 text-slate-500" },
   recommendation: { icon: Clock3, tile: "bg-amber-50 text-amber-600" },
   escalation: { icon: ArrowUpRight, tile: "bg-sky-50 text-sky-600" },
-  flag: { icon: XCircle, tile: "bg-rose-50 text-rose-600" },
   verified: { icon: CheckCircle2, tile: "bg-emerald-50 text-emerald-600" },
   returned: { icon: XCircle, tile: "bg-rose-50 text-rose-600" },
   decided: { icon: ShieldCheck, tile: "bg-indigo-50 text-indigo-600" },
@@ -109,11 +112,11 @@ const ROLE_ICONS: Record<ActorLevel, typeof Bell> = {
 /** Viewer ke hisaab se ek line me uski position define. */
 const ROLE_HIERARCHY_HINT: Record<AdminRole, string> = {
   super_admin:
-    "Aap sabse upar ho: sub admin aapke under hai, normal admin sub admin ke under. Dono ki notifications aapke paas aati hain.",
+    "You are at the top: sub admins report to you, normal admins to them. Notifications from both levels arrive here.",
   sub_admin:
-    "Aap super admin ke under ho: normal admin ka kaam aap review karte ho, aur escalate kiya case super admin ko jaata hai.",
+    "You report to the super admin: you review normal admins' work, and escalated cases go to the super admin.",
   admin:
-    "Aap sub admin ke under ho: aapke note/recommendation ka review sub admin karta hai, feedback yahan aata hai.",
+    "You report to a sub admin: they review your notes and recommendations, and their feedback appears here.",
 };
 
 const timeAgo = (iso: string): string => {
@@ -129,62 +132,38 @@ const timeAgo = (iso: string): string => {
 };
 
 const NotificationBell = () => {
-  const { admin, role, isSuperAdmin, isSubAdmin, can, accessibleLoanTypes, canAccessModule } =
-    useAuth();
+  const { role, isSuperAdmin, can } = useAuth();
   const navigate = useNavigate();
-
-  const adminId = admin?._id ?? "";
-  const adminEmail = (admin?.email ?? "").trim().toLowerCase();
-  const identity = adminEmail || admin?.loginId || adminId || "anon";
-
-  /* Sub admin jise `updates.view` nahi mila, uske liye queue fetch hi nahi. */
-  const enabled = !isSubAdmin || can("updates.view");
 
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState("all");
   /* Hierarchy chip se actor-role filter — tab ke saath combine hota hai. */
   const [roleFilter, setRoleFilter] = useState<ActorLevel | "all">("all");
   const [items, setItems] = useState<AppNotification[]>([]);
-  const [loading, setLoading] = useState(enabled);
+  /* Server ka unread count — loaded page se bada ho sakta hai. */
+  const [unread, setUnread] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const [readIds, setReadIds] = useState<Set<string>>(() => loadReadIds(identity));
   const wrapRef = useRef<HTMLDivElement>(null);
 
   /*
-  Scope ko primitive signature se memoize kiya — `accessibleLoanTypes` aur
-  `canAccessModule` har render par naye hote hain, warna fetch effect loop
-  me chala jaata.
+  Audience server decide karta hai (role + Team & Access permissions), isliye
+  client par koi scope/allow-list nahi bhejni padti.
   */
-  const loanSlugs = accessibleLoanTypes.map((loan) => loan.slug);
-  const loanKey = loanSlugs.join("|");
-  const moduleKey = (["customers", "franchises"] as const)
-    .filter((module) => canAccessModule(module))
-    .join("|");
-
-  const scope = useMemo(
-    () => ({
-      loanSlugs: isSuperAdmin ? null : (loanKey ? loanKey.split("|") : []),
-      modules: isSuperAdmin
-        ? ("all" as const)
-        : (moduleKey ? (moduleKey.split("|") as Array<"customers" | "franchises">) : []),
-    }),
-    [isSuperAdmin, loanKey, moduleKey]
-  );
-
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
 
-    loadNotifications({ role, adminId, adminEmail, scope })
+    loadNotifications()
       .then((feed) => {
         if (cancelled) return;
         setItems(feed.items);
+        setUnread(feed.unread);
         setError("");
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(getApiErrorMessage(err, "Notifications load nahi ho paaye."));
+        setError(getApiErrorMessage(err, "Could not load notifications."));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -193,7 +172,7 @@ const NotificationBell = () => {
     return () => {
       cancelled = true;
     };
-  }, [enabled, role, adminId, adminEmail, scope, reloadKey]);
+  }, [reloadKey]);
 
   /* Window focus par refresh — user doosre tab se wapas aaye to count fresh ho. */
   useEffect(() => {
@@ -228,10 +207,7 @@ const NotificationBell = () => {
   const tabs = TABS_BY_ROLE[role] ?? TABS_BY_ROLE.admin;
   const activeTab = tabs.find((entry) => entry.key === tab) ?? tabs[0];
 
-  const unreadCount = useMemo(
-    () => items.reduce((count, item) => (readIds.has(item.id) ? count : count + 1), 0),
-    [items, readIds]
-  );
+  const unreadCount = unread;
 
   const tabItems = useMemo(() => items.filter(activeTab.match), [items, activeTab]);
 
@@ -257,26 +233,41 @@ const NotificationBell = () => {
     [tabItems, roleFilter]
   );
 
-  const markRead = (id: string) => {
-    if (readIds.has(id)) return;
-    const next = new Set(readIds);
-    next.add(id);
-    saveReadIds(identity, next);
-    setReadIds(next);
+  /*
+  Read state server par hai, isliye UI optimistic update karti hai aur API fail
+  hone par agla refresh server ka sach wapas le aata hai.
+  */
+  const markRead = async (id: string) => {
+    const item = items.find((entry) => entry.id === id);
+    if (!item || item.read) return;
+
+    setItems((prev) => prev.map((entry) => (entry.id === id ? { ...entry, read: true } : entry)));
+    setUnread((count) => Math.max(0, count - 1));
+
+    try {
+      await markNotificationsRead([id]);
+    } catch {
+      /* agla fetch server state sync kar dega */
+    }
   };
 
-  const markAllRead = () => {
-    if (items.length === 0) return;
-    const next = new Set(readIds);
-    items.forEach((item) => next.add(item.id));
-    saveReadIds(identity, next);
-    setReadIds(next);
+  const markAllRead = async () => {
+    if (items.length === 0 || unread === 0) return;
+
+    setItems((prev) => prev.map((entry) => ({ ...entry, read: true })));
+    setUnread(0);
+
+    try {
+      await markAllNotificationsRead();
+    } catch {
+      setReloadKey((key) => key + 1);
+    }
   };
 
   const openItem = (item: AppNotification) => {
-    markRead(item.id);
+    void markRead(item.id);
     setOpen(false);
-    navigate(item.targetPath);
+    if (item.targetPath) navigate(item.targetPath);
   };
 
   const footer = FOOTER_BY_ROLE[role] ?? FOOTER_BY_ROLE.admin;
@@ -285,10 +276,10 @@ const NotificationBell = () => {
 
   const emptyCopy =
     role === "super_admin"
-      ? "Abhi koi admin update nahi aaya. Note ya recommendation aate hi yahan dikhega."
+      ? "No admin updates yet. Notes and recommendations appear here as soon as they arrive."
       : role === "sub_admin"
-        ? "Aapke scope me review ke liye kuch pending nahi hai."
-        : "Abhi koi feedback nahi aaya. Aapke update par review hote hi yahan dikhega.";
+        ? "Nothing pending review in your scope."
+        : "No feedback yet. Once your update is reviewed, it shows up here.";
 
   return (
     <div ref={wrapRef} className="relative">
@@ -359,7 +350,7 @@ const NotificationBell = () => {
               </p>
               {roleFilter === "all" ? (
                 <span className="text-[9px] font-medium text-slate-300">
-                  role par click karke filter karo
+                  click a role to filter
                 </span>
               ) : (
                 <button
@@ -427,7 +418,8 @@ const NotificationBell = () => {
                         )}
                       </span>
                       <span className="flex items-center gap-1 text-[9px] font-medium tabular-nums text-slate-400">
-                        {roleCounts[level]} notif
+                        {roleCounts[level]} notification
+                        {roleCounts[level] === 1 ? "" : "s"}
                         {isActive && (
                           <span className="h-1.5 w-1.5 rounded-full bg-[rgb(6,106,156)]" aria-hidden />
                         )}
@@ -501,13 +493,13 @@ const NotificationBell = () => {
                 </span>
                 <p className="text-xs font-semibold text-slate-600">
                   {roleFilter !== "all"
-                    ? `${ACTOR_LEVEL_LABEL[roleFilter]} se kuch nahi`
+                    ? `No notifications from ${ACTOR_LEVEL_LABEL[roleFilter]}`
                     : tab === "all"
-                      ? "Koi notification nahi"
-                      : "Is tab me kuch nahi"}
+                      ? "No notifications"
+                      : "Nothing in this tab"}
                 </p>
                 <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  {roleFilter !== "all" ? "Doosra role chuno ya filter clear karo." : emptyCopy}
+                  {roleFilter !== "all" ? "Pick another role or clear the filter." : emptyCopy}
                 </p>
                 {roleFilter !== "all" && (
                   <button
@@ -524,14 +516,14 @@ const NotificationBell = () => {
                 {visible.map((item) => {
                   const meta = KIND_META[item.kind];
                   const Icon = meta.icon;
-                  const unread = !readIds.has(item.id);
+                  const isUnread = item.read !== true;
                   return (
                     <li key={item.id}>
                       <button
                         type="button"
                         onClick={() => openItem(item)}
                         className={`flex w-full gap-2.5 px-3.5 py-3 text-left transition hover:bg-slate-50 ${
-                          unread ? "bg-white" : "bg-slate-50/40"
+                          isUnread ? "bg-white" : "bg-slate-50/40"
                         }`}
                       >
                         <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${meta.tile}`}>
@@ -541,7 +533,7 @@ const NotificationBell = () => {
                           <span className="flex items-center gap-1.5">
                             <span
                               className={`truncate text-xs font-semibold ${
-                                unread ? "text-slate-800" : "text-slate-600"
+                                isUnread ? "text-slate-800" : "text-slate-600"
                               }`}
                             >
                               {item.title}
@@ -578,7 +570,7 @@ const NotificationBell = () => {
                             {item.recordLabel && (
                               <span className="truncate">· {item.recordLabel}</span>
                             )}
-                            {unread && (
+                            {isUnread && (
                               <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
                             )}
                           </span>
