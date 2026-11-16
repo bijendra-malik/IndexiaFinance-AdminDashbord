@@ -4,7 +4,7 @@ import {
   ArrowLeft, Briefcase, Building2, Calendar,
   Check, CheckCircle2, Clock, Copy, CreditCard, Hash,
   IndianRupee, Mail, MapPin, MessageSquarePlus, Phone,
-  RefreshCw, Send, ShieldAlert, TrendingDown, Trash2, User, XCircle,
+  RefreshCw, Send, ShieldAlert, ShieldCheck, TrendingDown, Trash2, User, XCircle,
   Car, Coins, FileText, GraduationCap, Home, Landmark, LayoutList,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
@@ -22,6 +22,8 @@ import {
   type LoanStatus,
   type PersonalLoan,
 } from "../../api/personalLoans";
+import { fetchReviews, reviewKey } from "../../api/adminReviews";
+import { roleLabel } from "../../utils/auditFormat";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const INR = (v?: number | null) =>
@@ -223,8 +225,14 @@ const LoanApplicationDetail = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const label    = getLoanTypeLabel(loanType ?? "");
-  const { canAccessLoan, isSuperAdmin } = useAuth();
+  const { canAccessLoan, isSuperAdmin, can } = useAuth();
   const allowed  = canAccessLoan(loanType);
+  /*
+  Status finalise karna sirf super admin ka kaam nahi — sub admin isi liye banta
+  hai. `loans.decide` permission wala sub admin bhi decision le sakta hai; normal
+  admin sirf update + recommended status bhej sakta hai.
+  */
+  const canDecide = isSuperAdmin || can("loans.decide");
 
   const [loan,  setLoan]  = useState<PersonalLoan | null>(null);
   const [error, setError] = useState("");
@@ -237,11 +245,19 @@ const LoanApplicationDetail = () => {
   const [updateText, setUpdateText] = useState("");
   const [isAddingUpdate, setIsAddingUpdate] = useState(false);
   const [updateSuggestedStatus, setUpdateSuggestedStatus] = useState<LoanStatus | "">("");
+  const [reviews, setReviews] = useState<Record<string, { state: string; note: string; reviewedByName?: string; reviewedAt?: string }>>({});
 
   const load = async () => {
     if (!id || !loanType || !allowed) return;
     setError("");
-    try { setLoan(await getLoanBySlug(loanType, id)); }
+    try {
+      const [loanData, reviewData] = await Promise.all([
+        getLoanBySlug(loanType, id),
+        fetchReviews().catch(() => ({}))
+      ]);
+      setLoan(loanData);
+      setReviews(reviewData);
+    }
     catch (err) { setError(getApiErrorMessage(err, "Unable to load.")); }
   };
   useEffect(() => { load(); }, [id, loanType]); // eslint-disable-line
@@ -593,6 +609,9 @@ const LoanApplicationDetail = () => {
                     <span className="font-semibold">
                       {loan.statusRecommendation.recommendedByName || "An admin"}
                     </span>{" "}
+                    <span className="rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-200">
+                      {roleLabel(loan.statusRecommendation.recommendedByRole) || "Normal admin"}
+                    </span>{" "}
                     recommended marking this application{" "}
                     <span className="font-semibold">{loan.statusRecommendation.status}</span>
                     {loan.statusRecommendation.recommendedAt
@@ -606,14 +625,19 @@ const LoanApplicationDetail = () => {
                     </p>
                   )}
                 </div>
-                <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-bold text-amber-800">
-                  Pending super admin decision
-                </span>
+                <div className="flex flex-col gap-2">
+                  <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-bold text-amber-800">
+                    Awaiting decision
+                  </span>
+                  <span className="text-[10px] text-amber-700 text-center">
+                    Can be decided by a super admin or sub admin
+                  </span>
+                </div>
               </div>
             </section>
           )}
 
-        {isSuperAdmin ? (
+        {canDecide ? (
           <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
@@ -649,7 +673,8 @@ const LoanApplicationDetail = () => {
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
               <p className="mt-1 text-xs text-slate-500">
-                Only super admins can finalise the status. Add an update with a recommended status below — it appears instantly on the super admin dashboard.
+                You can add updates and recommend a status, but not finalise it. A sub admin (with
+                final-decision permission) or a super admin will review your recommendation here.
               </p>
             </div>
           </section>
@@ -726,7 +751,10 @@ const LoanApplicationDetail = () => {
             {adminUpdates.length === 0 ? (
               <p className="text-xs text-slate-400">No updates added yet.</p>
             ) : (
-              adminUpdates.map((update, idx) => (
+              adminUpdates.map((update, idx) => {
+                const updateReviewKey = reviewKey({ id: update._id || '', applicationId: loan?._id, entity: 'loan' });
+                const review = reviews[updateReviewKey];
+                return (
                   <div
                     key={update._id || `${update.addedAt}-${idx}`}
                     className="rounded-xl border border-slate-100 bg-slate-50/70 p-3"
@@ -757,14 +785,45 @@ const LoanApplicationDetail = () => {
                             {update.suggestedStatus}
                           </span>
                         )}
+                        {review && (
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                            review.state === "verified" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                            review.state === "returned" ? "bg-orange-50 text-orange-700 border border-orange-200" :
+                            review.state === "escalated" ? "bg-purple-50 text-purple-700 border border-purple-200" :
+                            review.state === "decided" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                            "bg-slate-100 text-slate-600"
+                          }`}>
+                            <ShieldCheck size={10} />
+                            {review.state === "verified" ? "Verified" :
+                             review.state === "returned" ? "Returned" :
+                             review.state === "escalated" ? "Escalated" :
+                             review.state === "decided" ? "Decided" : review.state}
+                          </span>
+                        )}
                       </div>
                       <span className="text-[11px] text-slate-400">
                         {update.addedAt ? new Date(update.addedAt).toLocaleString("en-IN") : ""}
                       </span>
                     </div>
                     <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap break-words">{update.text}</p>
+                    {review && review.note && (
+                      <div className="mt-2 rounded-lg bg-white border border-slate-200 p-2">
+                        <p className="text-[10px] font-semibold text-slate-600 mb-1">
+                          {review.state === "verified" ? "✓ Supervisor Review:" :
+                           review.state === "returned" ? "↩ Returned by Supervisor:" :
+                           review.state === "escalated" ? "⬆ Escalated by Supervisor:" : "Review:"}
+                        </p>
+                        <p className="text-xs text-slate-700">{review.note}</p>
+                        {review.reviewedByName && (
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            — {review.reviewedByName} {review.reviewedAt ? `on ${new Date(review.reviewedAt).toLocaleDateString("en-IN")}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                ))
+                )
+              })
             )}
           </div>
         </section>
