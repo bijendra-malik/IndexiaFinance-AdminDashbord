@@ -22,7 +22,9 @@ import {
   type LoanStatus,
   type PersonalLoan,
 } from "../../api/personalLoans";
-import { fetchReviews, reviewKey } from "../../api/adminReviews";
+import { fetchReviews, reviewKey, type ReviewRecord } from "../../api/adminReviews";
+import type { AdminActivityUpdate } from "../../api/adminActivity";
+import ReviewDialog from "../review/components/ReviewDialog";
 import { roleLabel } from "../../utils/auditFormat";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -225,7 +227,7 @@ const LoanApplicationDetail = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const label    = getLoanTypeLabel(loanType ?? "");
-  const { canAccessLoan, isSuperAdmin, can } = useAuth();
+  const { admin, canAccessLoan, isSuperAdmin, can } = useAuth();
   const allowed  = canAccessLoan(loanType);
   /*
   Status finalise karna sirf super admin ka kaam nahi — sub admin isi liye banta
@@ -245,7 +247,12 @@ const LoanApplicationDetail = () => {
   const [updateText, setUpdateText] = useState("");
   const [isAddingUpdate, setIsAddingUpdate] = useState(false);
   const [updateSuggestedStatus, setUpdateSuggestedStatus] = useState<LoanStatus | "">("");
-  const [reviews, setReviews] = useState<Record<string, { state: string; note: string; reviewedByName?: string; reviewedAt?: string }>>({});
+  const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
+  /*
+  Sub admin / super admin ka review action isi page se — wahi dialog jo Review
+  Queue me hai, isliye kaam dekhne ke liye page badalna nahi padta.
+  */
+  const [reviewing, setReviewing] = useState<AdminActivityUpdate | null>(null);
 
   const load = async () => {
     if (!id || !loanType || !allowed) return;
@@ -307,6 +314,35 @@ const LoanApplicationDetail = () => {
   const adminUpdates = [...(loan?.adminUpdates ?? [])].sort(
     (a, b) => new Date(b.addedAt || 0).getTime() - new Date(a.addedAt || 0).getTime()
   );
+
+  /*
+  Loan ka update row → review dialog ka shape. Product/slug yahin se bharti hai,
+  warna "Record decision" par loan status PATCH ka rasta nahi milta.
+  */
+  /* Apna hi note review nahi hota — backend bhi yahi rok lagata hai. */
+  const isOwnUpdate = (update: (typeof adminUpdates)[number]) =>
+    !isSuperAdmin &&
+    (update.addedByName ?? "").trim().toLowerCase() === (admin?.name ?? "").trim().toLowerCase();
+
+  const asActivityUpdate = (update: (typeof adminUpdates)[number]): AdminActivityUpdate => ({
+    id: update._id || update.addedAt || "",
+    applicationId: loan?._id ?? "",
+    productKey: loanType ?? "",
+    slug: loanType ?? "",
+    label: getLoanTypeLabel(loanType ?? ""),
+    customerName: loan?.fullName ?? "",
+    mobile: loan?.mobile ?? "",
+    applicationNo: loan?.applicationNo ?? null,
+    loanStatus: loan?.status ?? "Submitted",
+    loanAmount: loan?.loanAmount ?? null,
+    text: update.text ?? "",
+    kind: update.kind === "recommendation" || update.kind === "status" ? update.kind : "note",
+    suggestedStatus: update.suggestedStatus ?? null,
+    adminId: update.addedBy ?? null,
+    adminName: update.addedByName || "Admin",
+    adminRole: update.addedByRole || "",
+    addedAt: update.addedAt || "",
+  });
 
   const copyId = async () => {
     if (!loan) return;
@@ -801,9 +837,30 @@ const LoanApplicationDetail = () => {
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-slate-400">
-                        {update.addedAt ? new Date(update.addedAt).toLocaleString("en-IN") : ""}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {/*
+                        Reviewer ke actions yahin: Verify / Return / Escalate /
+                        Decide. Permissions dialog khud gate karta hai (verify ->
+                        updates.review, return -> updates.return, escalate ->
+                        updates.escalate, decide -> loans.decide), isliye jo role
+                        jo kar sakta hai usi ko wahi button dikhta hai.
+                        */}
+                        {can("updates.review") &&
+                          review?.state !== "decided" &&
+                          !isOwnUpdate(update) && (
+                          <button
+                            type="button"
+                            onClick={() => setReviewing(asActivityUpdate(update))}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                          >
+                            <ShieldCheck size={11} />
+                            {review ? "Update review" : "Review"}
+                          </button>
+                        )}
+                        <span className="text-[11px] text-slate-400">
+                          {update.addedAt ? new Date(update.addedAt).toLocaleString("en-IN") : ""}
+                        </span>
+                      </div>
                     </div>
                     <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap break-words">{update.text}</p>
                     {review && review.note && (
@@ -1191,6 +1248,19 @@ const LoanApplicationDetail = () => {
           isSubmitting={isDeleting}
           onConfirm={handleDelete}
           onCancel={() => setPendingDelete(false)}
+        />
+      )}
+      {reviewing && (
+        <ReviewDialog
+          update={reviewing}
+          existing={reviews[reviewKey(reviewing)]}
+          onClose={() => setReviewing(null)}
+          onSaved={(records) => {
+            setReviews(records);
+            setReviewing(null);
+            /* Decision ke baad status/timeline server se refresh. */
+            void load();
+          }}
         />
       )}
       {pendingStatus && pendingStatus !== "Rejected" && (
