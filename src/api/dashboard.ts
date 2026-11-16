@@ -440,6 +440,13 @@ export const getDashboardStats = async (
       registeredFranchises: toCount(stats.registeredFranchises),
       activeFranchises: toCount(stats.activeFranchises),
       recentFranchises: toOverviewAccounts(stats.recentFranchises, "franchise"),
+      /*
+      Ye mode `ModuleDashboardOverview` render karta hai, jo server ke
+      `recentCustomers` / `recentFranchises` se rows dikhata hai — `recentAccounts`
+      tab sirf super admin ke loan dashboard me hota hai, jahan rows `/customers`
+      aur `/franchises` se aati hain. Isliye yahan same list dobara nahi banate.
+      */
+      recentAccounts: [],
       totalApplications: 0,
       submitted: 0,
       pending: 0,
@@ -453,7 +460,6 @@ export const getDashboardStats = async (
       recentUpdates: [],
       generatedAt: stats.generatedAt ?? new Date().toISOString(),
       franchiseCustomerTotal: 0,
-      recentAccounts: [],
     };
   }
 
