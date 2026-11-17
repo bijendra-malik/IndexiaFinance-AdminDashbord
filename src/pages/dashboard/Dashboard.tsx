@@ -599,151 +599,244 @@ const AdminDashboard = () => {
             </Panel>
           </div>
 
-          {/* ── Super admin ka decision queue ─────────────────────────────── */}
+          {/* ── Two-column layout: Decision Pending + Admin Updates ─────────── */}
           {isSuperAdmin && (
-            <Panel
-              className="mb-4"
-              title="Decision pending"
-              subtitle="A regular admin checked these records and suggested a decision — approve or reject from the record."
-              action={
-                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 tabular-nums">
-                  {stats.pendingDecisions?.total ?? 0}
-                </span>
-              }
-            >
-              {(stats.pendingDecisions?.items ?? []).length === 0 ? (
-                <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-500">
-                    <CheckCircle2 size={20} />
+            <div className="mb-4 grid gap-4 lg:grid-cols-2">
+              {/* Left: Decision Pending Table */}
+              <Panel
+                title="Decision pending"
+                subtitle="Applications awaiting your final decision"
+                action={
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 tabular-nums">
+                    {stats.pendingDecisions?.total ?? 0}
                   </span>
-                  <p className="text-sm font-semibold text-slate-700">No decisions pending</p>
-                  <p className="max-w-sm text-xs leading-relaxed text-slate-400">
-                    A regular admin record check karke suggestion dega, wo yahan aayega.
-                  </p>
-                </div>
-              ) : (
-                <ul className="divide-y divide-slate-100">
-                  {(stats.pendingDecisions?.items ?? []).slice(0, 5).map((item) => {
-                    /* Loan row ka apna application detail page hota hai. */
-                    const reviewPath =
-                      item.entity === "loan"
-                        ? applicationDetailPath(item.slug, item.id) ?? "/applications"
-                        : item.entity === "customer"
-                        ? `/customers?customer=${encodeURIComponent(item.id)}`
-                        : `/franchises/${item.id}`;
-                    return (
-                      <li
-                        key={`${item.entity}-${item.id}`}
-                        className="flex items-start gap-3 px-5 py-3 transition hover:bg-slate-50/70"
-                      >
-                        <span
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                          style={{ background: avatarGradient(item.name || item.referenceNo || item.id) }}
-                          aria-hidden
-                        >
-                          {initialsOf(item.name || "Record")}
-                        </span>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                              {item.entity === "loan"
-                                ? item.productLabel ?? "Loan"
+                }
+              >
+                {(stats.pendingDecisions?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-500">
+                      <CheckCircle2 size={20} />
+                    </span>
+                    <p className="text-sm font-semibold text-slate-700">No decisions pending</p>
+                    <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+                      Admin suggestions will appear here
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
+                      <table className="w-full">
+                        <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm">
+                          <tr className="border-b border-slate-200">
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Applicant</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Product</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Status</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Last act. date</th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(stats.pendingDecisions?.items ?? []).map((item) => {
+                            const reviewPath =
+                              item.entity === "loan"
+                                ? applicationDetailPath(item.slug, item.id) ?? "/applications"
                                 : item.entity === "customer"
-                                  ? "Customer"
-                                  : "Franchise"}
-                            </span>
-                            <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
-                              {item.name || "Unnamed"}
-                            </span>
-                            {item.referenceNo && (
-                              <span className="hidden shrink-0 font-mono text-[10px] text-slate-400 sm:inline">
-                                {item.referenceNo}
-                              </span>
-                            )}
-                            <Link
-                              to={reviewPath}
-                              className="ml-auto shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap text-slate-600 transition hover:border-[rgb(6,106,156)] hover:text-[rgb(6,106,156)]"
-                            >
-                              Review
-                            </Link>
-                          </div>
+                                ? `/customers?customer=${encodeURIComponent(item.id)}`
+                                : `/franchises/${item.id}`;
+                            
+                            const statusColor = item.suggestedStatus?.toLowerCase() === "approved"
+                              ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                              : item.suggestedStatus?.toLowerCase() === "rejected"
+                              ? "bg-red-50 text-red-700 ring-red-200"
+                              : "bg-blue-50 text-blue-700 ring-blue-200";
 
-                          <p className="mt-0.5 truncate text-[11px] text-slate-500" title={item.note}>
-                            {item.note || "No note added."}
-                            <span className="text-slate-400">
-                              {" · "}
-                              {adminLabel(item.requestedByName)}
-                              {item.requestedAt ? ` · ${shortDateTime(item.requestedAt)}` : ""}
-                            </span>
-                          </p>
+                            return (
+                              <tr key={`${item.entity}-${item.id}`} className="hover:bg-slate-50/70">
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                                      style={{ background: avatarGradient(item.name || item.referenceNo || item.id) }}
+                                    >
+                                      {initialsOf(item.name || "Record")}
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-slate-800">
+                                        {item.name || "Unnamed"}
+                                      </p>
+                                      {item.referenceNo && (
+                                        <p className="truncate font-mono text-[10px] text-slate-400">
+                                          {item.referenceNo}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="inline-block rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                                    {item.entity === "loan"
+                                      ? item.productLabel ?? "Loan"
+                                      : item.entity === "customer"
+                                      ? "Customer"
+                                      : "Franchise"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${statusColor}`}>
+                                    {item.suggestedStatus || item.status || "Pending"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-xs text-slate-600">
+                                    {item.requestedAt ? shortDateTime(item.requestedAt) : "—"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <Link
+                                    to={reviewPath}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-[rgb(6,106,156)] hover:bg-slate-50 hover:text-[rgb(6,106,156)]"
+                                  >
+                                    Review
+                                    <ArrowRight size={12} />
+                                  </Link>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {(stats.pendingDecisions?.total ?? 0) > 5 && (
+                      <div className="border-t border-slate-100 px-4 py-2.5 text-center">
+                        <p className="text-[11px] text-slate-400">
+                          {stats.pendingDecisions?.total} total decisions pending • Scroll to view all
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </Panel>
 
-                          {/* Current → suggested, ek hi line me. */}
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                              Current: {item.status || "—"}
-                            </span>
-                            <ArrowRight size={12} className="shrink-0 text-slate-300" />
-                            {item.suggestedStatus && (
-                              <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-200">
-                                {item.suggestedStatus}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {(stats.pendingDecisions?.total ?? 0) > 5 && (
-                <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">
-                  Showing 5 of {stats.pendingDecisions?.total} pending decisions.
-                </p>
-              )}
-            </Panel>
-          )}
-
-          {/* ── Latest admin activity ─────────────────────────────────────── */}
-          {(isSuperAdmin || stats.recentUpdates.length > 0) && (
-            <Panel
-              className="mb-4"
-              title="Admin updates"
-              subtitle={
-                isSuperAdmin
-                  ? "Latest notes, status recommendations and decisions from every admin"
-                  : "Latest notes and recommendations on the products assigned to you"
-              }
-              action={
-                isSuperAdmin ? (
+              {/* Right: Admin Updates Feed */}
+              <Panel
+                title="Admin updates"
+                subtitle="Latest activity from your team"
+                action={
                   <Link
                     to="/activity"
                     className="shrink-0 text-xs font-semibold text-sky-700 hover:underline"
                   >
                     View all
                   </Link>
-                ) : undefined
-              }
+                }
+              >
+                {stats.recentUpdates.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                      <MessageSquare size={18} />
+                    </span>
+                    <p className="text-sm font-semibold text-slate-700">No admin updates yet</p>
+                    <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+                      Team activity will appear here
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
+                      <ul className="divide-y divide-slate-100">
+                        {stats.recentUpdates.map((update) => {
+                          const detailPath = updateTargetPath(update);
+                          const who = adminLabel(update.addedByName);
+                          const isDecision = update.kind === "status";
+                          const isRecommendation = update.kind === "recommendation";
+                          
+                          const kindChip = isDecision
+                            ? { text: "Decision", className: "bg-emerald-50 text-emerald-700" }
+                            : isRecommendation
+                            ? { text: "Recommendation", className: "bg-amber-50 text-amber-700" }
+                            : { text: "Note", className: "bg-blue-50 text-blue-700" };
+
+                          return (
+                            <li key={update._id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50/70">
+                              <span
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                                style={{ background: avatarGradient(who) }}
+                              >
+                                {initialsOf(who)}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-800">
+                                      {who}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-slate-600">
+                                      {update.fullName || "Applicant"}
+                                      {update.applicationNo && (
+                                        <span className="ml-1 font-mono text-[10px] text-slate-400">
+                                          {update.applicationNo}
+                                        </span>
+                                      )}
+                                    </p>
+                                  </div>
+                                  <span className="shrink-0 text-[10px] text-slate-400">
+                                    {shortDateTime(update.addedAt)}
+                                  </span>
+                                </div>
+                                
+                                <p className="mt-1.5 line-clamp-2 text-sm text-slate-700">
+                                  {update.text || "—"}
+                                </p>
+                                
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${kindChip.className}`}>
+                                    {kindChip.text}
+                                  </span>
+                                  {update.suggestedStatus && (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                      {update.suggestedStatus}
+                                    </span>
+                                  )}
+                                  {detailPath && (
+                                    <Link
+                                      to={detailPath}
+                                      className="ml-auto text-[10px] font-semibold text-sky-700 hover:underline"
+                                    >
+                                      View →
+                                    </Link>
+                                  )}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                    {stats.recentUpdates.length > 5 && (
+                      <div className="border-t border-slate-100 px-4 py-2.5 text-center">
+                        <p className="text-[11px] text-slate-400">
+                          {stats.recentUpdates.length} total updates • Scroll to view all
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </Panel>
+            </div>
+          )}
+
+          {/* ── Regular admin ka admin updates panel ─────────────────────── */}
+          {!isSuperAdmin && stats.recentUpdates.length > 0 && (
+            <Panel
+              className="mb-4"
+              title="Admin updates"
+              subtitle="Latest notes and recommendations on the products assigned to you"
             >
-              {stats.recentUpdates.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                    <MessageSquare size={18} />
-                  </span>
-                  <p className="text-sm font-semibold text-slate-700">No admin updates yet</p>
-                  <p className="max-w-sm text-xs leading-relaxed text-slate-400">
-                    Jaise hi koi admin note, recommendation ya decision likhega, wo yahan dikhega.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <ul className="divide-y divide-slate-100">
-                    {stats.recentUpdates.slice(0, 5).map((update) => (
-                      <AdminUpdateRow key={update._id} update={update} />
-                    ))}
-                  </ul>
-                </>
-              )}
+              <ul className="divide-y divide-slate-100">
+                {stats.recentUpdates.slice(0, 5).map((update) => (
+                  <AdminUpdateRow key={update._id} update={update} />
+                ))}
+              </ul>
               {stats.recentUpdates.length > 5 && (
                 <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">
                   Showing the 5 most recent of {stats.recentUpdates.length} updates.
