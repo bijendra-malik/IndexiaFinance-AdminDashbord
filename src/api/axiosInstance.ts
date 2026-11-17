@@ -1,7 +1,17 @@
 import axios from "axios";
 
+/*
+Production build ka fallback localhost nahi ho sakta: Vercel par env var miss
+hone se saari API calls browser ke `localhost:5000` par chali jaati thin (CORS +
+net::ERR_FAILED). Ab prod me live backend fallback hai; Vercel env var hone par
+wahi override karta hai.
+*/
+const DEFAULT_BASE_URL = import.meta.env.PROD
+  ? "https://new-finance-back.onrender.com/api/admin"
+  : "http://localhost:5000/api/admin";
+
 const axiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/admin",
+  baseURL: import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
