@@ -133,14 +133,24 @@ const ReviewQueue = () => {
     return updates.filter((update) => !update.slug || allowed.has(update.slug));
   }, [result, isSuperAdmin, accessibleLoanTypes]);
 
+  /*
+  Loan already Approved / Rejected ho gaya to us update par review karna bacha
+  nahi hai — pehle wo "Needs review" me ginti me aata tha, isliye counter kabhi
+  khatam nahi hota tha. Aisa update "Decision recorded" me dikhta hai.
+  */
   const rows = useMemo(
     () =>
-      scoped.map((update) => ({
-        update,
-        key: reviewKey(update),
-        state: reviews[reviewKey(update)]?.state ?? ("pending" as ReviewState),
-        record: reviews[reviewKey(update)],
-      })),
+      scoped.map((update) => {
+        const key = reviewKey(update);
+        const record = reviews[key];
+        const finalStatus = update.loanStatus === "Approved" || update.loanStatus === "Rejected";
+        return {
+          update,
+          key,
+          record,
+          state: record?.state ?? ((finalStatus ? "decided" : "pending") as ReviewState),
+        };
+      }),
     [scoped, reviews]
   );
 
@@ -200,8 +210,8 @@ const ReviewQueue = () => {
           title={isSuperAdmin ? "Review Queue" : "My Review Queue"}
           subtitle={
             isSuperAdmin
-              ? "Regular admins ke kaam ka quality-check — jo sub admin ne verify ya escalate kiya."
-              : "Aapke scope me aaye admin updates — verify karo, correction ke liye wapas bhejo, ya super admin ko escalate karo."
+              ? "Quality check on regular admins' work — everything sub admins verified or escalated."
+              : "Admin updates in your scope — verify them, send them back for correction, or escalate them."
           }
           onRefresh={reload}
           refreshing={loading}
@@ -224,8 +234,8 @@ const ReviewQueue = () => {
           <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
             <Info size={15} className="mt-0.5 shrink-0" />
             <p>
-              Aapke paas review permission nahi hai — queue read-only hai. Super admin
-              Team &amp; Access se permissions de sakta hai.
+              You do not have review permission yet, so this queue is read-only. The super
+              admin can enable it from Team &amp; Access.
             </p>
           </div>
         )}
@@ -377,17 +387,17 @@ const ReviewQueue = () => {
                   icon={CheckCircle2}
                   title={
                     entityFilter !== "all"
-                      ? `Is tab me ${ENTITY_META[entityFilter].label.toLowerCase()} rows nahi`
+                      ? `No ${ENTITY_META[entityFilter].label.toLowerCase()} rows in this tab`
                       : tab === "pending"
-                        ? "Queue clear hai"
-                        : `Koi ${REVIEW_STATE_META[tab].label.toLowerCase()} update nahi`
+                        ? "Queue is clear"
+                        : `No ${REVIEW_STATE_META[tab].label.toLowerCase()} updates`
                   }
                   description={
                     entityFilter !== "all"
-                      ? "Type filter clear karo ya doosra tab chuno."
+                      ? "Clear the type filter or pick another tab."
                       : tab === "pending"
-                        ? "Naya admin note ya recommendation aate hi yahan dikhega."
-                        : "Doosra tab chuno ya time window badhao."
+                        ? "A new admin note or recommendation appears here as soon as it arrives."
+                        : "Pick another tab or widen the time window."
                   }
                 />
               ) : (
@@ -513,7 +523,7 @@ const ReviewQueue = () => {
                             type="button"
                             onClick={() => setReviewing(update)}
                             disabled={!can("updates.review")}
-                            title={can("updates.review") ? "Review this update" : "Review permission nahi hai"}
+                            title={can("updates.review") ? "Review this update" : "Review permission is not enabled"}
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-[rgb(6,106,156)] hover:text-[rgb(6,106,156)] disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <FileText size={12} /> {record ? "Update" : "Review"}
@@ -538,7 +548,7 @@ const ReviewQueue = () => {
               </div>
               {!can("admins.view") ? (
                 <p className="px-1 py-2 text-xs text-slate-400">
-                  Admin details dekhne ki permission nahi hai.
+                  You do not have permission to view admin details.
                 </p>
               ) : (result?.admins ?? []).filter((entry) => entry.total > 0).length === 0 ? (
                 <p className="px-1 py-2 text-xs text-slate-400">No activity yet</p>
@@ -586,16 +596,16 @@ const ReviewQueue = () => {
               </div>
               <ol className="space-y-2 px-1 py-1 text-[11px] leading-relaxed text-slate-500">
                 <li>
-                  <span className="font-semibold text-slate-700">1. Admin ka update</span> — note ya
-                  recommendation queue me aata hai.
+                  <span className="font-semibold text-slate-700">1. Admin update</span> — a note or a
+                  status recommendation lands in the queue.
                 </li>
                 <li>
-                  <span className="font-semibold text-slate-700">2. Verify / Return</span> — sahi kaam
-                  aage, adhoora kaam wajah ke saath wapas.
+                  <span className="font-semibold text-slate-700">2. Verify / Return</span> — verified
+                  work moves on, incomplete work goes back with a reason.
                 </li>
                 <li>
-                  <span className="font-semibold text-slate-700">3. Escalate</span> — risky case super
-                  admin ke decision ke liye.
+                  <span className="font-semibold text-slate-700">3. Escalate</span> — a risky case goes
+                  to the super admin for a decision.
                 </li>
                 <li>
                   <span className="font-semibold text-slate-700">4. Final decision</span> — super admin
