@@ -122,7 +122,16 @@ const ReviewDialog = ({
       can(action.permission) &&
       (action.permission !== "loans.decide" || isLoanUpdate)
   );
-  const [state, setState] = useState<ReviewState>(allowed[0]?.state ?? "verified");
+  /*
+  Pehle hamesha pehla action (Verify) select hota tha — "Returned" dikhne ke baad
+  bhi Save dabane par state chup-chaap badal jaati thi. Ab jo review pehle se hai
+  wahi select rehta hai.
+  */
+  const [state, setState] = useState<ReviewState>(
+    existing && allowed.some((entry) => entry.state === existing.state)
+      ? existing.state
+      : (allowed[0]?.state ?? "verified")
+  );
   const [note, setNote] = useState(existing?.note ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -136,9 +145,9 @@ const ReviewDialog = ({
 
   const submit = async () => {
     if (!action || saving) return;
-    if (isOwnUpdate) return setError("Aap apne hi update ko review nahi kar sakte.");
+    if (isOwnUpdate) return setError("You cannot review your own update.");
     if (action.requireNote && note.trim().length < 5) {
-      return setError("Wajah / summary likho (kam se kam 5 characters).");
+      return setError("Please add a reason (at least 5 characters).");
     }
     /*
     "Record decision" ka matlab sirf review note nahi — loan ka asli status badalna
@@ -192,7 +201,7 @@ const ReviewDialog = ({
       );
       onSaved(records);
     } catch (err) {
-      setError(getApiErrorMessage(err, "Review save nahi hua. Dobara try karo."));
+      setError(getApiErrorMessage(err, "Could not save the review. Please try again."));
     } finally {
       setSaving(false);
     }
@@ -204,10 +213,10 @@ const ReviewDialog = ({
     setError("");
     try {
       const records = await clearReview(key);
-      showToast("Review state cleared — update wapas queue me hai.");
+      showToast("Review cleared — this update is back in the queue.");
       onSaved(records);
     } catch (err) {
-      setError(getApiErrorMessage(err, "Review clear nahi hua."));
+      setError(getApiErrorMessage(err, "Could not clear the review."));
     } finally {
       setSaving(false);
     }
@@ -322,6 +331,12 @@ const ReviewDialog = ({
             {existing.note && (
               <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{existing.note}</p>
             )}
+            {allowed.length > 0 && (
+              <p className="mt-1.5 text-[10px] text-slate-400">
+                Saving again replaces this review — Clear review puts the update back in the
+                queue.
+              </p>
+            )}
           </div>
         )}
 
@@ -329,8 +344,8 @@ const ReviewDialog = ({
         <div className="px-6 pt-4">
           {allowed.length === 0 ? (
             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-              Aapke paas review ki koi permission nahi hai. Super admin se
-              &quot;Review&quot; permission maango.
+              You do not have review permission yet. Ask the super admin to enable it for
+              this account.
             </p>
           ) : (
             <>
@@ -375,10 +390,10 @@ const ReviewDialog = ({
                 rows={3}
                 placeholder={
                   state === "returned"
-                    ? "Kya galat hai / kya correction chahiye…"
+                    ? "What is wrong and what needs to be corrected?"
                     : state === "escalated"
-                      ? "Super admin ke liye summary — kya risk hai…"
-                      : "Verification note…"
+                      ? "Summary for the super admin — what is the risk?"
+                      : "Optional verification note…"
                 }
                 className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-[rgb(6,106,156)] focus:outline-none focus:ring-2 focus:ring-[rgba(6,106,156,0.2)]"
               />
@@ -387,7 +402,7 @@ const ReviewDialog = ({
 
           {isOwnUpdate && (
             <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
-              Ye update aapne hi add kiya hai — self-review allowed nahi hai.
+              You added this update — it cannot be reviewed by you.
             </p>
           )}
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
@@ -420,7 +435,7 @@ const ReviewDialog = ({
               className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: BRAND_GRADIENT }}
             >
-              {saving ? "Saving…" : "Save review"}
+              {saving ? "Saving…" : existing ? "Update review" : "Save review"}
             </button>
           </div>
         </div>
