@@ -134,15 +134,26 @@ type DataFieldProps = {
   mono?: boolean;
   highlight?: boolean;
   className?: string;
+  /** `tel:` / `mailto:` — value clickable ho jaati hai. */
+  href?: string;
 };
 
 const DataField = ({
-  label, value, mono = false, highlight = false, className = "",
+  label, value, mono = false, highlight = false, className = "", href,
 }: DataFieldProps) => (
   <div className={`rounded-2xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 ${className}`}>
     <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</span>
     {value
-      ? <span className={`mt-2 block text-sm leading-snug break-words ${mono ? "font-mono" : "font-semibold"} ${highlight ? "text-[#066a9c]" : "text-slate-800"}`}>{value}</span>
+      ? href
+        ? <a
+            href={href}
+            className={`mt-2 flex items-center gap-1.5 break-words text-sm leading-snug text-[#066a9c] transition hover:underline ${mono ? "font-mono" : "font-semibold"}`}
+          >
+            {label === "Mobile Number" ? <Phone size={12} className="shrink-0" /> : null}
+            {label === "Email Address" ? <Mail size={12} className="shrink-0" /> : null}
+            {value}
+          </a>
+        : <span className={`mt-2 block text-sm leading-snug break-words ${mono ? "font-mono" : "font-semibold"} ${highlight ? "text-[#066a9c]" : "text-slate-800"}`}>{value}</span>
       : <span className="mt-2 block text-sm text-slate-300 font-light">Not provided</span>}
   </div>
 );
@@ -253,6 +264,11 @@ const LoanApplicationDetail = () => {
   Queue me hai, isliye kaam dekhne ke liye page badalna nahi padta.
   */
   const [reviewing, setReviewing] = useState<AdminActivityUpdate | null>(null);
+  /*
+  Updates card bahut lamba ho jaata tha (6-10 rows), isliye page par sirf latest
+  do dikhte hain aur "View all" par poora timeline khulta hai.
+  */
+  const [showAllUpdates, setShowAllUpdates] = useState(false);
 
   const load = async () => {
     if (!id || !loanType || !allowed) return;
@@ -319,13 +335,22 @@ const LoanApplicationDetail = () => {
   Loan ka update row → review dialog ka shape. Product/slug yahin se bharti hai,
   warna "Record decision" par loan status PATCH ka rasta nahi milta.
   */
+  /*
+  Review key backend ke activity row jaisi hi honi chahiye: activity/queue me
+  update ka id `${loanId}-${updateId}` hota hai, isliye review usi par save hota
+  hai. Pehle yahan sirf `update._id` use hota tha, isliye loan page par koi
+  Verified/Returned badge match nahi karta tha (dashboard par dikhta tha).
+  */
+  const reviewIdOf = (update: (typeof adminUpdates)[number]) =>
+    `${loan?._id ?? ""}-${update._id || update.addedAt || ""}`;
+
   /* Apna hi note review nahi hota — backend bhi yahi rok lagata hai. */
   const isOwnUpdate = (update: (typeof adminUpdates)[number]) =>
     !isSuperAdmin &&
     (update.addedByName ?? "").trim().toLowerCase() === (admin?.name ?? "").trim().toLowerCase();
 
   const asActivityUpdate = (update: (typeof adminUpdates)[number]): AdminActivityUpdate => ({
-    id: update._id || update.addedAt || "",
+    id: reviewIdOf(update),
     applicationId: loan?._id ?? "",
     productKey: loanType ?? "",
     slug: loanType ?? "",
@@ -605,7 +630,7 @@ const LoanApplicationDetail = () => {
           <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Loan Application</p>
           <h1 className="text-xl font-extrabold text-slate-900 leading-tight">{label}</h1>
         </div>
-        <div className="hidden md:flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           {loan!.mobile && (
             <a href={`tel:${loan!.mobile}`}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm text-xs font-semibold text-slate-600 hover:text-[#066a9c] transition">
@@ -736,7 +761,7 @@ const LoanApplicationDetail = () => {
               <p className="mt-1 text-xs text-slate-500">
                 {isSuperAdmin
                   ? "Full history of notes, status recommendations and final decisions on this application."
-                  : "Add follow-ups (call done, documents verified, etc.) and recommend a status — the super admin sees it instantly."}
+                  : "Add follow-ups (call done, documents verified, etc.) and recommend a status — your sub admin sees it instantly and reviews it."}
               </p>
             </div>
           </div>
@@ -787,8 +812,8 @@ const LoanApplicationDetail = () => {
             {adminUpdates.length === 0 ? (
               <p className="text-xs text-slate-400">No updates added yet.</p>
             ) : (
-              adminUpdates.map((update, idx) => {
-                const updateReviewKey = reviewKey({ id: update._id || '', applicationId: loan?._id, entity: 'loan' });
+              (showAllUpdates ? adminUpdates : adminUpdates.slice(0, 2)).map((update, idx) => {
+                const updateReviewKey = reviewKey({ id: reviewIdOf(update), applicationId: loan?._id, entity: 'loan' });
                 const review = reviews[updateReviewKey];
                 return (
                   <div
@@ -863,7 +888,11 @@ const LoanApplicationDetail = () => {
                       </div>
                     </div>
                     <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap break-words">{update.text}</p>
-                    {review && review.note && (
+                    {/*
+                    Normal admin ko sirf action tag dikhta hai — reviewer ka note
+                    (khaas kar escalate ka andar ka reason) usse nahi dikhna chahiye.
+                    */}
+                    {review && review.note && can("updates.review") && (
                       <div className="mt-2 rounded-lg bg-white border border-slate-200 p-2">
                         <p className="text-[10px] font-semibold text-slate-600 mb-1">
                           {review.state === "verified" ? "✓ Supervisor Review:" :
@@ -881,6 +910,15 @@ const LoanApplicationDetail = () => {
                   </div>
                 )
               })
+            )}
+            {adminUpdates.length > 2 && (
+              <button
+                type="button"
+                onClick={() => setShowAllUpdates((value) => !value)}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-[#066a9c] transition hover:bg-slate-50"
+              >
+                {showAllUpdates ? "Show latest only" : `View all ${adminUpdates.length} updates`}
+              </button>
             )}
           </div>
         </section>
@@ -999,8 +1037,8 @@ const LoanApplicationDetail = () => {
         {/* ════════════ APPLICANT INFO ═══════════════════════════════════════ */}
         <InfoSection id="applicant" icon={User} accent="#066a9c" title="Applicant Information" subtitle="Personal identification and contact details">
           <DataField label="Full Name"         value={V(loan!.fullName)} />
-          <DataField label="Mobile Number"     value={V(loan!.mobile)} mono />
-          <DataField label="Email Address"     value={V(loan!.email)} />
+          <DataField label="Mobile Number"     value={V(loan!.mobile)} mono href={loan!.mobile ? `tel:${loan!.mobile}` : undefined} />
+          <DataField label="Email Address"     value={V(loan!.email)} href={loan!.email ? `mailto:${loan!.email}` : undefined} />
           <DataField label="Date of Birth"     value={DT(loan!.dob)} />
           <DataField label="PAN Number"        value={V(loan!.panNumber)} mono />
           <DataField label="Residence Status"  value={V(loan!.residenceStatus)} />
