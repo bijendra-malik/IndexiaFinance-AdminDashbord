@@ -547,9 +547,11 @@ const NotificationBell = () => {
                               {timeAgo(item.createdAt)}
                             </span>
                           </span>
-                          <span className="mt-0.5 line-clamp-2 block text-[11px] leading-relaxed text-slate-500">
-                            {item.message}
-                          </span>
+                          {item.message && (
+                            <span className="mt-0.5 line-clamp-2 block text-[11px] leading-relaxed text-slate-500">
+                              {item.message}
+                            </span>
+                          )}
                           <span className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
                             <span className="truncate font-medium text-slate-500" title={item.actorName}>
                               {adminLabel(item.actorName)}
