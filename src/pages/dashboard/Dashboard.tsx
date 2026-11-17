@@ -833,11 +833,11 @@ const AdminDashboard = () => {
               subtitle="Latest notes and recommendations on the products assigned to you"
             >
               <ul className="divide-y divide-slate-100">
-                {stats.recentUpdates.slice(0, 5).map((update) => (
+                {stats.recentUpdates.slice(0, 4).map((update) => (
                   <AdminUpdateRow key={update._id} update={update} />
                 ))}
               </ul>
-              {stats.recentUpdates.length > 5 && (
+              {stats.recentUpdates.length > 4 && (
                 <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">
                   Showing the 5 most recent of {stats.recentUpdates.length} updates.
                 </p>
