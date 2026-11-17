@@ -236,7 +236,7 @@ const SupervisorFeedbackPanel = ({ records }: { records: ReviewRecord[] }) => {
     <Panel
       className="mb-4"
       title="Supervisor feedback"
-      subtitle="Super admin / sub admin ne aapke updates par jo review kiya"
+      subtitle="What the super admin or sub admin decided on your updates"
     >
       <ul className="divide-y divide-slate-100">
         {records.slice(0, 5).map((record) => {
@@ -266,9 +266,7 @@ const SupervisorFeedbackPanel = ({ records }: { records: ReviewRecord[] }) => {
                   </span>
                 </div>
 
-                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700">
-                  {record.note || "Koi note nahi likha."}
-                </p>
+                {/* Normal admin ko sirf action tag — reviewer ka note nahi. */}
 
                 <div className="mt-1 flex items-center gap-2">
                   {record.applicationId && (
