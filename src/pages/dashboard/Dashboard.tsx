@@ -593,7 +593,7 @@ const AdminDashboard = () => {
             <Panel
               className="xl:col-span-2"
               title="Application Status"
-              subtitle={`Across all ${stats.totalApplications.toLocaleString("en-IN")} applications`}
+              subtitle="Totals of applications"
             >
               <StatusDonut slices={buckets} total={stats.totalApplications} />
             </Panel>
