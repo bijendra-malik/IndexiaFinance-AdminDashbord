@@ -238,14 +238,17 @@ const LoanApplicationDetail = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const label    = getLoanTypeLabel(loanType ?? "");
-  const { admin, canAccessLoan, isSuperAdmin, can } = useAuth();
+  const { admin, canAccessLoan, isSuperAdmin, isSubAdmin, can } = useAuth();
   const allowed  = canAccessLoan(loanType);
   /*
   Status finalise karna sirf super admin ka kaam nahi — sub admin isi liye banta
-  hai. `loans.decide` permission wala sub admin bhi decision le sakta hai; normal
-  admin sirf update + recommended status bhej sakta hai.
+  hai. `loans.decide` permission wala sub admin bhi decision le sakta hai.
+  Normal admin apne assigned product par status update kar sakta hai (backend
+  guard bhi wahi rule lagata hai); uske status change par sub admin aur super
+  admin ko notification jaata hai.
   */
   const canDecide = isSuperAdmin || can("loans.decide");
+  const canUpdateStatus = canDecide || !isSubAdmin;
 
   const [loan,  setLoan]  = useState<PersonalLoan | null>(null);
   const [error, setError] = useState("");
@@ -698,7 +701,7 @@ const LoanApplicationDetail = () => {
             </section>
           )}
 
-        {canDecide ? (
+        {canUpdateStatus ? (
           <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
@@ -707,6 +710,11 @@ const LoanApplicationDetail = () => {
                   ? "Choose a permitted next status. Approved and rejected decisions cannot be changed."
                   : "This application has a final status and can no longer be changed."}
               </p>
+              {!canDecide && nextStatuses.length > 0 && (
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Your change is saved on the application and notifies the sub admin and super admin.
+                </p>
+              )}
             </div>
             {nextStatuses.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -734,8 +742,8 @@ const LoanApplicationDetail = () => {
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Application status</h3>
               <p className="mt-1 text-xs text-slate-500">
-                You can add updates and recommend a status, but not finalise it. A sub admin (with
-                final-decision permission) or a super admin will review your recommendation here.
+                Sub admins review admin work; recording a decision needs the final-decision
+                permission. A super admin can also take this decision.
               </p>
             </div>
           </section>
