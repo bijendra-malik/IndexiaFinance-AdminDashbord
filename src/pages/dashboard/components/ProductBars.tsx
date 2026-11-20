@@ -10,15 +10,15 @@ import { BUCKET_ORDER, STATUS, applicationPath, productCount } from "../dashboar
  * aur uske rang ka dot row ke shuru me.
  * X axis: ek column per loan product (naam tilted anchor ke saath).
  * Har cell me us product ke us status ka dot + count; ek hi row ke dots halki
- * line se jude hain taaki products ke beech trend dikhe. Row/column guide lines
- * matrix ko padhne layak rakhti hain.
+ * line se jude hain taaki products ke beech trend dikhe. Row banding, row
+ * separators aur column guides matrix ko padhne layak rakhte hain.
  *
- * Columns fix width ke hain aur container horizontally scroll karta hai — 18
- * products hone par bhi labels squeeze nahi hote. Product column par click se
- * us product ki applications list khulti hai (pehle jaisa behaviour).
+ * Columns fix width ke hain aur container scroll karta hai — 18 products hone
+ * par bhi labels squeeze nahi hote. Product column par click se us product ki
+ * applications list khulti hai (pehle jaisa behaviour).
  */
 
-const MARGIN = { top: 12, right: 18, bottom: 78, left: 98 };
+const MARGIN = { top: 12, right: 18, bottom: 74, left: 98 };
 const ROW_HEIGHT = 50;
 const MIN_COLUMN = 88;
 const DOT_RADIUS = 4.5;
@@ -53,6 +53,11 @@ const ProductBars = ({ products }: { products: ProductStat[] }) => {
     [products]
   );
 
+  const grandTotal = useMemo(
+    () => ordered.reduce((sum, product) => sum + product.total, 0),
+    [ordered]
+  );
+
   if (products.length === 0) {
     return (
       <p className="px-5 pb-5 text-sm italic text-slate-400">
@@ -73,8 +78,8 @@ const ProductBars = ({ products }: { products: ProductStat[] }) => {
   const columnCenter = (index: number) => MARGIN.left + column * (index + 0.5);
 
   return (
-    <div className="px-4 pb-3">
-      <div ref={wrapRef} className="overflow-x-auto">
+    <div className="flex min-h-0 flex-1 flex-col px-5 pb-4 pt-1">
+      <div ref={wrapRef} className="min-h-0 flex-1 overflow-auto">
         <svg
           width={width}
           height={height}
@@ -83,6 +88,33 @@ const ProductBars = ({ products }: { products: ProductStat[] }) => {
             .map((product) => `${product.label} ${product.total}`)
             .join(", ")}`}
         >
+          {/* ── Row banding + separators (background) ─────────────────────── */}
+          {BUCKET_ORDER.map((bucket, rowIndex) => {
+            const rowTop = MARGIN.top + ROW_HEIGHT * rowIndex;
+
+            return (
+              <g key={`band-${bucket}`}>
+                {rowIndex % 2 === 1 && (
+                  <rect
+                    x={MARGIN.left}
+                    y={rowTop}
+                    width={plotInnerWidth}
+                    height={ROW_HEIGHT}
+                    fill="#f8fafc"
+                  />
+                )}
+                <line
+                  x1={MARGIN.left}
+                  y1={rowTop}
+                  x2={width - MARGIN.right}
+                  y2={rowTop}
+                  stroke="#eef2f7"
+                  strokeWidth={1}
+                />
+              </g>
+            );
+          })}
+
           {/* ── Column guides + clickable product columns ─────────────────── */}
           {ordered.map((product, index) => {
             const centerX = columnCenter(index);
@@ -118,7 +150,6 @@ const ProductBars = ({ products }: { products: ProductStat[] }) => {
           {/* ── Status rows: label, dots, connector ───────────────────────── */}
           {BUCKET_ORDER.map((bucket, rowIndex) => {
             const rowY = MARGIN.top + ROW_HEIGHT * (rowIndex + 0.5);
-            const rowTop = MARGIN.top + ROW_HEIGHT * rowIndex;
 
             const points = ordered
               .map((product, index) => ({
@@ -130,15 +161,6 @@ const ProductBars = ({ products }: { products: ProductStat[] }) => {
 
             return (
               <g key={bucket}>
-                <line
-                  x1={MARGIN.left}
-                  y1={rowTop}
-                  x2={width - MARGIN.right}
-                  y2={rowTop}
-                  stroke="#f1f5f9"
-                  strokeWidth={1}
-                />
-
                 {/* row label: status ka rang + naam, y-axis par */}
                 <circle cx={LABEL_DOT_X} cy={rowY} r={3.5} fill={STATUS[bucket].hex} />
                 <text
@@ -232,12 +254,11 @@ const ProductBars = ({ products }: { products: ProductStat[] }) => {
         </svg>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
         <span>Rows: application status · Columns: products</span>
-        <span className="ml-auto">
+        <span className="ml-auto tabular-nums">
           {ordered.length} product{ordered.length === 1 ? "" : "s"} ·{" "}
-          {ordered.reduce((sum, product) => sum + product.total, 0).toLocaleString("en-IN")}{" "}
-          applications
+          {grandTotal.toLocaleString("en-IN")} applications
         </span>
       </div>
     </div>
