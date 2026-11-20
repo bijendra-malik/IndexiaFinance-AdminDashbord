@@ -421,15 +421,17 @@ const AdminDashboard = () => {
     <AdminLayout>
       {/* ── Hero — role ke hisaab se rang ────────────────────────────────── */}
       <div
-        className="mb-4 overflow-hidden rounded-2xl px-5 py-5 text-white shadow-sm"
+        className="relative mb-5 overflow-hidden rounded-2xl px-5 py-5 text-white shadow-md ring-1 ring-inset ring-white/10 sm:px-6 sm:py-6"
         style={{ background: theme.gradient }}
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+        <span aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset ring-white/25">
               <theme.icon size={11} /> {theme.label}
             </span>
-            <h2 className="mt-2.5 text-2xl font-bold leading-tight">Dashboard</h2>
+            <h2 className="mt-3 text-2xl font-bold leading-tight tracking-tight sm:text-[28px]">Dashboard</h2>
             <p className="mt-1 max-w-2xl text-sm text-white/85">
               Welcome back, {admin?.name}.{" "}
               {rawStats?.dashboardMode === "customers"
@@ -454,7 +456,7 @@ const AdminDashboard = () => {
           <button
             onClick={refresh}
             disabled={loading}
-            className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold ring-1 ring-inset ring-white/30 transition hover:bg-white/25 disabled:opacity-60"
+            className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-xl bg-white/15 px-3.5 py-2 text-sm font-semibold ring-1 ring-inset ring-white/30 backdrop-blur transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-60"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Refresh
@@ -462,7 +464,7 @@ const AdminDashboard = () => {
         </div>
         <span
           aria-hidden
-          className="mt-4 block h-[3px] w-full max-w-[11rem] rounded-full"
+          className="relative mt-5 block h-[3px] w-full max-w-[11rem] rounded-full"
           style={{ background: theme.hairline, opacity: 0.75 }}
         />
       </div>
@@ -504,7 +506,7 @@ const AdminDashboard = () => {
             <>
 
           {/* ── Headline numbers ─────────────────────────────────────────── */}
-          <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Total Applications"
               value={stats.totalApplications.toLocaleString("en-IN")}
@@ -578,7 +580,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* ── Charts ───────────────────────────────────────────────────── */}
-          <div className="mb-4 grid gap-4 xl:grid-cols-5">
+          <div className="mb-5 grid items-stretch gap-4 xl:grid-cols-5">
             <Panel
               className="xl:col-span-3"
               title="Applications by Product"
@@ -863,8 +865,8 @@ const AdminDashboard = () => {
                     aria-selected={active}
                     aria-controls={`dashboard-panel-${id}`}
                     onClick={() => setTab(id)}
-                    className={`relative shrink-0 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition ${
-                      active ? "bg-white" : "text-slate-500 hover:text-slate-700"
+                    className={`relative shrink-0 rounded-t-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
+                      active ? "bg-white shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700"
                     }`}
                     style={active ? { color: theme.accent } : undefined}
                   >
