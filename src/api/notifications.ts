@@ -79,6 +79,8 @@ export interface NotificationFeed {
   items: AppNotification[];
   /** Server count — loaded page se bada ho sakta hai. */
   unread: number;
+  /** Server par kitni notifications hain — `limit` se bada ho sakta hai. */
+  total: number;
   generatedAt: string;
 }
 
@@ -101,6 +103,7 @@ interface RawNotification {
 interface RawFeed {
   notifications?: RawNotification[];
   unread?: number;
+  total?: number;
   generatedAt?: string;
 }
 
@@ -167,6 +170,7 @@ export const loadNotifications = async (
   return {
     items,
     unread: typeof data?.unread === "number" ? data.unread : items.filter((item) => !item.read).length,
+    total: typeof data?.total === "number" ? data.total : items.length,
     generatedAt: asString(data?.generatedAt) || new Date().toISOString(),
   };
 };
