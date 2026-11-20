@@ -21,6 +21,7 @@ import FranchiseDetail from "./pages/franchises/FranchiseDetail";
 import FranchiseCustomers from "./pages/franchises/FranchiseCustomers";
 import FranchisePlans from "./pages/franchises/FranchisePlans";
 import ContactEnquiries from "./pages/contact/ContactEnquiries";
+import NotificationsPage from "./pages/notifications/NotificationsPage";
 
 function App() {
   return (
@@ -45,6 +46,17 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Notification inbox — bell ka "View all" yahan aata hai. Audience
+                server decide karta hai, isliye har signed-in admin ke liye khula hai. */}
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <NotificationsPage />
                 </ProtectedRoute>
               }
             />
