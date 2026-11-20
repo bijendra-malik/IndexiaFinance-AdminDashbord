@@ -1,19 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  ArrowUpRight,
-  Bell,
-  CheckCircle2,
-  ChevronRight,
-  Clock3,
-  Loader2,
-  MessageSquare,
-  ShieldCheck,
-  UserCircle,
-  Users,
-  X,
-  XCircle,
-} from "lucide-react";
+import { ArrowUpRight, Bell, ChevronRight, Loader2, MessageSquare, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import {
   ACTOR_LEVEL_LABEL,
@@ -24,9 +11,15 @@ import {
   markNotificationsRead,
   type ActorLevel,
   type AppNotification,
-  type NotificationKind,
 } from "../../api/notifications";
 import type { AdminRole } from "../../api/adminUsers";
+import {
+  KIND_META,
+  ROLE_CHAIN,
+  ROLE_ICONS,
+  TABS_BY_ROLE,
+  timeAgo,
+} from "../notifications/notificationMeta";
 import { adminLabel } from "../../utils/auditFormat";
 import { getApiErrorMessage } from "../../utils/apiError";
 
@@ -50,63 +43,13 @@ Read state server par per admin hai, isliye unread count device-independent hai.
 
 const BRAND_GRADIENT = "linear-gradient(135deg, rgb(6,106,156), rgb(38,174,144))";
 
-interface NotificationTab {
-  key: string;
-  label: string;
-  match: (item: AppNotification) => boolean;
-}
-
-const TABS_BY_ROLE: Record<AdminRole, NotificationTab[]> = {
-  super_admin: [
-    { key: "all", label: "All", match: () => true },
-    {
-      key: "decision",
-      label: "Decisions",
-      match: (item) => item.kind === "recommendation" || item.kind === "decided",
-    },
-    { key: "escalation", label: "Escalations", match: (item) => item.kind === "escalation" },
-  ],
-  sub_admin: [
-    { key: "all", label: "All", match: () => true },
-    {
-      key: "queue",
-      label: "Needs review",
-      match: (item) => item.kind !== "escalation" && item.kind !== "decided",
-    },
-    { key: "escalation", label: "Escalations", match: (item) => item.kind === "escalation" },
-  ],
-  admin: [
-    { key: "all", label: "All", match: () => true },
-    { key: "returned", label: "Returned", match: (item) => item.kind === "returned" },
-    { key: "decided", label: "Decisions", match: (item) => item.kind === "decided" },
-  ],
-};
-
-const KIND_META: Record<
-  NotificationKind,
-  { icon: typeof Bell; tile: string }
-> = {
-  note: { icon: MessageSquare, tile: "bg-slate-100 text-slate-500" },
-  recommendation: { icon: Clock3, tile: "bg-amber-50 text-amber-600" },
-  escalation: { icon: ArrowUpRight, tile: "bg-sky-50 text-sky-600" },
-  verified: { icon: CheckCircle2, tile: "bg-emerald-50 text-emerald-600" },
-  returned: { icon: XCircle, tile: "bg-rose-50 text-rose-600" },
-  decided: { icon: ShieldCheck, tile: "bg-indigo-50 text-indigo-600" },
-};
+/** Dropdown me sirf top 10 — poora feed `/notifications` page par. */
+const PREVIEW_LIMIT = 10;
 
 const FOOTER_BY_ROLE: Record<AdminRole, { to: string; label: string }> = {
   super_admin: { to: "/activity", label: "Open Admin Updates" },
   sub_admin: { to: "/review", label: "Open Review Queue" },
   admin: { to: "/dashboard", label: "Open Dashboard" },
-};
-
-/** Reporting chain — har panel me same order, taaki hierarchy clear rahe. */
-const ROLE_CHAIN: ActorLevel[] = ["super_admin", "sub_admin", "admin"];
-
-const ROLE_ICONS: Record<ActorLevel, typeof Bell> = {
-  super_admin: ShieldCheck,
-  sub_admin: Users,
-  admin: UserCircle,
 };
 
 /** Viewer ke hisaab se ek line me uski position define. */
@@ -117,18 +60,6 @@ const ROLE_HIERARCHY_HINT: Record<AdminRole, string> = {
     "You report to the super admin: you review normal admins' work, and escalated cases go to the super admin.",
   admin:
     "You report to a sub admin: they review your notes and recommendations, and their feedback appears here.",
-};
-
-const timeAgo = (iso: string): string => {
-  const time = new Date(iso).getTime();
-  if (Number.isNaN(time)) return "";
-  const diff = Date.now() - time;
-  const minute = 60_000;
-  if (diff < minute) return "abhi";
-  if (diff < 60 * minute) return `${Math.floor(diff / minute)}m`;
-  if (diff < 24 * 60 * minute) return `${Math.floor(diff / (60 * minute))}h`;
-  if (diff < 7 * 24 * 60 * minute) return `${Math.floor(diff / (24 * 60 * minute))}d`;
-  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 };
 
 const NotificationBell = () => {
@@ -142,6 +73,8 @@ const NotificationBell = () => {
   const [items, setItems] = useState<AppNotification[]>([]);
   /* Server ka unread count — loaded page se bada ho sakta hai. */
   const [unread, setUnread] = useState(0);
+  /* Feed ka total — dropdown sirf top 10 dikhata hai, isliye "View all" par count. */
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -154,11 +87,12 @@ const NotificationBell = () => {
   useEffect(() => {
     let cancelled = false;
 
-    loadNotifications()
+    loadNotifications({ limit: PREVIEW_LIMIT })
       .then((feed) => {
         if (cancelled) return;
         setItems(feed.items);
         setUnread(feed.unread);
+        setTotal(feed.total);
         setError("");
       })
       .catch((err: unknown) => {
@@ -232,6 +166,9 @@ const NotificationBell = () => {
         : tabItems.filter((item) => actorLevel(item.actorRole) === roleFilter),
     [tabItems, roleFilter]
   );
+
+  /* Dropdown me top 10; poora feed "View all" par. */
+  const preview = visible.slice(0, PREVIEW_LIMIT);
 
   /*
   Read state server par hai, isliye UI optimistic update karti hai aur API fail
@@ -513,7 +450,7 @@ const NotificationBell = () => {
               </div>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {visible.map((item) => {
+                {preview.map((item) => {
                   const meta = KIND_META[item.kind];
                   const Icon = meta.icon;
                   const isUnread = item.read !== true;
@@ -601,9 +538,19 @@ const NotificationBell = () => {
                 {footer.label} not available
               </span>
             )}
-            <span className="text-[10px] tabular-nums text-slate-400">
-              {items.length} loaded
-            </span>
+            <Link
+              to="/notifications"
+              onClick={() => setOpen(false)}
+              className="inline-flex items-center gap-1 rounded-lg bg-[rgba(6,106,156,0.08)] px-2 py-1 text-[11px] font-bold text-[rgb(6,106,156)] transition hover:bg-[rgba(6,106,156,0.14)]"
+            >
+              View all
+              {total > PREVIEW_LIMIT && (
+                <span className="rounded-full bg-white px-1.5 py-0.5 text-[9px] tabular-nums">
+                  {total}
+                </span>
+              )}
+              <ArrowUpRight size={11} />
+            </Link>
           </div>
         </div>
       )}
