@@ -347,7 +347,7 @@ const FranchiseCustomers = () => {
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1000px] text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                      <tr>{["Franchise", "Customers", "Share", ...funnelColumns.map((column) => column.label)].map((label) => <th key={label} className="px-4 py-3">{label}</th>)}</tr>
+                      <tr>{["Franchise", "Customers", "Loans", "Share", ...funnelColumns.map((column) => column.label)].map((label) => <th key={label} className="px-4 py-3">{label}</th>)}</tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {data.byFranchise.map((row, index) => (
@@ -361,6 +361,20 @@ const FranchiseCustomers = () => {
                             {row.franchise?.franchiseId && <p className="mt-0.5 text-xs text-slate-400">{row.franchise.franchiseId}</p>}
                           </td>
                           <td className="px-4 py-3 font-semibold text-slate-700">{row.total}</td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {row.loans?.total ? (
+                              <>
+                                <span className="font-semibold text-slate-700">{row.loans.total}</span>
+                                <p className="mt-0.5 text-[11px] text-slate-400">
+                                  {row.loans.byProduct
+                                    .map((entry) => `${entry.product} ${entry.count}`)
+                                    .join(" · ")}
+                                </p>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-slate-600">{data.total > 0 ? `${((row.total / data.total) * 100).toFixed(1)}%` : "—"}</td>
                           {funnelColumns.map(({ key }) => {
                             const count = row[key];
