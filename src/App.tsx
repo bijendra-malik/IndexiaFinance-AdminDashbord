@@ -22,6 +22,7 @@ import FranchiseCustomers from "./pages/franchises/FranchiseCustomers";
 import FranchisePlans from "./pages/franchises/FranchisePlans";
 import ContactEnquiries from "./pages/contact/ContactEnquiries";
 import NotificationsPage from "./pages/notifications/NotificationsPage";
+import EligibilityChecks from "./pages/eligibility/EligibilityChecks";
 
 function App() {
   return (
@@ -99,6 +100,16 @@ function App() {
               element={
                 <ProtectedRoute requirePermission="contacts.manage">
                   <ContactEnquiries />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Website eligibility calculator ke checks — super admin only. */}
+            <Route
+              path="/eligibility-checks"
+              element={
+                <ProtectedRoute requireSuperAdmin>
+                  <EligibilityChecks />
                 </ProtectedRoute>
               }
             />
