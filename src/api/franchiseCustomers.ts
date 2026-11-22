@@ -55,6 +55,11 @@ export interface FranchiseCustomerPage {
 export interface FranchiseCustomerStatRow {
   franchise: FranchiseSummary | null;
   total: number;
+  /** Is franchise ne apne customers ke kitne loans file kiye — product-wise. */
+  loans?: {
+    total: number;
+    byProduct: { product: string; count: number }[];
+  };
   consented?: number;
   notChecked?: number;
   checked?: number;
