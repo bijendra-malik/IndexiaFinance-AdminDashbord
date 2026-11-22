@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Building2, Check, Coins, Copy, Eye, EyeOff, FileText, LoaderCircle, Mail, MapPin,
+  ArrowLeft, Building2, Check, CheckCircle2, Coins, Copy, Eye, EyeOff, FileText, LoaderCircle, Mail, MapPin,
   Phone, RefreshCw, ShieldCheck, UserRound, Users, X,
   Trash2,
 } from "lucide-react";
@@ -441,6 +441,43 @@ const FranchiseDetail = () => {
             onSubmit={handleAddUpdate}
           />
 
+          {/* ── Franchise read activity (super admin only) ─────────────────── */}
+          {isSuperAdmin && (
+            <Section
+              title="Franchise notification activity"
+              icon={<CheckCircle2 size={17} />}
+              action={
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                  {(franchise.readActivity ?? []).length} read event
+                  {(franchise.readActivity ?? []).length === 1 ? "" : "s"}
+                </span>
+              }
+            >
+              {!franchise.readActivity?.length ? (
+                <p className="text-sm text-slate-500">
+                  The franchise has not read any notification yet.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {franchise.readActivity.map((entry, index) => (
+                    <li
+                      key={`${entry.at}-${index}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-medium text-emerald-800">
+                        <CheckCircle2 size={14} className="text-emerald-600" />
+                        {entry.mode === "read_all"
+                          ? `Marked all notifications read (${entry.count})`
+                          : `Read ${entry.count} notification${entry.count === 1 ? "" : "s"}`}
+                      </span>
+                      <span className="text-xs text-emerald-700">{formatDateTime(entry.at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          )}
+
           <div className="grid gap-5 xl:grid-cols-2">
             {/* ── Business & KYC ──────────────────────────────────────────── */}
             <Section title="Business & KYC" icon={<ShieldCheck size={17} />}>
@@ -629,11 +666,88 @@ const FranchiseDetail = () => {
             </Section>
           )}
 
+          {/* ── Registered customers ──────────────────────────────────────── */}
+          {!readOnly && (
+            <Section
+              title={`Franchise customers (${franchise.customers?.total ?? 0})`}
+              icon={<Users size={17} />}
+              action={
+                <span className="text-xs text-slate-400">
+                  {franchise.customers?.total ?? 0} registered ·{" "}
+                  {franchise.customers?.data.filter((customer) => customer.loanCount > 0).length ?? 0}{" "}
+                  applied for a loan
+                </span>
+              }
+            >
+              {!franchise.customers?.data.length ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  This franchise has not registered any customer yet.
+                </p>
+              ) : (
+                <div className="-m-5 overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                        <th className="px-5 py-3">Customer</th>
+                        <th className="px-4 py-3">Mobile</th>
+                        <th className="px-4 py-3">Loans</th>
+                        <th className="px-4 py-3">Loan status</th>
+                        <th className="px-4 py-3">Registered</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {franchise.customers.data.map((customer) => (
+                        <tr key={customer._id} className="transition hover:bg-sky-50/40">
+                          <td className="px-5 py-3 font-semibold text-slate-800">
+                            {customer.fullName || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-500">{customer.mobile || "—"}</td>
+                          <td className="px-4 py-3 font-semibold text-slate-700">
+                            {customer.loanCount}
+                          </td>
+                          <td className="px-4 py-3">
+                            {customer.loans.length ? (
+                              <span className="flex flex-col gap-1">
+                                {customer.loans.map((loan, index) => (
+                                  <span
+                                    key={`${loan.applicationNo}-${index}`}
+                                    className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500"
+                                  >
+                                    <StatusPill status={loan.status} label={loan.status} />
+                                    <span>
+                                      {loan.product}
+                                      {loan.applicationNo ? ` · ${loan.applicationNo}` : ""}
+                                    </span>
+                                  </span>
+                                ))}
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                                No loan yet
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-slate-500">
+                            {formatDate(customer.createdAt)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+          )}
+
           {/* ── Loan applications ─────────────────────────────────────────── */}
           {!readOnly && <Section
             title={`Loan applications (${loanCount})`}
             icon={<FileText size={17} />}
-            action={<span className="text-xs text-slate-400">{loans.total} total</span>}
+            action={
+              <span className="text-xs text-slate-400">
+                {loans.total} of {franchise.customers?.total ?? loanCount} customers applied
+              </span>
+            }
           >
             {active?.loansError && (
               <p className="text-sm text-red-700" role="alert">
@@ -658,12 +772,14 @@ const FranchiseDetail = () => {
                       </span>
                     </h3>
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[640px] text-left text-sm">
+                      <table className="w-full min-w-[900px] text-left text-sm">
                         <thead>
                           <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
                             <th className="px-5 py-3">Applicant</th>
+                            <th className="px-4 py-3">Loan</th>
                             <th className="px-4 py-3">Amount</th>
                             <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Franchise view</th>
                             <th className="px-4 py-3">Submitted</th>
                           </tr>
                         </thead>
@@ -691,12 +807,36 @@ const FranchiseDetail = () => {
                                   <p className="mt-0.5 text-xs text-slate-400">
                                     {loan.mobile || loan.email || ""}
                                   </p>
+                                  {loan.applicationNo && (
+                                    <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+                                      {loan.applicationNo}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 font-medium text-slate-600">
+                                  {product.product}
                                 </td>
                                 <td className="px-4 py-3 tabular-nums text-slate-600">
                                   {formatCurrency(loan.loanAmount)}
                                 </td>
                                 <td className="px-4 py-3">
                                   <StatusPill status={loan.status} label={loan.status || "—"} />
+                                </td>
+                                <td className="px-4 py-3">
+                                  {loan.franchiseViewed ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                      <CheckCircle2 size={11} /> Viewed
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                                      <EyeOff size={11} /> Not viewed
+                                    </span>
+                                  )}
+                                  {loan.franchiseViewedAt && (
+                                    <p className="mt-0.5 text-[10px] text-slate-400">
+                                      {formatDateTime(loan.franchiseViewedAt)}
+                                    </p>
+                                  )}
                                 </td>
                                 <td className="px-4 py-3 text-slate-500">
                                   {formatDate(loan.createdAt)}
