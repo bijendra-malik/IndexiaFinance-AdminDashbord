@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity, ArrowLeftRight, BarChart3, Briefcase,
-  Building2, Car, ChevronDown, ChevronRight, CreditCard,
+  Building2, Car, ChevronDown, ChevronRight, ClipboardList, CreditCard,
   Database, FileText, Globe, GraduationCap,
   Home, Landmark, LayoutDashboard, LogOut, MessageSquare,
   Settings, ShieldCheck, TrendingUp, UserCircle, Users,
@@ -40,7 +40,7 @@ const FRANCHISE_LINKS = [
   { to: "/franchises",                label: "Franchises",          icon: Building2,  match: (path: string) => path.startsWith("/franchises") },
   { to: "/franchise-plans",           label: "Franchise Plans",     icon: Coins,      match: (path: string) => path === "/franchise-plans" },
   { to: "/franchise-customers",       label: "Franchise Customers", icon: Users,      match: (path: string) => path.startsWith("/franchise-customers") && path !== "/franchise-customers/stats" },
-  { to: "/franchise-customers/stats", label: "CIBIL Overview",      icon: BarChart3,  match: (path: string) => path === "/franchise-customers/stats" },
+  { to: "/franchise-customers/stats", label: "Customer Overview",      icon: BarChart3,  match: (path: string) => path === "/franchise-customers/stats" },
 ];
 
 const isFranchiseSection = (path: string) =>
@@ -219,6 +219,10 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             ...(isSuperAdmin || can("contacts.manage")
               ? [{ to: "/contact", label: "Contact", icon: MessageSquare }]
               : []),
+            /* Website eligibility calculator ke checks — sirf super admin. */
+            ...(isSuperAdmin
+              ? [{ to: "/eligibility-checks", label: "Eligibility Checks", icon: ClipboardList }]
+              : []),
           ].map(({ to, label, icon: Icon }) => {
             const isActive = location.pathname === to;
             return (
@@ -299,11 +303,11 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Franchise network</p>
           </div>
 
-          {/* Franchises dropdown — Franchises, Plans, Customers and CIBIL in one group */}
+          {/* Franchises dropdown — Franchises, Plans, Customers and Customer Overview in one group */}
           <div>
             <button type="button" onClick={() => setFranchisesOpenChoice(!franchisesOpen)}
               aria-expanded={franchisesOpen}
-              title="Franchises, plans, customers and CIBIL"
+              title="Franchises, plans, customers and customer overview"
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
               style={isOnFranchises
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
