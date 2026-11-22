@@ -56,6 +56,38 @@ export interface Franchise {
   adminUpdates?: AdminUpdate[];
   /** Latest pending decision suggested by a regular admin (super admin ke liye). */
   statusRecommendation?: import("../types/admin.types").StatusRecommendation | null;
+  /** Super admin only — franchise ki notification read activity. */
+  readActivity?: FranchiseReadActivity[];
+  /** Super admin only — registered customers + unke loans. */
+  customers?: FranchiseCustomerSummary;
+}
+
+/** Franchise ne notification kab padhi — detail page ka read trail. */
+export interface FranchiseReadActivity {
+  mode: "read" | "read_all";
+  count: number;
+  at: string;
+}
+
+export interface FranchiseCustomerSummaryLoan {
+  product: string;
+  applicationNo: string;
+  status: string;
+}
+
+export interface FranchiseCustomerSummaryRow {
+  _id: string;
+  fullName?: string;
+  mobile?: string;
+  createdAt?: string;
+  loanCount: number;
+  rejectedCount: number;
+  loans: FranchiseCustomerSummaryLoan[];
+}
+
+export interface FranchiseCustomerSummary {
+  total: number;
+  data: FranchiseCustomerSummaryRow[];
 }
 
 export interface FranchiseCredentials {
@@ -76,6 +108,10 @@ export interface FranchisePage {
 export interface FranchiseLoan {
   _id: string;
   loanType: string;
+  applicationNo?: string;
+  /** Franchise ne is loan ka status update padha ya nahi. */
+  franchiseViewed?: boolean;
+  franchiseViewedAt?: string | null;
   loanAmount: number;
   fullName?: string;
   mobile?: string;
@@ -259,6 +295,51 @@ export const getFranchise = async (id: string): Promise<Franchise> => {
   if (!franchise._id) throw new Error("Unexpected response while loading franchise details.");
   const loanCount = root.loanCount ?? nested.loanCount ?? recordOf(item).loanCount;
   franchise.loanCount = typeof loanCount === "number" ? loanCount : undefined;
+  const readActivity = root.readActivity ?? nested.readActivity;
+  franchise.readActivity = Array.isArray(readActivity)
+    ? readActivity
+        .map((value) => {
+          const entry = recordOf(value);
+          return {
+            mode: (entry.mode === "read_all" ? "read_all" : "read") as FranchiseReadActivity["mode"],
+            count: Number(entry.count ?? 0),
+            at: optionalText(entry.at) ?? "",
+          };
+        })
+        .filter((entry) => entry.at !== "")
+    : [];
+  const customersValue = recordOf(root.customers ?? nested.customers);
+  if (Array.isArray(customersValue.data)) {
+    franchise.customers = {
+      total: Number(customersValue.total ?? customersValue.data.length),
+      data: customersValue.data.map((value) => {
+        const row = recordOf(value);
+        const loans = Array.isArray(row.loans)
+          ? row.loans.map((entry) => {
+              const loan = recordOf(entry);
+              return {
+                product: optionalText(loan.product) ?? "Loan",
+                applicationNo: optionalText(loan.applicationNo) ?? "",
+                status: optionalText(loan.status) ?? "Submitted",
+              };
+            })
+          : [];
+        return {
+          _id: optionalText(row._id) ?? "",
+          fullName: optionalText(row.fullName),
+          mobile: optionalText(row.mobile),
+          createdAt: optionalText(row.createdAt),
+          loans,
+          loanCount: typeof row.loanCount === "number" ? row.loanCount : loans.length,
+          rejectedCount:
+            typeof row.rejectedCount === "number"
+              ? row.rejectedCount
+              : loans.filter((loan) => loan.status === "Rejected").length,
+        };
+      }),
+    };
+  }
+
   const actionResult = toActionResult(res.data);
   if (Object.prototype.hasOwnProperty.call(actionResult, "credentials")) {
     franchise.credentials = actionResult.credentials;
@@ -275,8 +356,11 @@ const toLoan = (value: unknown, product?: string): FranchiseLoan => {
     fullName: optionalText(loan.fullName ?? loan.applicantName ?? loan.name),
     mobile: optionalText(loan.mobile),
     email: optionalText(loan.email),
+    applicationNo: optionalText(loan.applicationNo),
     status: optionalText(loan.status),
     createdAt: optionalText(loan.createdAt),
+    franchiseViewed: loan.franchiseViewed === true,
+    franchiseViewedAt: optionalText(loan.franchiseViewedAt) ?? null,
   };
 };
 
