@@ -14,6 +14,7 @@ import MasterDetail from "./pages/masters/MasterDetail";
 import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
 import LoanApplicationDetail from "./pages/applications/LoanApplicationDetail";
 import CustomersList from "./pages/customers/CustomersList";
+import CustomerDetail from "./pages/customers/CustomerDetail";
 import RejectedLoans from "./pages/rejected/RejectedLoans";
 import LocationMasterAdmin from "./pages/masters/LocationMasterAdmin";
 import FranchiseList from "./pages/franchises/FranchiseList";
@@ -124,6 +125,16 @@ function App() {
               }
             />
 
+            {/* Ek customer ka read-only overview: profile + uske saare loans. */}
+            <Route
+              path="/customers/:id"
+              element={
+                <ProtectedRoute requireModule="customers">
+                  <CustomerDetail />
+                </ProtectedRoute>
+              }
+            />
+
             {/* Sabhi products ki rejections — reject reason highlight ke saath.
                 `/rejected-loans/customer`, `/franchise-customer`, `/franchise`
                 wahi page khulte hain, bas channel filter pehle se laga hota hai. */}
@@ -174,7 +185,7 @@ function App() {
             <Route
               path="/franchise-customers"
               element={
-                <ProtectedRoute requireSuperAdmin>
+                <ProtectedRoute requireModule="franchises">
                   <FranchiseCustomers />
                 </ProtectedRoute>
               }
@@ -183,7 +194,7 @@ function App() {
             <Route
               path="/franchise-customers/stats"
               element={
-                <ProtectedRoute requireSuperAdmin>
+                <ProtectedRoute requireModule="franchises">
                   <FranchiseCustomers />
                 </ProtectedRoute>
               }
@@ -192,7 +203,7 @@ function App() {
             <Route
               path="/franchise-customers/:id"
               element={
-                <ProtectedRoute requireSuperAdmin>
+                <ProtectedRoute requireModule="franchises">
                   <FranchiseCustomers />
                 </ProtectedRoute>
               }
