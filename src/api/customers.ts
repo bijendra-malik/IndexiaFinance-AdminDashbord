@@ -147,6 +147,59 @@ export const getCustomerApplications = async (
   return res.data.data;
 };
 
+export interface CustomerOverviewLoan {
+  _id: string;
+  applicationNo: string | null;
+  loanAmount: number | null;
+  status: string;
+  stage: string;
+  step: number;
+  submittedAt: string | null;
+  decisionAt: string | null;
+  adminNote: string;
+}
+
+export interface CustomerOverviewGroup {
+  product: string;
+  label: string;
+  count: number;
+  applications: CustomerOverviewLoan[];
+}
+
+export interface CustomerOverview {
+  customer: Customer;
+  loans: {
+    total: number;
+    byStatus: Record<string, number>;
+    data: CustomerOverviewGroup[];
+  };
+}
+
+/**
+ * GET /api/admin/customers/:id/overview
+ * Customer + uske loans ka product-wise summary (read-only). Jo products admin
+ * ko assigned hain unhi ke applications aate hain.
+ */
+export const getCustomerOverview = async (id: string): Promise<CustomerOverview> => {
+  const res = await axiosInstance.get<{
+    customer?: unknown;
+    loans?: { total?: number; byStatus?: Record<string, number>; data?: CustomerOverviewGroup[] };
+  }>(`/customers/${encodeURIComponent(id)}/overview`);
+
+  const customer = toCustomer(res.data?.customer);
+  if (!customer._id) throw new Error("Unexpected response while loading the customer overview.");
+
+  const loans = res.data?.loans;
+  return {
+    customer,
+    loans: {
+      total: typeof loans?.total === "number" ? loans.total : 0,
+      byStatus: loans?.byStatus ?? {},
+      data: Array.isArray(loans?.data) ? loans.data : [],
+    },
+  };
+};
+
 /** DELETE /api/admin/customers/:id — remove a customer account */
 export const deleteCustomer = async (id: string): Promise<void> => {
   await axiosInstance.delete(`/customers/${id}`);

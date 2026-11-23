@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  BadgeCheck, Banknote, Calendar, Check, ChevronRight,
+  BadgeCheck, Banknote, Calendar, Check, 
   Clock, Eye, FileText, LoaderCircle, Mail, Phone,
-  ToggleLeft, ToggleRight, Trash2, TrendingUp,
+  ToggleLeft, ToggleRight, Trash2, 
   UserCheck, UserX, Users, X,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
@@ -293,13 +293,10 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
 
       {/* Stat cards */}
       {customers !== null && (
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-6 grid gap-3 sm:grid-cols-3">
           <StatCard label="Total Customers"   value={customers.length} icon={Users}      bgClass="bg-sky-50"     iconClass="text-sky-600"     labelClass="text-sky-700"     subtext="All registered" />
           <StatCard label="Active Accounts"   value={totalActive}      icon={UserCheck}  bgClass="bg-emerald-50" iconClass="text-emerald-600" labelClass="text-emerald-700" subtext="Can log in" />
           <StatCard label="Inactive Accounts" value={totalInactive}    icon={UserX}      bgClass="bg-red-50"     iconClass="text-red-600"     labelClass="text-red-700"     subtext="Temporarily disabled" />
-          {!isCustomerOnly && (
-            <StatCard label="Open Applications" value="—" icon={TrendingUp} bgClass="bg-amber-50" iconClass="text-amber-600" labelClass="text-amber-700" subtext="Across all customers" />
-          )}
         </div>
       )}
 
@@ -361,7 +358,12 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
                             {initials(c.name)}
                           </div>
                           <div className="min-w-0">
-                            <span className="block font-semibold text-slate-800 transition-colors group-hover:text-sky-700">{c.name}</span>
+                            <Link
+                              to={`/customers/${encodeURIComponent(c._id)}`}
+                              className="block font-semibold text-slate-800 transition-colors group-hover:text-sky-700 hover:underline"
+                            >
+                              {c.name}
+                            </Link>
                             <span className="mt-0.5 flex items-center gap-1">
                               <span className="font-mono text-[10px] text-slate-400">{c.customerId || c._id.slice(-8)}</span>
                               {c.isVerified && <BadgeCheck size={11} className="text-emerald-500" />}
@@ -425,249 +427,218 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
         )}
       </TableCard>
 
-      {/* ── Side drawer ───────────────────────────────────────────────────── */}
+      {/* ── Customer Detail Modal (Center) ─────────────────────────────── */}
       {viewingCustomer && (
-        <div className="fixed inset-0 z-40 flex items-start justify-end bg-slate-950/40 backdrop-blur-[2px]" onClick={closeDrawer}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4" onClick={closeDrawer}>
           <section role="dialog" aria-modal="true" aria-labelledby="cust-drawer-title"
-            className="flex h-full w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl"
-            style={{ borderLeft: "1px solid #e2e8f0" }}
+            className="flex h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}>
 
-            {/* Drawer header */}
-            <header className="relative shrink-0 border-b border-slate-200">
-              <div className="absolute inset-x-0 top-0 h-1" style={{ background: BRAND_GRADIENT }} />
-              <div className="flex items-start justify-between gap-4 px-6 pb-5 pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-xl font-extrabold text-white shadow-md" style={{ background: BRAND_GRADIENT }}>
+            {/* Modal header */}
+            <header className="shrink-0 border-b border-slate-200 bg-gradient-to-r from-sky-50 to-blue-50">
+              <div className="flex items-center justify-between gap-4 px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-extrabold text-white shadow-sm" style={{ background: BRAND_GRADIENT }}>
                     {initials(viewingCustomer.name)}
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Customer profile</p>
-                    <h2 id="cust-drawer-title" className="mt-0.5 text-xl font-bold text-slate-900">{viewingCustomer.name}</h2>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
+                    <h2 id="cust-drawer-title" className="text-lg font-bold text-slate-900">{viewingCustomer.name}</h2>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-xs text-slate-500">{viewingCustomer.customerId || viewingCustomer._id.slice(-8)}</span>
                       <StatusBadge status={viewingCustomer.isActive ? "active" : "inactive"} label={viewingCustomer.isActive ? "Active" : "Inactive"} />
-                      {viewingCustomer.isVerified && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">
-                          <BadgeCheck size={11} /> Verified
-                        </span>
-                      )}
+                      {viewingCustomer.isVerified && <BadgeCheck size={14} className="text-emerald-500" />}
                     </div>
                   </div>
                 </div>
-                <div className="mt-1 flex items-center gap-2">
-                  {/* Super admin ka final decision seedha record se — feed ka "Review" yahin pura hota hai. */}
-                  {isSuperAdmin && (
-                    <button
-                      onClick={() => { setStatusNote(""); setStatusPrompt({ customer: viewingCustomer, next: !viewingCustomer.isActive }); }}
-                      disabled={isDeleting || !!updatingAppId || updatingId === viewingCustomer._id}
-                      className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold shadow-sm transition disabled:opacity-50 ${viewingCustomer.isActive ? "border-amber-200 bg-white text-amber-700 hover:bg-amber-50" : "border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"}`}
-                    >
-                      {viewingCustomer.isActive ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                      {viewingCustomer.isActive ? "Deactivate" : "Activate"}
-                    </button>
-                  )}
-                  <button onClick={closeDrawer} disabled={isDeleting || !!updatingAppId} aria-label="Close"
-                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-100 disabled:opacity-50">
-                    <X size={18} />
-                  </button>
-                </div>
+                <button onClick={closeDrawer} disabled={isDeleting || !!updatingAppId} aria-label="Close"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-100 disabled:opacity-50">
+                  <X size={18} />
+                </button>
               </div>
             </header>
 
-            {/* Drawer body */}
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-slate-50/60 p-5">
-
-              {/* Detail error */}
-              {detailError && (
-                <div className="rounded-xl border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm">
-                  <p className="font-semibold">Could not load details</p>
-                  <p className="mt-0.5 text-red-600/80">{detailError}</p>
-                  <button onClick={retryApps} className="mt-2 inline-flex items-center gap-1.5 font-semibold underline text-xs">Retry</button>
-                </div>
-              )}
-
-              {isCustomerOnly && loadingApps && (
-                <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
-                  <LoaderCircle size={16} className="animate-spin text-sky-600" />
-                  Loading customer profile…
-                </div>
-              )}
-
-              {/* Customer info */}
-              {customerDetail && (
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <h3 className="text-sm font-bold text-slate-800">Customer details</h3>
-                  </div>
-                  <dl className="grid gap-4 p-4 sm:grid-cols-2">
-                    {[
-                      { label: "Customer ID", value: customerDetail.customerId || customerDetail._id, mono: true },
-                      { label: "PAN",         value: customerDetail.panNumber || "—",                 mono: true },
-                      { label: "Date of birth", value: fmtDate(customerDetail.dob ?? null) },
-                      { label: "Mobile",      value: customerDetail.mobile || "—" },
-                      { label: "Email",       value: customerDetail.email  || "—" },
-                      { label: "Location",    value: [customerDetail.city, customerDetail.state, customerDetail.country, customerDetail.pincode].filter(Boolean).join(", ") || "—" },
-                      { label: "Account",     value: `${customerDetail.role} · ${customerDetail.isActive ? "Active" : "Inactive"}` },
-                      { label: "Registered",  value: fmtDate(customerDetail.createdAt) },
-                      { label: "Last login",  value: fmtDate(customerDetail.lastLogin) },
-                    ].map(({ label, value, mono }) => (
-                      <div key={label}>
-                        <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</dt>
-                        <dd className={`mt-1 text-sm text-slate-700 ${mono ? "font-mono text-xs break-all" : ""}`}>{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-              )}
-
-              {/* Admin work trail — regular admin likhta hai, super admin padhta + decide karta hai. */}
-              {customerDetail && (
-                <AdminUpdateThread
-                  entity="customer"
-                  updates={customerDetail.adminUpdates}
-                  recommendation={customerDetail.statusRecommendation}
-                  canWrite={!isSuperAdmin}
-                  onSubmit={handleAddUpdate}
-                />
-              )}
-
-              {/* Applications are visible only to Super Admins. */}
-              {!isCustomerOnly && (loadingApps ? (
-                <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white py-14 shadow-sm">
-                  <LoaderCircle size={22} className="animate-spin text-sky-600" />
-                  <span className="text-sm text-slate-500">Loading applications…</span>
-                </div>
-              ) : appsError ? (
-                <div className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm">
-                  <p className="font-semibold text-red-700">Could not load applications</p>
-                  <p className="mt-1 text-sm text-red-600/90">{appsError}</p>
-                  <button onClick={retryApps} className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Retry</button>
-                </div>
-              ) : sortedGroups?.length ? (
-                <>
-                  {/* Summary banner */}
-                  <div className={`rounded-2xl border p-4 shadow-sm ${openApps.length ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-slate-800">
-                          {openApps.length ? `${openApps.length} application${openApps.length > 1 ? "s" : ""} awaiting decision` : "All applications decided"}
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">{openApps.length ? "Review and record a decision." : "Customer deletion is now available."}</p>
-                      </div>
-                      <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${openApps.length ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-                        {openApps.length ? "Action required" : "Ready to delete"}
-                      </span>
+            {/* Modal body - Grid layout */}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 p-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                
+                {/* Left: Customer Info */}
+                <div className="space-y-6">
+                  {detailError && (
+                    <div className="rounded-xl border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm">
+                      <p className="font-semibold">Could not load details</p>
+                      <p className="mt-0.5 text-red-600/80">{detailError}</p>
+                      <button onClick={retryApps} className="mt-2 text-xs font-semibold underline">Retry</button>
                     </div>
-                    <div className="mt-4 grid grid-cols-3 gap-2 border-t border-current/10 pt-4 text-center">
-                      {[["Total", allApps.length], ["Open", openApps.length], ["Decided", allApps.length - openApps.length]].map(([lbl, val]) => (
-                        <div key={lbl}><p className="text-xl font-extrabold text-slate-800">{val}</p><p className="text-[10px] font-semibold uppercase text-slate-500">{lbl}</p></div>
-                      ))}
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Application groups */}
-                  {sortedGroups.map((group) => (
-                    <section key={group.product} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 ring-1 ring-sky-100">
-                            <FileText size={15} className="text-sky-600" />
+                  {loadingApps && !customerDetail && (
+                    <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-8">
+                      <LoaderCircle size={16} className="animate-spin text-sky-600" />
+                      <span className="text-sm text-slate-500">Loading…</span>
+                    </div>
+                  )}
+
+                  {/* Customer details card */}
+                  {customerDetail && (
+                    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                      <div className="border-b border-slate-100 px-4 py-3">
+                        <h3 className="text-sm font-bold text-slate-800">Customer Information</h3>
+                      </div>
+                      <dl className="space-y-3 p-4">
+                        {[
+                          { label: "Customer ID", value: customerDetail.customerId || customerDetail._id.slice(-8), mono: true },
+                          { label: "PAN", value: customerDetail.panNumber || "—", mono: true },
+                          { label: "Date of Birth", value: fmtDate(customerDetail.dob ?? null) },
+                          { label: "Mobile", value: customerDetail.mobile || "—" },
+                          { label: "Email", value: customerDetail.email || "—" },
+                          { label: "Location", value: [customerDetail.city, customerDetail.state, customerDetail.country, customerDetail.pincode].filter(Boolean).join(", ") || "—" },
+                          { label: "Registered", value: fmtDate(customerDetail.createdAt) },
+                          { label: "Last Login", value: fmtDate(customerDetail.lastLogin) },
+                        ].map(({ label, value, mono }) => (
+                          <div key={label} className="flex justify-between gap-3">
+                            <dt className="text-xs font-semibold text-slate-500">{label}</dt>
+                            <dd className={`text-sm text-slate-800 ${mono ? "font-mono text-xs" : ""}`}>{value}</dd>
                           </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-800">{getLoanTypeLabel(PRODUCT_SLUGS[group.product] ?? group.product)}</h3>
-                            <p className="text-[10px] text-slate-400">Loan applications</p>
+                        ))}
+                      </dl>
+                    </div>
+                  )}
+
+                  {/* Admin updates thread - only for super admin */}
+                  {customerDetail && !isCustomerOnly && (
+                    <AdminUpdateThread
+                      entity="customer"
+                      updates={customerDetail.adminUpdates}
+                      recommendation={customerDetail.statusRecommendation}
+                      canWrite={!isSuperAdmin}
+                      onSubmit={handleAddUpdate}
+                    />
+                  )}
+                </div>
+
+                {/* Right: Loan Applications Overview */}
+                {!isCustomerOnly && (
+                  <div className="space-y-6">
+                    {loadingApps ? (
+                      <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white py-12">
+                        <LoaderCircle size={22} className="animate-spin text-sky-600" />
+                        <span className="text-sm text-slate-500">Loading applications…</span>
+                      </div>
+                    ) : appsError ? (
+                      <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
+                        <p className="font-semibold text-red-700">Could not load applications</p>
+                        <p className="mt-1 text-sm text-red-600/90">{appsError}</p>
+                        <button onClick={retryApps} className="mt-3 text-xs font-semibold text-red-700 underline">Retry</button>
+                      </div>
+                    ) : sortedGroups?.length ? (
+                      <>
+                        {/* Loan Overview Summary */}
+                        <div className={`rounded-xl border p-4 shadow-sm ${openApps.length ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+                          <p className="font-bold text-slate-800">
+                            {openApps.length ? `${openApps.length} pending application${openApps.length > 1 ? "s" : ""}` : "All applications decided"}
+                          </p>
+                          <div className="mt-3 grid grid-cols-3 gap-2 border-t border-current/10 pt-3 text-center">
+                            {[["Total", allApps.length], ["Open", openApps.length], ["Decided", allApps.length - openApps.length]].map(([lbl, val]) => (
+                              <div key={lbl}>
+                                <p className="text-2xl font-extrabold text-slate-800">{val}</p>
+                                <p className="text-[10px] font-semibold uppercase text-slate-500">{lbl}</p>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600">{group.count}</span>
-                      </div>
-                      <div className="space-y-3 p-3">
-                        {group.applications.map((app) => {
-                          const isOpen = OPEN_STATUSES.has(app.status);
-                          const slug   = PRODUCT_SLUGS[group.product] ?? app.loanType;
-                          const canReview = isOpen && SUPPORTED_LOAN_SLUGS.has(slug);
-                          return (
-                            <article key={app._id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 hover:border-slate-300">
-                              {/* Amount + status */}
-                              <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Requested amount</p>
-                                  <p className="mt-1 flex items-center gap-1.5 text-lg font-extrabold text-slate-900">
-                                    <Banknote size={16} className="text-slate-400" />{fmtCurrency(app.loanAmount)}
-                                  </p>
-                                </div>
-                                <StatusBadge status={app.status} />
+
+                        {/* Application groups - Compact view */}
+                        {sortedGroups.map((group) => (
+                          <div key={group.product} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                              <div>
+                                <h4 className="text-sm font-bold text-slate-800">{getLoanTypeLabel(PRODUCT_SLUGS[group.product] ?? group.product)}</h4>
+                                <p className="text-xs text-slate-500">{group.count} application{group.count > 1 ? "s" : ""}</p>
                               </div>
-                              {/* Meta grid */}
-                              <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 px-3 py-2.5 sm:grid-cols-3">
-                                {[
-                                  ["Tenure", app.loanTenure ? `${app.loanTenure} months` : "—"],
-                                  ["Applied", app.createdAt ? fmtDate(app.createdAt) : "—"],
-                                  ["Credit score", typeof app.creditScore === "number" ? `${app.creditScore}/900 · ${(app.creditEligible ?? app.creditScore >= MINIMUM_CREDIT_SCORE) ? "Eligible" : "Not eligible"}` : "—"],
-                                ].map(([lbl, val]) => (
-                                  <div key={lbl}>
-                                    <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{lbl}</p>
-                                    <p className="mt-1 text-xs font-semibold text-slate-700">{val}</p>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {group.applications.map((app) => {
+                                const isOpen = OPEN_STATUSES.has(app.status);
+                                const slug = PRODUCT_SLUGS[group.product] ?? app.loanType;
+                                return (
+                                  <div key={app._id} className="p-4 hover:bg-slate-50/50">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-semibold text-slate-800">{fmtCurrency(app.loanAmount)}</p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          {app.loanTenure ? `${app.loanTenure} months · ` : ""}
+                                          {fmtDate(app.createdAt)}
+                                        </p>
+                                        {typeof app.creditScore === "number" && (
+                                          <p className="mt-1 text-xs text-slate-600">
+                                            Credit: {app.creditScore}/900
+                                          </p>
+                                        )}
+                                      </div>
+                                      <StatusBadge status={app.status} />
+                                    </div>
+                                    {isOpen && SUPPORTED_LOAN_SLUGS.has(slug) && (
+                                      <div className="mt-3 flex gap-2">
+                                        <button
+                                          onClick={() => { setDecisionNote(""); setPendingDecision({ group, application: app, status: "Rejected" }); }}
+                                          disabled={!!updatingAppId}
+                                          className="flex-1 rounded-lg border border-red-200 bg-white py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                                        >
+                                          Reject
+                                        </button>
+                                        <button
+                                          onClick={() => setPendingDecision({ group, application: app, status: "Approved" })}
+                                          disabled={!!updatingAppId}
+                                          className="flex-1 rounded-lg bg-emerald-600 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                        >
+                                          {updatingAppId === app._id ? "Saving…" : "Approve"}
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
-                                ))}
-                                <div className="col-span-2 border-t border-slate-200/80 pt-2 sm:col-span-3">
-                                  <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Application ID</p>
-                                  {SUPPORTED_LOAN_SLUGS.has(slug) ? (
-                                    <Link to={`/applications/${slug}/${app._id}`} className="mt-1 flex items-center gap-1 font-mono text-[10px] text-sky-700 hover:underline">
-                                      {app._id} <ChevronRight size={11} />
-                                    </Link>
-                                  ) : (
-                                    <p className="mt-1 font-mono text-[10px] text-slate-600">{app._id}</p>
-                                  )}
-                                </div>
-                              </div>
-                              {/* Decision actions */}
-                              {isOpen && canReview && (
-                                <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
-                                  {app.status === "Submitted" && (
-                                    <button onClick={() => setPendingDecision({ group, application: app, status: "Pending" })} disabled={!!updatingAppId}
-                                      className="rounded-xl border border-amber-200 bg-white px-3.5 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50">
-                                      Mark Pending
-                                    </button>
-                                  )}
-                                  <button onClick={() => { setDecisionNote(""); setPendingDecision({ group, application: app, status: "Rejected" }); }} disabled={!!updatingAppId}
-                                    className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
-                                    Reject
-                                  </button>
-                                  <button onClick={() => setPendingDecision({ group, application: app, status: "Approved" })} disabled={!!updatingAppId}
-                                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-                                    {updatingAppId === app._id ? <LoaderCircle size={13} className="animate-spin" /> : <Check size={13} />}
-                                    Approve
-                                  </button>
-                                </div>
-                              )}
-                              {updatingAppId === app._id && (
-                                <p className="flex items-center justify-end gap-1.5 text-xs text-slate-500"><LoaderCircle size={12} className="animate-spin" /> Saving…</p>
-                              )}
-                            </article>
-                          );
-                        })}
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    ) : appGroups !== null && (
+                      <div className="flex flex-col items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+                        <FileText size={24} className="text-emerald-500" />
+                        <p className="font-semibold text-emerald-800">No applications</p>
+                        <p className="text-sm text-emerald-700">This customer hasn't applied for any loans yet.</p>
                       </div>
-                    </section>
-                  ))}
-                </>
-              ) : appGroups !== null && (
-                <div className="flex flex-col items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">
-                  <FileText size={20} className="text-emerald-500" />
-                  <p className="font-semibold text-emerald-800">No applications</p>
-                  <p className="text-sm text-emerald-700">This customer has not applied for any loans. They can be deleted.</p>
-                </div>
-              ))}
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Drawer footer */}
-            {!isCustomerOnly && <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-slate-500">
-                  {canDelete ? "Permanently removes customer and all closed records." : "Deletion disabled until all applications are decided."}
-                </p>
-                <button onClick={() => setPendingDelete(viewingCustomer)} disabled={!canDelete || isDeleting || !!updatingAppId}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">
-                  <Trash2 size={15} />{isDeleting ? "Deleting…" : "Delete customer"}
+            {/* Modal footer - only for super admin */}
+            {!isCustomerOnly && isSuperAdmin && <footer className="shrink-0 border-t border-slate-200 bg-white px-6 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setStatusNote(""); setStatusPrompt({ customer: viewingCustomer, next: !viewingCustomer.isActive }); }}
+                    disabled={isDeleting || !!updatingAppId || updatingId === viewingCustomer._id}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-semibold transition disabled:opacity-50 ${viewingCustomer.isActive ? "border-amber-200 text-amber-700 hover:bg-amber-50" : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"}`}
+                  >
+                    {viewingCustomer.isActive ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                    {viewingCustomer.isActive ? "Deactivate" : "Activate"}
+                  </button>
+                  <Link
+                    to={`/customers/${encodeURIComponent(viewingCustomer._id)}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"
+                  >
+                    <FileText size={14} /> Full Details
+                  </Link>
+                </div>
+                <button
+                  onClick={() => setPendingDelete(viewingCustomer)}
+                  disabled={!canDelete || isDeleting || !!updatingAppId}
+                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 size={15} />{isDeleting ? "Deleting…" : "Delete"}
                 </button>
               </div>
             </footer>}
