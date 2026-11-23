@@ -211,9 +211,6 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             ...(isSuperAdmin || canAccessModule("customers")
               ? [{ to: "/customers", label: "Customers", icon: Users }]
               : []),
-            ...(!isSuperAdmin && canAccessModule("franchises")
-              ? [{ to: "/franchises", label: "Franchises", icon: Building2 }]
-              : []),
             /* Contact enquiries — super admin, ya jise `contacts.manage` mila ho.
                Regular admin ko ye section dikhta hi nahi. */
             ...(isSuperAdmin || can("contacts.manage")
@@ -295,8 +292,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             </Link>
           ))}
 
-          {/* Franchise network — super admins only */}
-          {isSuperAdmin && (
+          {/* Franchise network — super admin ya assigned franchise module */}
+          {(isSuperAdmin || canAccessModule("franchises")) && (
             <>
           {/* Section label */}
           <div className="pt-3 pb-1 px-3">
@@ -322,7 +319,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             </button>
             {franchisesOpen && (
               <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5">
-                {FRANCHISE_LINKS.map(({ to, label, icon: Icon, match }) => {
+                {(isSuperAdmin ? FRANCHISE_LINKS : FRANCHISE_LINKS.filter((link) => link.to !== "/franchise-plans")).map(({ to, label, icon: Icon, match }) => {
                   const isActive = match(location.pathname);
                   return (
                     <Link key={to} to={to}
