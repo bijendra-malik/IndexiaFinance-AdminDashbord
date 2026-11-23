@@ -35,7 +35,7 @@ Role split `src/api/notifications.ts` se aati hai, aur uska source server hai
 (`GET /api/admin/notifications`) — client koi allow-list nahi rakhta:
   super admin   -> escalated high, baaki sab low
   sub admin     -> apne scope ke naye update / recommendation / flag
-  regular admin -> apne update par aaya feedback (returned sabse upar)
+  regular admin -> apne scope ke sabhi admins ke update + apna feedback
 
 Read state server par per admin hai, isliye unread count device-independent hai.
 ==========================================
@@ -45,6 +45,11 @@ const BRAND_GRADIENT = "linear-gradient(135deg, rgb(6,106,156), rgb(38,174,144))
 
 /** Dropdown me sirf top 10 — poora feed `/notifications` page par. */
 const PREVIEW_LIMIT = 10;
+/**
+ * Server se 10 se zyada rows lete hain, taaki tab/role counts poore feed ke
+ * hisaab se hon (header me "10 of 33" galat nahi lagna chahiye).
+ */
+const FETCH_LIMIT = 50;
 
 const FOOTER_BY_ROLE: Record<AdminRole, { to: string; label: string }> = {
   super_admin: { to: "/activity", label: "Open Admin Updates" },
@@ -87,7 +92,7 @@ const NotificationBell = () => {
   useEffect(() => {
     let cancelled = false;
 
-    loadNotifications({ limit: PREVIEW_LIMIT })
+    loadNotifications({ limit: FETCH_LIMIT })
       .then((feed) => {
         if (cancelled) return;
         setItems(feed.items);
@@ -149,6 +154,7 @@ const NotificationBell = () => {
   const roleCounts = useMemo(() => {
     const base: Record<ActorLevel, number> = { super_admin: 0, sub_admin: 0, admin: 0 };
     tabItems.forEach((item) => {
+      if (!item.actorRole) return;
       base[actorLevel(item.actorRole)] += 1;
     });
     return base;
@@ -216,7 +222,7 @@ const NotificationBell = () => {
       ? "No admin updates yet. Notes and recommendations appear here as soon as they arrive."
       : role === "sub_admin"
         ? "Nothing pending review in your scope."
-        : "No feedback yet. Once your update is reviewed, it shows up here.";
+        : "No updates yet. Status changes and notes from other admins show up here.";
 
   return (
     <div ref={wrapRef} className="relative">

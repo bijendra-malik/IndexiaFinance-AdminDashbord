@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   Bell,
+  Building2,
   CheckCircle2,
   Clock3,
   MessageSquare,
@@ -36,6 +37,7 @@ export const TABS_BY_ROLE: Record<AdminRole, NotificationTab[]> = {
       match: (item) => item.kind === "recommendation" || item.kind === "decided",
     },
     { key: "escalation", label: "Escalations", match: (item) => item.kind === "escalation" },
+    { key: "franchise", label: "Franchise", match: (item) => item.kind === "franchise" },
   ],
   sub_admin: [
     { key: "all", label: "All", match: () => true },
@@ -60,6 +62,7 @@ export const KIND_META: Record<NotificationKind, { icon: typeof Bell; tile: stri
   verified: { icon: CheckCircle2, tile: "bg-emerald-50 text-emerald-600" },
   returned: { icon: XCircle, tile: "bg-rose-50 text-rose-600" },
   decided: { icon: ShieldCheck, tile: "bg-indigo-50 text-indigo-600" },
+  franchise: { icon: Building2, tile: "bg-violet-50 text-violet-600" },
 };
 
 /** Reporting chain — har panel me same order, taaki hierarchy clear rahe. */

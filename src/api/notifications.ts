@@ -10,7 +10,7 @@ Team & Access permissions se decide hoti hai:
 
   super admin -> escalated cases high priority, baaki sab low
   sub admin   -> apne scope ke naye update / recommendation / flag
-  normal admin-> apne update par aaya feedback (returned sabse upar)
+  normal admin-> apne scope ke sabhi admins ke update + apna feedback
 
 Read state server par per admin rehti hai (`NotificationRead`), isliye device
 badalne par bhi unread count wahi rehta hai. Client par koi allow-list nahi —
@@ -24,7 +24,8 @@ export type NotificationKind =
   | "escalation"
   | "verified"
   | "returned"
-  | "decided";
+  | "decided"
+  | "franchise";
 
 export type NotificationPriority = "high" | "normal" | "low";
 
@@ -73,6 +74,11 @@ export interface AppNotification {
   priority: NotificationPriority;
   /** Server ka read state — per admin, device-independent. */
   read: boolean;
+  /** Franchise row ka type: application milestone ya read activity. */
+  activityType?: "franchise_application" | "franchise_read";
+  /** Franchise ne ye notification padhi ya nahi. */
+  viewed?: boolean;
+  viewedAt?: string;
 }
 
 export interface NotificationFeed {
@@ -98,6 +104,9 @@ interface RawNotification {
   path?: string;
   createdAt?: string;
   read?: boolean;
+  activityType?: string;
+  viewed?: boolean;
+  viewedAt?: string | null;
 }
 
 interface RawFeed {
@@ -121,6 +130,7 @@ const KIND_MAP: Record<string, NotificationKind> = {
   verified: "verified",
   returned: "returned",
   decided: "decided",
+  franchise: "franchise",
 };
 
 const asString = (value: unknown, fallback = ""): string =>
@@ -153,6 +163,12 @@ const toNotification = (raw: RawNotification): AppNotification | null => {
     createdAt: asString(raw.createdAt),
     priority: toPriority(raw.priority),
     read: raw.read === true,
+    activityType:
+      raw.activityType === "franchise_read" || raw.activityType === "franchise_application"
+        ? raw.activityType
+        : undefined,
+    viewed: raw.viewed === true,
+    viewedAt: asString(raw.viewedAt ?? ""),
   };
 };
 

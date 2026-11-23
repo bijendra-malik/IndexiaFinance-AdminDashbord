@@ -4,6 +4,8 @@ import {
   ArrowUpRight,
   Bell,
   CheckCheck,
+  Eye,
+  EyeOff,
   Loader2,
   MessageSquare,
   Search,
@@ -42,7 +44,7 @@ client koi allow-list nahi rakhta:
 
   super admin -> sabki activity, escalated / decided reviews
   sub admin   -> apne scope ke normal admins ka kaam + escalations
-  normal admin-> apne updates par aaya feedback
+  normal admin-> apne scope ke sabhi admins ka update + apna feedback
 
 Read state server par per admin hai, isliye device badalne par unread count
 wahi rehta hai.
@@ -110,6 +112,7 @@ const NotificationsPage = () => {
   const roleCounts = useMemo(() => {
     const base: Record<ActorLevel, number> = { super_admin: 0, sub_admin: 0, admin: 0 };
     tabItems.forEach((entry) => {
+      if (!entry.actorRole) return;
       base[actorLevel(entry.actorRole)] += 1;
     });
     return base;
@@ -169,7 +172,7 @@ const NotificationsPage = () => {
       ? "No admin updates yet. Notes, recommendations and status changes appear here as soon as they arrive."
       : role === "sub_admin"
         ? "Nothing pending review in your scope."
-        : "No feedback yet. Once your update or status change is reviewed, it shows up here.";
+        : "No updates yet. Status changes and notes from other admins show up here.";
 
   return (
     <AdminLayout>
@@ -322,6 +325,94 @@ const NotificationsPage = () => {
                 : emptyCopy}
             </p>
           </div>
+        ) : activeTab.key === "franchise" ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Notification</th>
+                  <th className="px-4 py-3">Franchise</th>
+                  <th className="px-4 py-3">Customer / Loan</th>
+                  <th className="px-4 py-3">Viewed</th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {visible.map((item) => {
+                  const isUnread = item.read !== true;
+                  const typeLabel =
+                    item.activityType === "franchise_read"
+                      ? "Franchise activity"
+                      : "Franchise application";
+                  return (
+                    <tr
+                      key={item.id}
+                      className={`transition hover:bg-slate-50 ${isUnread ? "bg-sky-50/20" : "bg-white"}`}
+                    >
+                      <td className="px-4 py-3">
+                        <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600">
+                          {typeLabel}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p
+                          className={`font-semibold ${isUnread ? "text-slate-800" : "text-slate-600"}`}
+                        >
+                          {item.title}
+                        </p>
+                        {item.priority === "high" && (
+                          <span className="mt-1 inline-block rounded bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-600">
+                            High
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-slate-700">{item.actorName}</p>
+                        <p className="text-[11px] text-slate-400">{item.recordLabel || "—"}</p>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {item.message || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.viewed ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            <Eye size={11} /> Viewed
+                            {item.viewedAt && ` · ${timeAgo(item.viewedAt)}`}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                            <EyeOff size={11} /> Not viewed
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        className="px-4 py-3 text-xs text-slate-500"
+                        title={formatDateTime(item.createdAt)}
+                      >
+                        {formatDateTime(item.createdAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.targetPath ? (
+                          <button
+                            type="button"
+                            onClick={() => openItem(item)}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-[rgb(6,106,156)] hover:underline"
+                          >
+                            {item.targetLabel}
+                            <ArrowUpRight size={11} />
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <ul className="divide-y divide-slate-100">
             {visible.map((item) => {
@@ -353,6 +444,13 @@ const NotificationsPage = () => {
                         >
                           {item.title}
                         </span>
+                        {item.activityType && (
+                          <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600">
+                            {item.activityType === "franchise_read"
+                              ? "Franchise activity"
+                              : "Franchise application"}
+                          </span>
+                        )}
                         {item.priority === "high" && (
                           <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-600">
                             High
@@ -386,6 +484,17 @@ const NotificationsPage = () => {
                             {ACTOR_LEVEL_LABEL[actor]}
                           </span>
                         )}
+                        {item.activityType &&
+                          (item.viewed ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-700">
+                              <Eye size={10} /> Viewed
+                              {item.viewedAt ? ` · ${timeAgo(item.viewedAt)}` : ""}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
+                              <EyeOff size={10} /> Not viewed
+                            </span>
+                          ))}
                         {item.recordLabel && <span>· {item.recordLabel}</span>}
                         {item.productLabel && item.productLabel !== item.recordLabel && (
                           <span>· {item.productLabel}</span>
