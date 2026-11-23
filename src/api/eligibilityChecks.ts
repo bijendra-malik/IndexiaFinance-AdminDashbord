@@ -31,7 +31,6 @@ export interface EligibilityCheck {
   maxEmi: number;
   roi: number | null;
   tenureMonths: number | null;
-  tenureYears: number | null;
   maxLoanAmount: number | null;
   emi: number | null;
   eligible: boolean;
@@ -115,7 +114,6 @@ const toCheck = (value: unknown): EligibilityCheck => {
     maxEmi: asNumber(item.maxEmi),
     roi: asNumberOrNull(item.roi),
     tenureMonths: asNumberOrNull(item.tenureMonths),
-    tenureYears: asNumberOrNull(item.tenureYears),
     maxLoanAmount: asNumberOrNull(item.maxLoanAmount),
     emi: asNumberOrNull(item.emi),
     eligible: Boolean(item.eligible),
@@ -180,13 +178,6 @@ export const getEligibilityCheckStats = async (): Promise<EligibilityCheckStats>
       };
     }),
   };
-};
-
-export const getEligibilityCheck = async (id: string): Promise<EligibilityCheck> => {
-  const { data } = await axiosInstance.get<{ check?: unknown }>(
-    `/eligibility-checks/${encodeURIComponent(id)}`
-  );
-  return toCheck(data.check);
 };
 
 export const formatRupees = (value: number | null | undefined): string => {

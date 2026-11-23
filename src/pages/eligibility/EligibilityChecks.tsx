@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   BadgeCheck, CalendarClock, ChevronLeft, ChevronRight,
   ClipboardList, Inbox, Mail, Phone, RefreshCw, Search, X, XCircle,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { useToast } from "../../context/ToastContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 import {
   formatRupees,
@@ -29,6 +28,17 @@ record waisa hi rehta hai).
 
 const BRAND = "linear-gradient(135deg, rgb(6,106,156), rgb(38,174,144))";
 const PAGE_SIZE = 25;
+
+const EMPTY_STATS: EligibilityCheckStats = {
+  total: 0,
+  eligible: 0,
+  notEligible: 0,
+  today: 0,
+  todayEligible: 0,
+  eligibleRate: 0,
+  avgNetIncome: 0,
+  byProduct: [],
+};
 
 const dateTime = (value?: string | null) => {
   if (!value) return "—";
@@ -64,8 +74,6 @@ const Pricing = ({ check }: { check: EligibilityCheck }) => {
 };
 
 const EligibilityChecks = () => {
-  const { showToast } = useToast();
-
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [product, setProduct] = useState("all");
@@ -73,32 +81,13 @@ const EligibilityChecks = () => {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [data, setData] = useState<EligibilityCheckList | null>(null);
   const [stats, setStats] = useState<EligibilityCheckStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<EligibilityCheck | null>(null);
-
-  const load = useCallback(
-    async (showSpinner = true) => {
-      if (showSpinner) setLoading(true);
-      setError("");
-      try {
-        const [list, statResult] = await Promise.all([
-          getEligibilityChecks({ search, product, eligible, from, to, page, limit: PAGE_SIZE }),
-          getEligibilityCheckStats(),
-        ]);
-        setData(list);
-        setStats(statResult);
-      } catch (loadError) {
-        setError(getApiErrorMessage(loadError, "Could not load eligibility checks."));
-      } finally {
-        if (showSpinner) setLoading(false);
-      }
-    },
-    [search, product, eligible, from, to, page]
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -125,19 +114,13 @@ const EligibilityChecks = () => {
     return () => {
       cancelled = true;
     };
-  }, [search, product, eligible, from, to, page]);
+  }, [search, product, eligible, from, to, page, reloadKey]);
 
   const checks = data?.checks ?? [];
-  const summary = stats ?? {
-    total: 0,
-    eligible: 0,
-    notEligible: 0,
-    today: 0,
-    todayEligible: 0,
-    eligibleRate: 0,
-    avgNetIncome: 0,
-    byProduct: [],
-  };
+  const totalCount = data?.total ?? 0;
+  const currentPage = data?.page ?? 1;
+  const totalPages = data?.pages ?? 1;
+  const summary = stats ?? EMPTY_STATS;
 
   const resetPage = () => {
     setLoading(true);
@@ -151,8 +134,8 @@ const EligibilityChecks = () => {
   };
 
   const refresh = () => {
-    void load();
-    showToast("Eligibility checks refreshed", "success");
+    setLoading(true);
+    setReloadKey((current) => current + 1);
   };
 
   const cards = [
@@ -320,14 +303,13 @@ const EligibilityChecks = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setLoading(true);
                   setSearch("");
                   setSearchInput("");
                   setProduct("all");
                   setEligible("all");
                   setFrom("");
                   setTo("");
-                  setPage(1);
+                  resetPage();
                 }}
                 className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
               >
@@ -477,10 +459,10 @@ const EligibilityChecks = () => {
           </div>
         )}
 
-        {(data?.pages ?? 1) > 1 && (
+        {totalPages > 1 && (
           <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">
             <span>
-              {data?.total ?? 0} checks · page {data?.page ?? 1} of {data?.pages ?? 1}
+              {totalCount} checks · page {currentPage} of {totalPages}
             </span>
             <div className="flex gap-1.5">
               <button
@@ -489,7 +471,7 @@ const EligibilityChecks = () => {
                   setLoading(true);
                   setPage((current) => Math.max(1, current - 1));
                 }}
-                disabled={(data?.page ?? 1) <= 1}
+                disabled={currentPage <= 1}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 font-semibold disabled:opacity-40"
               >
                 <ChevronLeft size={12} /> Prev
@@ -498,9 +480,9 @@ const EligibilityChecks = () => {
                 type="button"
                 onClick={() => {
                   setLoading(true);
-                  setPage((current) => Math.min(data?.pages ?? 1, current + 1));
+                  setPage((current) => Math.min(totalPages, current + 1));
                 }}
-                disabled={(data?.page ?? 1) >= (data?.pages ?? 1)}
+                disabled={currentPage >= totalPages}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 font-semibold disabled:opacity-40"
               >
                 Next <ChevronRight size={12} />

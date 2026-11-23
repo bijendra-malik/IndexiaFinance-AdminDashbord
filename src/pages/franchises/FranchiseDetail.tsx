@@ -14,14 +14,14 @@ import { LOAN_TYPES } from "../../constants/loanTypes";
 import { SUPPORTED_LOAN_SLUGS } from "../../api/personalLoans";
 import {
   addFranchiseUpdate,
-  approveFranchise,
   deleteFranchise,
   getApiErrorMessage,
   getFranchise,
   getFranchiseLoans,
-  rejectFranchise,
   resetFranchisePassword,
+  setFranchiseStatus,
   type Franchise,
+  type FranchiseStatus,
   type FranchiseLoan,
   type FranchiseLoans,
 } from "../../api/franchises";
@@ -74,7 +74,6 @@ const FranchiseDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isSuperAdmin } = useAuth();
-  const readOnly = !isSuperAdmin;
   const { showToast } = useToast();
   const [refreshKey, setRefreshKey] = useState(0);
   const [result, setResult] = useState<{
@@ -88,6 +87,7 @@ const FranchiseDetail = () => {
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [confirmApprovedReject, setConfirmApprovedReject] = useState(false);
   const [confirmResetPassword, setConfirmResetPassword] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<FranchiseStatus | null>(null);
   const [showReject, setShowReject] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -98,35 +98,6 @@ const FranchiseDetail = () => {
     if (!id) return;
     let cancelled = false;
     const key = `${id}:${refreshKey}`;
-    if (readOnly) {
-      getFranchise(id)
-        .then((franchise) => {
-          if (!cancelled) {
-            setResult({
-              key,
-              franchise,
-              loans: EMPTY_LOANS,
-              detailError: "",
-              loansError: "",
-            });
-          }
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) {
-            setResult({
-              key,
-              franchise: null,
-              loans: EMPTY_LOANS,
-              detailError: getApiErrorMessage(error, "Unable to load franchise details."),
-              loansError: "",
-            });
-          }
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-
     Promise.allSettled([getFranchise(id), getFranchiseLoans(id)]).then(([detail, loans]) => {
       if (cancelled) return;
       setResult({
@@ -146,7 +117,7 @@ const FranchiseDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, refreshKey, readOnly]);
+  }, [id, refreshKey]);
 
   const active = result?.key === `${id}:${refreshKey}` ? result : null;
   const franchise = active?.franchise ?? null;
@@ -165,31 +136,46 @@ const FranchiseDetail = () => {
     );
   };
 
-  const handleApprove = async () => {
-    if (!franchise) return;
+  /*
+  Status change ka ek hi path — dropdown aur Approve/Reject buttons sab isi ko
+  call karte hain, taaki credentials refresh har jagah same rahe.
+  */
+  const applyStatus = async (next: FranchiseStatus, note?: string) => {
+    if (!franchise) return false;
     setActionLoading(true);
     try {
-      const response = await approveFranchise(franchise._id);
+      const response = await setFranchiseStatus(franchise._id, next, note);
       showToast(
-        response.credentials?.loginId
+        next === "Approved"
           ? "Franchise approved. Login credentials are available below."
-          : "Franchise approved. Refresh details to load the server-issued credentials."
+          : `Franchise status changed to ${next}.`
       );
-      setConfirmApprove(false);
+      /* Refetch chalta hai — patched data rakhne se skeleton flash nahi hota. */
       const nextRefreshKey = refreshKey + 1;
       setRefreshKey(nextRefreshKey);
-      if (Object.prototype.hasOwnProperty.call(response, "credentials")) {
-        patchDetail(nextRefreshKey, {
-          ...response.franchise,
-          status: response.franchise?.status ?? "Approved",
-          credentials: response.credentials,
-        });
-      }
+      patchDetail(nextRefreshKey, {
+        ...response.franchise,
+        status: next,
+        ...(Object.prototype.hasOwnProperty.call(response, "credentials")
+          ? { credentials: response.credentials }
+          : {}),
+      });
+      return true;
     } catch (error) {
-      showToast(getApiErrorMessage(error, "Unable to approve this franchise."), "error");
+      showToast(getApiErrorMessage(error, "Unable to change the franchise status."), "error");
+      return false;
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleApprove = async () => {
+    if (await applyStatus("Approved")) setConfirmApprove(false);
+  };
+
+  /* Status dropdown ka decision — confirm ke baad hi API call hoti hai. */
+  const handleSetStatus = async () => {
+    if (pendingStatus && (await applyStatus(pendingStatus))) setPendingStatus(null);
   };
 
   const handleResetPassword = async () => {
@@ -220,19 +206,9 @@ const FranchiseDetail = () => {
 
   const handleReject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!franchise) return;
-    setActionLoading(true);
-    try {
-      await rejectFranchise(franchise._id, rejectNote.trim());
-      showToast("Franchise application rejected.");
-      setShowReject(false);
-      setRejectNote("");
-      setRefreshKey((key) => key + 1);
-    } catch (error) {
-      showToast(getApiErrorMessage(error, "Unable to reject this franchise."), "error");
-    } finally {
-      setActionLoading(false);
-    }
+    if (!(await applyStatus("Rejected", rejectNote.trim()))) return;
+    setShowReject(false);
+    setRejectNote("");
   };
 
   /* Regular admin ka update / recommendation — final authority super admin ke paas. */
@@ -280,9 +256,10 @@ const FranchiseDetail = () => {
   const isPending = isStatus(franchise?.status, "pending");
   const isApproved = isStatus(franchise?.status, "approved");
   const isRejected = isStatus(franchise?.status, "rejected");
+  /* None/Registered bhi Pending hi maane jaate hain — select ke options fixed hain. */
+  const statusValue: FranchiseStatus = isApproved ? "Approved" : isRejected ? "Rejected" : "Pending";
   const credentials = franchise?.credentials;
   const loginId = credentials?.loginId || franchise?.franchiseId;
-  const loanCount = franchise?.loanCount ?? loans.total;
 
   return (
     <AdminLayout>
@@ -295,13 +272,13 @@ const FranchiseDetail = () => {
           <ArrowLeft size={16} /> Back to franchises
         </Link>
         <div className="flex items-center gap-2">
-          {!readOnly && <Link
+          {<Link
             to={franchise ? `/franchise-customers?franchise=${encodeURIComponent(franchise.franchiseId || franchise._id)}` : "/franchise-customers"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
           >
             <Users size={14} /> View customers
           </Link>}
-          {!readOnly && franchise && (
+          {isSuperAdmin && franchise && (
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
@@ -370,8 +347,27 @@ const FranchiseDetail = () => {
                 </div>
               </div>
 
-              {!readOnly && (isPending || isApproved) && (
-                <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <label
+                  htmlFor="franchise-status"
+                  className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400"
+                >
+                  Status
+                </label>
+                <select
+                  id="franchise-status"
+                  value={statusValue}
+                  onChange={(event) => setPendingStatus(event.target.value as FranchiseStatus)}
+                  disabled={actionLoading}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-[rgb(6,106,156)] disabled:opacity-50"
+                >
+                  {(["Pending", "Approved", "Rejected"] as FranchiseStatus[]).map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+                {!isRejected && (
                   <button
                     type="button"
                     onClick={() => (isApproved ? setConfirmApprovedReject(true) : setShowReject(true))}
@@ -379,18 +375,18 @@ const FranchiseDetail = () => {
                   >
                     <X size={15} /> Reject
                   </button>
-                  {isPending && (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmApprove(true)}
-                      className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110"
-                      style={{ background: BRAND_GRADIENT }}
-                    >
-                      <Check size={15} /> Approve
-                    </button>
-                  )}
-                </div>
-              )}
+                )}
+                {isPending && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmApprove(true)}
+                    className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110"
+                    style={{ background: BRAND_GRADIENT }}
+                  >
+                    <Check size={15} /> Approve
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Quick facts */}
@@ -441,9 +437,8 @@ const FranchiseDetail = () => {
             onSubmit={handleAddUpdate}
           />
 
-          {/* ── Franchise read activity (super admin only) ─────────────────── */}
-          {isSuperAdmin && (
-            <Section
+          {/* ── Franchise read activity ─────────────────────────────────────── */}
+          <Section
               title="Franchise notification activity"
               icon={<CheckCircle2 size={17} />}
               action={
@@ -476,7 +471,6 @@ const FranchiseDetail = () => {
                 </ul>
               )}
             </Section>
-          )}
 
           <div className="grid gap-5 xl:grid-cols-2">
             {/* ── Business & KYC ──────────────────────────────────────────── */}
@@ -564,7 +558,7 @@ const FranchiseDetail = () => {
           )}
 
           {/* ── Credentials ───────────────────────────────────────────────── */}
-          {!readOnly && isApproved && (
+          {isApproved && (
             <Section
               title="Franchise login credentials"
               icon={<ShieldCheck size={17} />}
@@ -667,7 +661,7 @@ const FranchiseDetail = () => {
           )}
 
           {/* ── Registered customers ──────────────────────────────────────── */}
-          {!readOnly && (
+          {(
             <Section
               title={`Franchise customers (${franchise.customers?.total ?? 0})`}
               icon={<Users size={17} />}
@@ -740,12 +734,12 @@ const FranchiseDetail = () => {
           )}
 
           {/* ── Loan applications ─────────────────────────────────────────── */}
-          {!readOnly && <Section
-            title={`Loan applications (${loanCount})`}
+          {<Section
+            title={`Loan applications (${loans.total})`}
             icon={<FileText size={17} />}
             action={
               <span className="text-xs text-slate-400">
-                {loans.total} of {franchise.customers?.total ?? loanCount} customers applied
+                {loans.total} of {franchise.customers?.total ?? loans.total} customers applied
               </span>
             }
           >
@@ -853,6 +847,24 @@ const FranchiseDetail = () => {
             )}
           </Section>}
         </div>
+      )}
+
+      {franchise && pendingStatus && (
+        <ConfirmDialog
+          title={`Change status to ${pendingStatus}?`}
+          message={
+            pendingStatus === "Approved"
+              ? "Approval creates the franchise login ID when it is missing and sets the password to the registered PAN."
+              : pendingStatus === "Rejected"
+                ? "Rejecting disables the franchise login and records the change in the admin trail."
+                : "The franchise stays on record but cannot log in until it is approved again."
+          }
+          confirmLabel={`Set ${pendingStatus}`}
+          danger={pendingStatus === "Rejected"}
+          isSubmitting={actionLoading}
+          onConfirm={() => void handleSetStatus()}
+          onCancel={() => setPendingStatus(null)}
+        />
       )}
 
       {franchise && confirmResetPassword && (

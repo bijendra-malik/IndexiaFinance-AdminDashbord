@@ -28,7 +28,7 @@ interface AllCounts { total: number; pending: number; approved: number; rejected
 const buildKey = (status: string, search: string, page: number, rk: number) =>
   `${status}|${search}|${page}|${rk}`;
 
-const FranchiseList = ({ readOnly = false }: { readOnly?: boolean }) => {
+const FranchiseList = () => {
   const [page, setPage]                   = useState(1);
   const [search, setSearch]               = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -40,7 +40,6 @@ const FranchiseList = ({ readOnly = false }: { readOnly?: boolean }) => {
   const [isDeleting, setIsDeleting]       = useState(false);
   const { showToast }                     = useToast();
   const { isSuperAdmin }                  = useAuth();
-  const isReadOnly                        = readOnly || !isSuperAdmin;
 
   // Paginated list
   useEffect(() => {
@@ -103,9 +102,7 @@ const FranchiseList = ({ readOnly = false }: { readOnly?: boolean }) => {
     <AdminLayout>
       <PageHeader
         icon={Building2} title="Franchises"
-        subtitle={isReadOnly
-          ? "Franchise registrations."
-          : "Review franchise registrations and approve or reject their applications."}
+        subtitle="Review franchise registrations and approve or reject their applications."
         onRefresh={() => setRefreshKey((k) => k + 1)} refreshing={loading}
       />
 
@@ -165,17 +162,6 @@ const FranchiseList = ({ readOnly = false }: { readOnly?: boolean }) => {
                     <tr key={item._id} className="group transition-colors hover:bg-sky-50/30">
                       {/* Identity */}
                       <td className="px-4 py-3.5">
-                        {isReadOnly ? (
-                          <div className="flex items-center gap-3">
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold text-white shadow-sm" style={{ background: BRAND_GRADIENT }}>
-                              {initialsOf(displayName(item))}
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block max-w-[13rem] truncate font-semibold text-slate-800">{displayName(item)}</span>
-                              <span className="block max-w-[13rem] truncate text-xs text-slate-400">{contactName(item) || "—"}</span>
-                            </span>
-                          </div>
-                        ) : (
                         <Link to={`/franchises/${encodeURIComponent(item._id)}`} className="flex items-center gap-3">
                           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold text-white shadow-sm" style={{ background: BRAND_GRADIENT }}>
                             {initialsOf(displayName(item))}
@@ -185,7 +171,6 @@ const FranchiseList = ({ readOnly = false }: { readOnly?: boolean }) => {
                             <span className="block max-w-[13rem] truncate text-xs text-slate-400">{contactName(item) || "—"}</span>
                           </span>
                         </Link>
-                        )}
                       </td>
                       {/* Login ID / PAN */}
                       <td className="px-4 py-3.5">
@@ -221,7 +206,7 @@ const FranchiseList = ({ readOnly = false }: { readOnly?: boolean }) => {
                             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
                             View <ChevronRight size={13} />
                           </Link>
-                          {!isReadOnly && <button type="button" onClick={() => setPendingDelete(item)}
+                          {isSuperAdmin && <button type="button" onClick={() => setPendingDelete(item)}
                             disabled={isDeleting}
                             aria-label={`Delete ${displayName(item)}`}
                             title="Delete this franchise permanently"

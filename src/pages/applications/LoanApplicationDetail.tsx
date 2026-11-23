@@ -712,7 +712,7 @@ const LoanApplicationDetail = () => {
               </p>
               {!canDecide && nextStatuses.length > 0 && (
                 <p className="mt-1 text-[11px] text-slate-400">
-                  Your change is saved on the application and notifies the sub admin and super admin.
+                  Saved on the application immediately — the sub admin and super admin are notified.
                 </p>
               )}
             </div>

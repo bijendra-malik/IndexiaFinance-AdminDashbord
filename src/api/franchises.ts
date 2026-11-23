@@ -50,15 +50,14 @@ export interface Franchise {
   address?: string;
   pincode?: string;
   experience?: string;
-  loanCount?: number;
   credentials?: FranchiseCredentials | null;
   /** Admin work trail — document check, visit, verification, flag, decision. */
   adminUpdates?: AdminUpdate[];
   /** Latest pending decision suggested by a regular admin (super admin ke liye). */
   statusRecommendation?: import("../types/admin.types").StatusRecommendation | null;
-  /** Super admin only — franchise ki notification read activity. */
+  /** Franchise ki notification read activity. */
   readActivity?: FranchiseReadActivity[];
-  /** Super admin only — registered customers + unke loans. */
+  /** Registered customers + unke loans. */
   customers?: FranchiseCustomerSummary;
 }
 
@@ -233,7 +232,6 @@ const toFranchise = (value: unknown): Franchise => {
     address: firstText(item.address, location.address, location.fullAddress),
     pincode: firstText(item.pincode, item.pinCode, location.pincode, location.pinCode),
     experience: firstText(item.experience, business.experience),
-    loanCount: typeof item.loanCount === "number" ? item.loanCount : undefined,
     credentials,
     adminUpdates: parseAdminUpdates(item.adminUpdates),
     statusRecommendation: toStatusRecommendation(item.statusRecommendation),
@@ -293,8 +291,6 @@ export const getFranchise = async (id: string): Promise<Franchise> => {
   const item = root.franchise ?? nested.franchise ?? root.data ?? res.data;
   const franchise = toFranchise(item);
   if (!franchise._id) throw new Error("Unexpected response while loading franchise details.");
-  const loanCount = root.loanCount ?? nested.loanCount ?? recordOf(item).loanCount;
-  franchise.loanCount = typeof loanCount === "number" ? loanCount : undefined;
   const readActivity = root.readActivity ?? nested.readActivity;
   franchise.readActivity = Array.isArray(readActivity)
     ? readActivity
@@ -394,13 +390,23 @@ export const getFranchiseLoans = async (id: string): Promise<FranchiseLoans> => 
   };
 };
 
-export const approveFranchise = async (id: string): Promise<FranchiseActionResult> => {
-  const res = await axiosInstance.patch<unknown>(`/franchises/${encodeURIComponent(id)}/approve`);
-  return toActionResult(res.data);
-};
+export type FranchiseStatus = "Pending" | "Approved" | "Rejected";
 
-export const rejectFranchise = async (id: string, note: string): Promise<void> => {
-  await axiosInstance.patch(`/franchises/${encodeURIComponent(id)}/reject`, { note });
+/**
+ * PATCH /api/admin/franchises/:id/status
+ * Koi bhi status set karo — approve/reject bhi isi service path se jaate hain,
+ * isliye rejected application ko dobara pending ya approved kiya ja sakta hai.
+ */
+export const setFranchiseStatus = async (
+  id: string,
+  status: FranchiseStatus,
+  note?: string
+): Promise<FranchiseActionResult> => {
+  const res = await axiosInstance.patch<unknown>(
+    `/franchises/${encodeURIComponent(id)}/status`,
+    { status, ...(note ? { note } : {}) }
+  );
+  return toActionResult(res.data);
 };
 
 /**
