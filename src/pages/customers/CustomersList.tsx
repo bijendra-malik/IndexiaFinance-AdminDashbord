@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  BadgeCheck, Banknote, Calendar, Check, 
-  Clock, Eye, FileText, LoaderCircle, Mail, Phone,
+  BadgeCheck, Calendar, Clock, Eye, FileText, LoaderCircle, Mail, Phone,
   ToggleLeft, ToggleRight, Trash2, 
   UserCheck, UserX, Users, X,
 } from "lucide-react";
@@ -24,7 +23,7 @@ import {
   type Customer, type CustomerApplicationGroup,
 } from "../../api/customers";
 import {
-  MINIMUM_CREDIT_SCORE, SUPPORTED_LOAN_SLUGS, updateLoanStatusBySlug,
+  SUPPORTED_LOAN_SLUGS, updateLoanStatusBySlug,
   type LoanStatus, type PersonalLoan,
 } from "../../api/personalLoans";
 import { getLoanTypeLabel } from "../../constants/loanTypes";
@@ -55,6 +54,16 @@ const fmtCurrency = (n?: number) =>
 const initials = (name: string) =>
   name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
 
+/* Chips ke liye chhota naam: "Personal Loan" → "Personal", "Credit Card" waisa hi. */
+const shortLoanLabel = (slug: string) =>
+  getLoanTypeLabel(slug).replace(/\s*Loan$/i, "") || slug;
+
+interface CustomerLoanSummary {
+  total: number;
+  open: number;
+  types: string[];
+}
+
 // ── CustomersList ─────────────────────────────────────────────────────────────
 const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => {
   const { showToast } = useToast();
@@ -68,6 +77,9 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
   const [activeFilter, setActiveFilter]   = useState<"all" | "active" | "inactive">("all");
   const [page, setPage]                   = useState(1);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
+
+  // Per-customer loan roll-up for the list ("kitne loans, kaunse products").
+  const [loanSummary, setLoanSummary]     = useState<Record<string, CustomerLoanSummary | "error">>({});
 
   // Drawer state
   const [viewingCustomer, setViewingCustomer]   = useState<Customer | null>(null);
@@ -164,6 +176,38 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
   const paged      = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const totalActive   = customers?.filter((c) => c.isActive).length ?? 0;
   const totalInactive = (customers?.length ?? 0) - totalActive;
+
+  /* List endpoint loan counts nahi deta, isliye sirf visible page ke customers
+     ke applications ek saath load hote hain (ek baar per page). */
+  const pageCustomerIds = paged.map((c) => c._id).join(",");
+  useEffect(() => {
+    if (!pageCustomerIds) return;
+    let cancelled = false;
+
+    void Promise.all(pageCustomerIds.split(",").map(async (id) => {
+      try {
+        const groups = await getCustomerApplications(id);
+        const apps = groups.flatMap((g) => g.applications);
+        const types = [...new Set(groups.map((g) => PRODUCT_SLUGS[g.product] ?? g.product))];
+        return [id, {
+          total: apps.length,
+          open: apps.filter((a) => OPEN_STATUSES.has(a.status)).length,
+          types,
+        } as CustomerLoanSummary] as const;
+      } catch {
+        return [id, "error"] as const;
+      }
+    })).then((entries) => {
+      if (cancelled) return;
+      setLoanSummary((cur) => {
+        const next = { ...cur };
+        entries.forEach(([id, value]) => { next[id] = value; });
+        return next;
+      });
+    });
+
+    return () => { cancelled = true; };
+  }, [pageCustomerIds]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openDrawer = (c: Customer) => {
@@ -341,10 +385,10 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-sm">
+              <table className="w-full min-w-[1020px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/80 text-left">
-                    <Th>Customer</Th><Th>Contact</Th><Th>Status</Th>
+                    <Th>Customer</Th><Th>Contact</Th><Th>Loans</Th><Th>Status</Th>
                     <Th>Joined</Th><Th>Last login</Th><Th right>Actions</Th>
                   </tr>
                 </thead>
@@ -377,6 +421,56 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
                           <span className="flex items-center gap-1.5 text-slate-600"><Phone size={11} className="text-slate-400" />{c.mobile}</span>
                           <span className="flex items-center gap-1.5 truncate text-[11px] text-slate-400"><Mail size={11} />{c.email}</span>
                         </div>
+                      </td>
+                      {/* Loans — kitne loans aur chhote product chips */}
+                      <td className="px-4 py-3.5">
+                        {(() => {
+                          const summary = loanSummary[c._id];
+                          if (summary === undefined) {
+                            return <span className="text-[11px] text-slate-400">Loading…</span>;
+                          }
+                          if (summary === "error") {
+                            return <span className="text-[11px] text-slate-300">—</span>;
+                          }
+                          if (summary.total === 0) {
+                            return <span className="text-[11px] text-slate-400">No loans</span>;
+                          }
+                          const shown = summary.types.slice(0, 2);
+                          const rest = summary.types.length - shown.length;
+                          return (
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
+                                  {summary.total} loan{summary.total > 1 ? "s" : ""}
+                                </span>
+                                {summary.open > 0 && (
+                                  <span className="whitespace-nowrap rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                                    {summary.open} open
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {shown.map((slug) => (
+                                  <span
+                                    key={slug}
+                                    title={getLoanTypeLabel(slug)}
+                                    className="rounded-full border border-sky-100 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700"
+                                  >
+                                    {shortLoanLabel(slug)}
+                                  </span>
+                                ))}
+                                {rest > 0 && (
+                                  <span
+                                    title={summary.types.slice(shown.length).map(getLoanTypeLabel).join(", ")}
+                                    className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500"
+                                  >
+                                    +{rest}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       {/* Status */}
                       <td className="px-4 py-3.5">
