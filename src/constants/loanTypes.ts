@@ -46,3 +46,31 @@ export const LOAN_TYPES: LoanTypeDef[] = [
 
 export const getLoanTypeLabel = (slug: string): string =>
   LOAN_TYPES.find((l) => l.slug === slug)?.label ?? slug;
+
+/** Overview/list API product key ("creditCard") route slug ("credit-card") me. */
+export const PRODUCT_SLUGS: Record<string, string> = {
+  personal: "personal-loan", business: "business-loan", home: "home-loan",
+  lap: "loan-against-property", balanceTransfer: "balance-transfer",
+  projectLoan: "project-loan", vehicleLoan: "car-loan", educationLoan: "education-loan",
+  creditCard: "credit-card", workingCapital: "working-capital",
+  commercialPurchase: "commercial-purchase", leaseRentalDiscounting: "lease-rental-discounting",
+  odCcLimit: "odcc-limit", loanAgainstShare: "loan-against-share", npaLoan: "npa-loan",
+  goldLoan: "gold-loan", fdiLoan: "fdi-loan", filmFunding: "film-funding",
+};
+
+/**
+ * Kisi bhi product value ko route slug me badalta hai — API key, already-slug,
+ * ya label ("Credit card") teeno chalte hain, warna detail route nahi milta.
+ */
+export const resolveLoanSlug = (product?: string | null): string => {
+  const value = (product ?? "").trim();
+  if (!value) return "";
+  const mapped = PRODUCT_SLUGS[value] ?? value;
+  const known = LOAN_TYPES.find(
+    (type) =>
+      type.slug === mapped ||
+      type.label.toLowerCase() === value.toLowerCase() ||
+      type.label.toLowerCase() === mapped.toLowerCase()
+  );
+  return known?.slug ?? mapped;
+};
