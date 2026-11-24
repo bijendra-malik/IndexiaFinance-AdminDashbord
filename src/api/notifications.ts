@@ -79,6 +79,12 @@ export interface AppNotification {
   /** Franchise ne ye notification padhi ya nahi. */
   viewed?: boolean;
   viewedAt?: string;
+  /**
+   * Record kis channel ka hai — server `channel` (ya `entity` / customerType)
+   * bheje to wahi, warna khaali. Franchise-customer rows ko `/customers/:id`
+   * se alag pehchaanne ka reliable source yahi hai; URL par guess nahi karte.
+   */
+  channel?: "customer" | "franchise-customer" | "franchise";
 }
 
 export interface NotificationFeed {
@@ -107,6 +113,8 @@ interface RawNotification {
   activityType?: string;
   viewed?: boolean;
   viewedAt?: string | null;
+  channel?: string;
+  customerType?: string;
 }
 
 interface RawFeed {
@@ -139,6 +147,16 @@ const asString = (value: unknown, fallback = ""): string =>
 const toPriority = (value: unknown): NotificationPriority =>
   value === "high" || value === "low" ? value : "normal";
 
+const CHANNELS = ["customer", "franchise-customer", "franchise"] as const;
+type NotificationChannel = (typeof CHANNELS)[number];
+
+const toChannel = (raw: RawNotification): NotificationChannel | undefined => {
+  const value = asString(raw.channel || raw.entity || raw.customerType)
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-");
+  return CHANNELS.find((channel) => channel === value);
+};
+
 const TARGET_LABEL: Record<string, string> = {
   loan: "Open application",
   customer: "Open customer",
@@ -163,6 +181,7 @@ const toNotification = (raw: RawNotification): AppNotification | null => {
     createdAt: asString(raw.createdAt),
     priority: toPriority(raw.priority),
     read: raw.read === true,
+    channel: toChannel(raw),
     activityType:
       raw.activityType === "franchise_read" || raw.activityType === "franchise_application"
         ? raw.activityType
