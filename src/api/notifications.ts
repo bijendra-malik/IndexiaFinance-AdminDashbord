@@ -85,6 +85,10 @@ export interface AppNotification {
    * se alag pehchaanne ka reliable source yahi hai; URL par guess nahi karte.
    */
   channel?: "customer" | "franchise-customer" | "franchise";
+  /** Franchise ne apne customer ke liye file kiya — server flag, jab bheje. */
+  isFranchiseCustomer?: boolean;
+  /** Franchise reference (id/code) — present hone par record franchise side ka hai. */
+  franchiseRef?: string;
 }
 
 export interface NotificationFeed {
@@ -115,6 +119,9 @@ interface RawNotification {
   viewedAt?: string | null;
   channel?: string;
   customerType?: string;
+  isFranchiseCustomer?: boolean;
+  franchiseId?: string;
+  franchiseCode?: string;
 }
 
 interface RawFeed {
@@ -182,6 +189,8 @@ const toNotification = (raw: RawNotification): AppNotification | null => {
     priority: toPriority(raw.priority),
     read: raw.read === true,
     channel: toChannel(raw),
+    isFranchiseCustomer: raw.isFranchiseCustomer === true,
+    franchiseRef: asString(raw.franchiseCode) || asString(raw.franchiseId),
     activityType:
       raw.activityType === "franchise_read" || raw.activityType === "franchise_application"
         ? raw.activityType
