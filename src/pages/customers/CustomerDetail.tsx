@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  ArrowLeft, BadgeCheck, Clock, FileText, LoaderCircle, RefreshCw,
+  ArrowLeft, ArrowUpRight, BadgeCheck, Clock, FileText, LoaderCircle, RefreshCw,
   ShieldCheck, UserCheck, UserX,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
@@ -10,8 +10,13 @@ import {
   getApiErrorMessage, getCustomerOverview,
   type CustomerOverview, type CustomerOverviewGroup,
 } from "../../api/customers";
+import { SUPPORTED_LOAN_SLUGS } from "../../api/personalLoans";
+import { resolveLoanSlug } from "../../constants/loanTypes";
 
 const BRAND_GRADIENT = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))";
+
+/* Sirf supported loan types ka detail page hota hai — baaki rows plain rehti hain. */
+const canOpenApplication = (product: string) => SUPPORTED_LOAN_SLUGS.has(resolveLoanSlug(product));
 
 const STATUS_CHIP: Record<string, string> = {
   Submitted: "bg-sky-50 text-sky-700",
@@ -100,7 +105,19 @@ const CustomerDetail = () => {
             {group.applications.map((application) => (
               <tr key={application._id}>
                 <td className="px-5 py-3 font-mono text-xs text-slate-700">
-                  {application.applicationNo || application._id.slice(-8)}
+                  {canOpenApplication(group.product) ? (
+                    <Link
+                      to={`/applications/${resolveLoanSlug(group.product)}/${encodeURIComponent(application._id)}`}
+                      title="Open this loan application"
+                      aria-label={`Open application ${application.applicationNo || application._id}`}
+                      className="inline-flex items-center gap-1 font-semibold text-[rgb(6,106,156)] hover:underline"
+                    >
+                      {application.applicationNo || application._id.slice(-8)}
+                      <ArrowUpRight size={13} aria-hidden />
+                    </Link>
+                  ) : (
+                    application.applicationNo || application._id.slice(-8)
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{fmtCurrency(application.loanAmount)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-500">{fmtDate(application.submittedAt)}</td>
