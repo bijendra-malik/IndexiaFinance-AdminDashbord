@@ -488,11 +488,13 @@ const NotificationsPage = () => {
             label="Filter notifications by admin"
             value={actorFilter}
             onChange={setActorFilter}
+            disabled={actorOptions.length === 0}
+            title={actorFilter === "all" ? undefined : actorFilter}
             options={[
               { value: "all", label: `All admins (${adminActorTotal})` },
               ...actorOptions,
             ]}
-            className="w-56 truncate"
+            className="w-auto max-w-full"
           />
         </div>
       </div>
@@ -657,8 +659,14 @@ const NotificationsPage = () => {
                             {ACTOR_LEVEL_LABEL[actor]}
                           </span>
                         ) : (
-                          <span className="mt-1 inline-block rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-600">
-                            Franchise
+                          <span
+                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                              /customer/i.test(item.actorRole)
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-violet-50 text-violet-600"
+                            }`}
+                          >
+                            {/customer/i.test(item.actorRole) ? "Customer" : "Franchise"}
                           </span>
                         )}
                       </td>
