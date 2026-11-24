@@ -90,14 +90,26 @@ const KIND_BADGE: Record<NotificationKind, string> = {
   franchise: "bg-violet-50 text-violet-700",
 };
 
+/* Scope badge pehle hi "Franchise" bolta hai, is liye yahan sirf nature likhte hain. */
 const typeLabel = (item: AppNotification): string => {
   if (item.kind !== "franchise") return KIND_LABEL[item.kind];
-  return item.activityType === "franchise_read" ? "Franchise activity" : "Franchise application";
+  return item.activityType === "franchise_read" ? "Activity" : "Application";
 };
 
 /* Franchise rows me actor ek franchise/customer hoti hai; baaki rows me admin. */
 const isAdminActor = (item: AppNotification): boolean =>
   /admin/i.test(item.actorRole) || (!item.actorRole && /^admin/i.test(item.actorName));
+
+/* Non-admin actor ka tag — franchise customer ko plain customer na dikhaye. */
+const actorTag = (item: AppNotification) => {
+  if (/franchise[-_ ]?customer/i.test(item.actorRole)) {
+    return { label: "Franchise customer", className: "bg-amber-50 text-amber-700" };
+  }
+  if (/customer/i.test(item.actorRole)) {
+    return { label: "Customer", className: "bg-emerald-50 text-emerald-700" };
+  }
+  return { label: "Franchise", className: "bg-violet-50 text-violet-700" };
+};
 
 /* Scope detection notificationMeta me hai; page sirf usi ko colour/chip deta hai. */
 
@@ -365,37 +377,25 @@ const NotificationsPage = () => {
 
       {/* Tabs + role filter + search */}
       <div className="mb-3 flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {tabs.map((entry, index) => {
-            const active = entry.key === activeTab.key;
-            return (
-              <button
-                key={entry.key}
-                type="button"
-                onClick={() => {
-                  setTab(entry.key);
-                  setRoleFilter("all");
-                  setScopeFilter("all");
-                  setActorFilter("all");
-                }}
-                aria-pressed={active}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
-                  active
-                    ? "border-[rgb(6,106,156)] bg-[rgba(6,106,156,0.08)] text-[rgb(6,106,156)]"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {entry.label}
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
-                    active ? "bg-white text-[rgb(6,106,156)]" : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {tabCounts[index]}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            View
+          </span>
+          <FilterSelect
+            compact
+            label="Notification view"
+            value={activeTab.key}
+            onChange={(value) => {
+              setTab(value);
+              setRoleFilter("all");
+              setScopeFilter("all");
+              setActorFilter("all");
+            }}
+            options={tabs.map((entry, index) => ({
+              value: entry.key,
+              label: `${entry.label} (${tabCounts[index]})`,
+            }))}
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -591,7 +591,7 @@ const NotificationsPage = () => {
             <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                  <th className="w-[168px] px-4 py-3">Type</th>
+                  <th className="w-[168px] px-4 py-3">Record type</th>
                   <th className="px-4 py-3">Notification</th>
                   <th className="w-[92px] px-4 py-3">Priority</th>
                   <th className="w-[200px] px-4 py-3">Actor</th>
@@ -617,16 +617,19 @@ const NotificationsPage = () => {
                     >
                       <td className={`border-l-4 px-4 py-3 ${scope.accent}`}>
                         <div className="flex flex-col items-start gap-1">
+                          {/* Pehle record ka scope — customer hai ya franchise, turant dikhe. */}
                           <span
-                            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${KIND_BADGE[item.kind]}`}
+                            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${scope.chip}`}
                           >
-                            <Icon size={11} />
-                            {typeLabel(item)}
-                          </span>
-                          <span
-                            className={`inline-block rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${scope.chip}`}
-                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${scope.dot}`} aria-hidden />
                             {scope.label}
+                          </span>
+                          {/* Uske baad notification ka nature — note, decision, verification etc. */}
+                          <span
+                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${KIND_BADGE[item.kind]}`}
+                          >
+                            <Icon size={10} />
+                            {typeLabel(item)}
                           </span>
                         </div>
                       </td>
@@ -686,13 +689,9 @@ const NotificationsPage = () => {
                           </span>
                         ) : (
                           <span
-                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
-                              /customer/i.test(item.actorRole)
-                                ? "bg-emerald-50 text-emerald-700"
-                                : "bg-violet-50 text-violet-600"
-                            }`}
+                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${actorTag(item).className}`}
                           >
-                            {/customer/i.test(item.actorRole) ? "Customer" : "Franchise"}
+                            {actorTag(item).label}
                           </span>
                         )}
                       </td>
