@@ -32,6 +32,7 @@ import {
   markNotificationsRead,
   type ActorLevel,
   type AppNotification,
+  type NotificationKind,
 } from "../../api/notifications";
 
 /*
@@ -48,6 +49,10 @@ client koi allow-list nahi rakhta:
 
 Read state server par per admin hai, isliye device badalne par unread count
 wahi rehta hai.
+
+Feed ek hi table me render hota hai — har tab (All / Decisions / Escalations /
+Franchise) ke rows ka same structure rehta hai, taaki columns align rahein aur
+franchise + admin activity mix hone par bhi padhne me gadbad na ho.
 ==========================================
 */
 
@@ -58,6 +63,107 @@ const ROLE_CHIP: Record<ActorLevel, string> = {
   sub_admin: "bg-sky-50 text-sky-700",
   admin: "bg-slate-100 text-slate-600",
 };
+
+const KIND_LABEL: Record<NotificationKind, string> = {
+  note: "Note",
+  recommendation: "Recommendation",
+  escalation: "Escalation",
+  verified: "Verified",
+  returned: "Returned",
+  decided: "Decision",
+  franchise: "Franchise",
+};
+
+const KIND_BADGE: Record<NotificationKind, string> = {
+  note: "bg-slate-100 text-slate-600",
+  recommendation: "bg-amber-50 text-amber-700",
+  escalation: "bg-sky-50 text-sky-700",
+  verified: "bg-emerald-50 text-emerald-700",
+  returned: "bg-rose-50 text-rose-700",
+  decided: "bg-indigo-50 text-indigo-700",
+  franchise: "bg-violet-50 text-violet-700",
+};
+
+const typeLabel = (item: AppNotification): string => {
+  if (item.kind !== "franchise") return KIND_LABEL[item.kind];
+  return item.activityType === "franchise_read" ? "Franchise activity" : "Franchise application";
+};
+
+/* Franchise rows me actor ek franchise hoti hai; baaki rows me admin. */
+const isAdminActor = (item: AppNotification): boolean => /admin/i.test(item.actorRole);
+
+/*
+Row ka scope — record franchise ka hai, customer ka hai, ya loan application
+ka. Har scope ka apna rang hai (violet / emerald / sky) taaki ek nazar me pata
+chale row kis type ki hai; colour sirf row par nahi, reference ID chip par bhi
+lagta hai.
+*/
+type RowScope = "franchise" | "franchise_customer" | "customer" | "loan";
+
+const scopeOf = (item: AppNotification): RowScope => {
+  /* Franchise activity / application rows hamesha franchise ki hoti hain. */
+  if (item.kind === "franchise" || item.targetLabel === "Open franchise") return "franchise";
+
+  /*
+  Franchise customer ka bharosa URL par nahi karte: backend agar `/customers/:id`
+  bhej de to dono customer types ek jaise lagte hain. Pehle server ka explicit
+  `channel` dekhte hain (`franchise-customer`), phir `/franchise-customers/:id`
+  route aur `FCUST…` id fallback ki tarah.
+  */
+  if (
+    item.channel === "franchise-customer" ||
+    /franchise[-_]?customers?/i.test(item.targetPath) ||
+    /^FCUST/i.test(item.recordLabel)
+  ) {
+    return "franchise_customer";
+  }
+
+  if (item.channel === "franchise") return "franchise";
+  if (item.channel === "customer" || item.targetLabel === "Open customer") return "customer";
+  if (/^CUST/i.test(item.recordLabel)) return "customer";
+  return "loan";
+};
+
+const SCOPE_META: Record<
+  RowScope,
+  { label: string; row: string; accent: string; chip: string; dot: string; active: string }
+> = {
+  franchise: {
+    label: "Franchise",
+    row: "bg-violet-50/40 hover:bg-violet-50/70",
+    accent: "border-l-violet-400",
+    chip: "border-violet-200 bg-violet-50 text-violet-700",
+    dot: "bg-violet-500",
+    active: "border-violet-400 bg-violet-50 text-violet-700",
+  },
+  franchise_customer: {
+    label: "Franchise customer",
+    row: "bg-amber-50/40 hover:bg-amber-50/70",
+    accent: "border-l-amber-400",
+    chip: "border-amber-200 bg-amber-50 text-amber-700",
+    dot: "bg-amber-500",
+    active: "border-amber-400 bg-amber-50 text-amber-700",
+  },
+  customer: {
+    label: "Customer",
+    row: "bg-emerald-50/40 hover:bg-emerald-50/70",
+    accent: "border-l-emerald-400",
+    chip: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    dot: "bg-emerald-500",
+    active: "border-emerald-400 bg-emerald-50 text-emerald-700",
+  },
+  loan: {
+    label: "Loan",
+    row: "bg-white hover:bg-slate-50",
+    accent: "border-l-sky-300",
+    chip: "border-sky-200 bg-sky-50 text-sky-700",
+    dot: "bg-sky-400",
+    active: "border-sky-400 bg-sky-50 text-sky-700",
+  },
+};
+
+/* Filter ki order — feed me sabse zyada loan rows hoti hain, franchise sabse kam. */
+const SCOPE_ORDER: RowScope[] = ["loan", "customer", "franchise_customer", "franchise"];
 
 const NotificationsPage = () => {
   const { role } = useAuth();
@@ -71,6 +177,8 @@ const NotificationsPage = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [tab, setTab] = useState("all");
   const [roleFilter, setRoleFilter] = useState<ActorLevel | "all">("all");
+  /* Record type filter — loan / customer / franchise customer / franchise mix na ho. */
+  const [scopeFilter, setScopeFilter] = useState<RowScope | "all">("all");
   const [query, setQuery] = useState("");
   const [markingAll, setMarkingAll] = useState(false);
 
@@ -118,11 +226,26 @@ const NotificationsPage = () => {
     return base;
   }, [tabItems]);
 
+  /* Har scope me kitni rows — chips par count dikhta hai. */
+  const scopeCounts = useMemo(() => {
+    const base: Record<RowScope, number> = {
+      loan: 0,
+      customer: 0,
+      franchise_customer: 0,
+      franchise: 0,
+    };
+    tabItems.forEach((item) => {
+      base[scopeOf(item)] += 1;
+    });
+    return base;
+  }, [tabItems]);
+
   const needle = query.trim().toLowerCase();
 
   const visible = useMemo(
     () =>
       tabItems.filter((item) => {
+        if (scopeFilter !== "all" && scopeOf(item) !== scopeFilter) return false;
         if (roleFilter !== "all" && actorLevel(item.actorRole) !== roleFilter) return false;
         if (!needle) return true;
         return [item.title, item.message, item.actorName, item.recordLabel, item.productLabel]
@@ -130,7 +253,7 @@ const NotificationsPage = () => {
           .toLowerCase()
           .includes(needle);
       }),
-    [tabItems, roleFilter, needle]
+    [tabItems, scopeFilter, roleFilter, needle]
   );
 
   const markRead = async (id: string) => {
@@ -210,6 +333,7 @@ const NotificationsPage = () => {
                 onClick={() => {
                   setTab(entry.key);
                   setRoleFilter("all");
+                  setScopeFilter("all");
                 }}
                 aria-pressed={active}
                 className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
@@ -254,11 +378,12 @@ const NotificationsPage = () => {
             );
           })}
 
-          {(roleFilter !== "all" || query) && (
+          {(roleFilter !== "all" || scopeFilter !== "all" || query) && (
             <button
               type="button"
               onClick={() => {
                 setRoleFilter("all");
+                setScopeFilter("all");
                 setQuery("");
               }}
               className="inline-flex items-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-100"
@@ -285,14 +410,78 @@ const NotificationsPage = () => {
         </div>
       </div>
 
+      {/* Record type filter — loan / customer / franchise customer / franchise rows alag */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          Type
+        </span>
+        <button
+          type="button"
+          onClick={() => setScopeFilter("all")}
+          aria-pressed={scopeFilter === "all"}
+          className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+            scopeFilter === "all"
+              ? "border-[rgb(6,106,156)] bg-[rgba(6,106,156,0.08)] text-[rgb(6,106,156)]"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          All
+          <span className="tabular-nums opacity-70">{tabItems.length}</span>
+        </button>
+        {SCOPE_ORDER.map((scope) => {
+          const meta = SCOPE_META[scope];
+          const active = scopeFilter === scope;
+          return (
+            <button
+              key={scope}
+              type="button"
+              onClick={() => setScopeFilter(active ? "all" : scope)}
+              aria-pressed={active}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                active
+                  ? meta.active
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} aria-hidden />
+              {meta.label}
+              <span className={`tabular-nums ${active ? "opacity-70" : "text-slate-400"}`}>
+                {scopeCounts[scope]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             {activeTab.label}
           </p>
-          <p className="text-[11px] tabular-nums text-slate-400">
-            Showing {visible.length} of {tabItems.length}
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+              <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.franchise.dot}`} aria-hidden />
+              Franchise
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+              <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.customer.dot}`} aria-hidden />
+              Customer
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.franchise_customer.dot}`}
+                aria-hidden
+              />
+              Franchise customer
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+              <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.loan.dot}`} aria-hidden />
+              Loan
+            </span>
+            <p className="text-[11px] tabular-nums text-slate-400">
+              Showing {visible.length} of {tabItems.length}
+            </p>
+          </div>
         </div>
 
         {error ? (
@@ -320,85 +509,186 @@ const NotificationsPage = () => {
             </span>
             <p className="text-sm font-semibold text-slate-600">No notifications</p>
             <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-slate-400">
-              {needle || roleFilter !== "all"
+              {needle || roleFilter !== "all" || scopeFilter !== "all"
                 ? "No notification matches this filter. Clear it to see everything."
                 : emptyCopy}
             </p>
           </div>
-        ) : activeTab.key === "franchise" ? (
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                  <th className="px-4 py-3">Type</th>
+                  <th className="w-[168px] px-4 py-3">Type</th>
                   <th className="px-4 py-3">Notification</th>
-                  <th className="px-4 py-3">Franchise</th>
-                  <th className="px-4 py-3">Customer / Loan</th>
-                  <th className="px-4 py-3">Viewed</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Action</th>
+                  <th className="w-[92px] px-4 py-3">Priority</th>
+                  <th className="w-[200px] px-4 py-3">Actor</th>
+                  <th className="w-[180px] px-4 py-3">Reference</th>
+                  <th className="w-[140px] px-4 py-3">Status</th>
+                  <th className="w-[172px] px-4 py-3">Date</th>
+                  <th className="w-[152px] px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visible.map((item) => {
+                  const meta = KIND_META[item.kind];
+                  const Icon = meta.icon;
                   const isUnread = item.read !== true;
-                  const typeLabel =
-                    item.activityType === "franchise_read"
-                      ? "Franchise activity"
-                      : "Franchise application";
+                  const actor = actorLevel(item.actorRole);
+                  const scope = SCOPE_META[scopeOf(item)];
                   return (
                     <tr
                       key={item.id}
-                      className={`transition hover:bg-slate-50 ${isUnread ? "bg-sky-50/20" : "bg-white"}`}
+                      onClick={() => openItem(item)}
+                      title={item.targetPath ? item.targetLabel : undefined}
+                      className={`group cursor-pointer align-top transition ${scope.row}`}
                     >
-                      <td className="px-4 py-3">
-                        <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600">
-                          {typeLabel}
-                        </span>
+                      <td className={`border-l-4 px-4 py-3 ${scope.accent}`}>
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${KIND_BADGE[item.kind]}`}
+                          >
+                            <Icon size={11} />
+                            {typeLabel(item)}
+                          </span>
+                          <span
+                            className={`inline-block rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${scope.chip}`}
+                          >
+                            {scope.label}
+                          </span>
+                        </div>
                       </td>
+
                       <td className="px-4 py-3">
-                        <p
-                          className={`font-semibold ${isUnread ? "text-slate-800" : "text-slate-600"}`}
-                        >
-                          {item.title}
-                        </p>
-                        {item.priority === "high" && (
-                          <span className="mt-1 inline-block rounded bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-600">
+                        <div className="flex items-start gap-1.5">
+                          {isUnread && (
+                            <span
+                              className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"
+                              aria-label="Unread"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <p
+                              className={`truncate font-semibold group-hover:text-[rgb(6,106,156)] group-hover:underline ${
+                                isUnread ? "text-slate-800" : "text-slate-600"
+                              }`}
+                              title={item.title}
+                            >
+                              {item.title}
+                            </p>
+                            {item.message ? (
+                              <p
+                                className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-slate-500"
+                                title={item.message}
+                              >
+                                {item.message}
+                              </p>
+                            ) : (
+                              <p className="mt-0.5 text-xs text-slate-300">—</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {item.priority === "high" ? (
+                          <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-600">
                             High
                           </span>
+                        ) : (
+                          <span className="text-xs capitalize text-slate-400">
+                            {item.priority}
+                          </span>
                         )}
                       </td>
+
                       <td className="px-4 py-3">
-                        <p className="font-medium text-slate-700">{item.actorName}</p>
-                        <p className="text-[11px] text-slate-400">{item.recordLabel || "—"}</p>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
-                        {item.message || "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {item.viewed ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                            <Eye size={11} /> Viewed
-                            {item.viewedAt && ` · ${timeAgo(item.viewedAt)}`}
+                        <p className="truncate text-xs font-semibold text-slate-700" title={item.actorName}>
+                          {isAdminActor(item) ? adminLabel(item.actorName) : item.actorName}
+                        </p>
+                        {isAdminActor(item) ? (
+                          <span
+                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${ROLE_CHIP[actor]}`}
+                          >
+                            {ACTOR_LEVEL_LABEL[actor]}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-                            <EyeOff size={11} /> Not viewed
+                          <span className="mt-1 inline-block rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-600">
+                            Franchise
                           </span>
                         )}
                       </td>
-                      <td
-                        className="px-4 py-3 text-xs text-slate-500"
-                        title={formatDateTime(item.createdAt)}
-                      >
-                        {formatDateTime(item.createdAt)}
-                      </td>
+
                       <td className="px-4 py-3">
+                        {item.recordLabel ? (
+                          <span
+                            className={`inline-block max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[11px] font-semibold ${scope.chip}`}
+                            title={item.recordLabel}
+                          >
+                            {item.recordLabel}
+                          </span>
+                        ) : (
+                          <p className="text-xs text-slate-400">—</p>
+                        )}
+                        {item.productLabel && item.productLabel !== item.recordLabel && (
+                          <p className="mt-0.5 truncate text-[11px] text-slate-400" title={item.productLabel}>
+                            {item.productLabel}
+                          </p>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isUnread
+                                ? "bg-sky-50 text-sky-700"
+                                : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                isUnread ? "bg-sky-500" : "bg-slate-300"
+                              }`}
+                              aria-hidden
+                            />
+                            {isUnread ? "Unread" : "Read"}
+                          </span>
+                          {item.activityType &&
+                            (item.viewed ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                <Eye size={10} /> Viewed
+                                {item.viewedAt && ` · ${timeAgo(item.viewedAt)}`}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                <EyeOff size={10} /> Not viewed
+                              </span>
+                            ))}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <p
+                          className="text-xs font-medium text-slate-600"
+                          title={formatDateTime(item.createdAt)}
+                        >
+                          {timeAgo(item.createdAt)}
+                        </p>
+                        <p className="mt-0.5 whitespace-nowrap text-[10px] leading-tight text-slate-400">
+                          {formatDateTime(item.createdAt)}
+                        </p>
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
                         {item.targetPath ? (
                           <button
                             type="button"
-                            onClick={() => openItem(item)}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-[rgb(6,106,156)] hover:underline"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openItem(item);
+                            }}
+                            className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-[rgb(6,106,156)] hover:underline"
                           >
                             {item.targetLabel}
                             <ArrowUpRight size={11} />
@@ -413,105 +703,6 @@ const NotificationsPage = () => {
               </tbody>
             </table>
           </div>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {visible.map((item) => {
-              const meta = KIND_META[item.kind];
-              const Icon = meta.icon;
-              const isUnread = item.read !== true;
-              const actor = actorLevel(item.actorRole);
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => openItem(item)}
-                    className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition hover:bg-slate-50 ${
-                      isUnread ? "bg-white" : "bg-slate-50/40"
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${meta.tile}`}
-                    >
-                      <Icon size={15} />
-                    </span>
-
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`text-sm font-semibold ${
-                            isUnread ? "text-slate-800" : "text-slate-600"
-                          }`}
-                        >
-                          {item.title}
-                        </span>
-                        {item.activityType && (
-                          <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600">
-                            {item.activityType === "franchise_read"
-                              ? "Franchise activity"
-                              : "Franchise application"}
-                          </span>
-                        )}
-                        {item.priority === "high" && (
-                          <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-600">
-                            High
-                          </span>
-                        )}
-                        {isUnread && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-sky-500" aria-hidden />
-                        )}
-                        <span
-                          className="ml-auto shrink-0 text-[11px] tabular-nums text-slate-400"
-                          title={formatDateTime(item.createdAt)}
-                        >
-                          {timeAgo(item.createdAt)}
-                        </span>
-                      </span>
-
-                      {item.message && (
-                        <span className="mt-1 block text-xs leading-relaxed text-slate-500">
-                          {item.message}
-                        </span>
-                      )}
-
-                      <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-                        <span className="font-medium text-slate-600" title={item.actorName}>
-                          {adminLabel(item.actorName)}
-                        </span>
-                        {item.actorRole && (
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${ROLE_CHIP[actor]}`}
-                          >
-                            {ACTOR_LEVEL_LABEL[actor]}
-                          </span>
-                        )}
-                        {item.activityType &&
-                          (item.viewed ? (
-                            <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-700">
-                              <Eye size={10} /> Viewed
-                              {item.viewedAt ? ` · ${timeAgo(item.viewedAt)}` : ""}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
-                              <EyeOff size={10} /> Not viewed
-                            </span>
-                          ))}
-                        {item.recordLabel && <span>· {item.recordLabel}</span>}
-                        {item.productLabel && item.productLabel !== item.recordLabel && (
-                          <span>· {item.productLabel}</span>
-                        )}
-                        {item.targetPath && (
-                          <span className="ml-auto inline-flex items-center gap-1 font-semibold text-[rgb(6,106,156)]">
-                            {item.targetLabel}
-                            <ArrowUpRight size={11} />
-                          </span>
-                        )}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
         )}
       </section>
     </AdminLayout>
