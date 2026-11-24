@@ -74,6 +74,52 @@ export const ROLE_ICONS: Record<ActorLevel, typeof Bell> = {
   admin: UserCircle,
 };
 
+/*
+Notification ka record scope — yahi ek jagah decide hota hai. Page ki row
+colour/chips, bell ki filtering aur module guards sab isi ka use karte hain,
+taaki ek jagah rule badalne se sab consistent rahe.
+
+Order matter karta hai: franchise activity → franchise, franchise-customer
+markers → franchise customer, `/franchises/...` → franchise, direct customer →
+customer, baaki sab loan (jisme `/applications/...` bhi hai).
+*/
+export type NotificationScope = "franchise" | "franchise_customer" | "customer" | "loan";
+
+export const notificationScope = (item: AppNotification): NotificationScope => {
+  if (item.kind === "franchise" || item.targetLabel === "Open franchise") return "franchise";
+  if (item.channel === "franchise" || /\/franchises?\//i.test(item.targetPath)) return "franchise";
+
+  if (
+    item.channel === "franchise-customer" ||
+    item.isFranchiseCustomer === true ||
+    Boolean(item.franchiseRef) ||
+    /* Franchise actor ka loan franchise-customer ka record hota hai. */
+    /franchise/i.test(item.actorRole) ||
+    /franchise[-_]?customers?/i.test(item.targetPath) ||
+    /^FCUST/i.test(item.recordLabel)
+  ) {
+    return "franchise_customer";
+  }
+
+  if (item.channel === "customer" || item.targetLabel === "Open customer") return "customer";
+  if (/^CUST/i.test(item.recordLabel)) return "customer";
+  return "loan";
+};
+
+/** Franchise side (account, activity, ya franchise ka customer) — module-gated. */
+export const isFranchiseScoped = (item: AppNotification): boolean => {
+  const scope = notificationScope(item);
+  return scope === "franchise" || scope === "franchise_customer";
+};
+
+/** Direct customer record — customers module-gated. */
+export const isCustomerScoped = (item: AppNotification): boolean =>
+  notificationScope(item) === "customer";
+
+/** Loan application — loan access gated. */
+export const isLoanScoped = (item: AppNotification): boolean =>
+  notificationScope(item) === "loan";
+
 export const timeAgo = (iso: string): string => {
   const time = new Date(iso).getTime();
   if (Number.isNaN(time)) return "";
