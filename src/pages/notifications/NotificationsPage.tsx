@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PageHeader from "../../components/common/PageHeader";
+import FilterSelect from "../../components/common/FilterSelect";
 import {
   KIND_META,
   ROLE_CHAIN,
@@ -179,6 +180,8 @@ const NotificationsPage = () => {
   const [roleFilter, setRoleFilter] = useState<ActorLevel | "all">("all");
   /* Record type filter — loan / customer / franchise customer / franchise mix na ho. */
   const [scopeFilter, setScopeFilter] = useState<RowScope | "all">("all");
+  /* Ek admin chun kar sirf uske kiye updates dekhna. */
+  const [actorFilter, setActorFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [markingAll, setMarkingAll] = useState(false);
 
@@ -240,11 +243,24 @@ const NotificationsPage = () => {
     return base;
   }, [tabItems]);
 
+  /* Dropdown ke options — active tab me jitne actors hain, count ke saath. */
+  const actorOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    tabItems.forEach((item) => {
+      const name = item.actorName.trim() || "Admin";
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ value: name, label: `${adminLabel(name)} (${count})` }));
+  }, [tabItems]);
+
   const needle = query.trim().toLowerCase();
 
   const visible = useMemo(
     () =>
       tabItems.filter((item) => {
+        if (actorFilter !== "all" && item.actorName.trim() !== actorFilter) return false;
         if (scopeFilter !== "all" && scopeOf(item) !== scopeFilter) return false;
         if (roleFilter !== "all" && actorLevel(item.actorRole) !== roleFilter) return false;
         if (!needle) return true;
@@ -253,7 +269,7 @@ const NotificationsPage = () => {
           .toLowerCase()
           .includes(needle);
       }),
-    [tabItems, scopeFilter, roleFilter, needle]
+    [tabItems, actorFilter, scopeFilter, roleFilter, needle]
   );
 
   const markRead = async (id: string) => {
@@ -334,6 +350,7 @@ const NotificationsPage = () => {
                   setTab(entry.key);
                   setRoleFilter("all");
                   setScopeFilter("all");
+                  setActorFilter("all");
                 }}
                 aria-pressed={active}
                 className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
@@ -378,12 +395,13 @@ const NotificationsPage = () => {
             );
           })}
 
-          {(roleFilter !== "all" || scopeFilter !== "all" || query) && (
+          {(roleFilter !== "all" || scopeFilter !== "all" || actorFilter !== "all" || query) && (
             <button
               type="button"
               onClick={() => {
                 setRoleFilter("all");
                 setScopeFilter("all");
+                setActorFilter("all");
                 setQuery("");
               }}
               className="inline-flex items-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-100"
@@ -451,6 +469,24 @@ const NotificationsPage = () => {
             </button>
           );
         })}
+
+        {/* Kaun sa admin — "kis ne kya kiya" ek admin par filter */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Admin
+          </span>
+          <FilterSelect
+            compact
+            label="Filter notifications by admin"
+            value={actorFilter}
+            onChange={setActorFilter}
+            options={[
+              { value: "all", label: `All admins (${tabItems.length})` },
+              ...actorOptions,
+            ]}
+            className="w-56 truncate"
+          />
+        </div>
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -509,7 +545,7 @@ const NotificationsPage = () => {
             </span>
             <p className="text-sm font-semibold text-slate-600">No notifications</p>
             <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-slate-400">
-              {needle || roleFilter !== "all" || scopeFilter !== "all"
+              {needle || roleFilter !== "all" || scopeFilter !== "all" || actorFilter !== "all"
                 ? "No notification matches this filter. Clear it to see everything."
                 : emptyCopy}
             </p>
