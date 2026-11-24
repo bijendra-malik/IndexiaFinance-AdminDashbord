@@ -12,6 +12,7 @@ const FilterSelect = ({
   className = "",
   disabled = false,
   compact = false,
+  title,
 }: {
   /** Accessible name — also used as the tooltip. */
   label: string;
@@ -22,10 +23,12 @@ const FilterSelect = ({
   disabled?: boolean;
   /** Inline filter rows (chips ke saath) ke liye chhota padding/text. */
   compact?: boolean;
+  /** Tooltip override — long selected value poora padhne ke liye. */
+  title?: string;
 }) => (
   <select
     aria-label={label}
-    title={label}
+    title={title ?? label}
     value={value}
     disabled={disabled}
     onChange={(event) => onChange(event.target.value)}
