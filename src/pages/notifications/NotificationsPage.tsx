@@ -19,7 +19,12 @@ import {
   ROLE_CHAIN,
   ROLE_ICONS,
   TABS_BY_ROLE,
+  isCustomerScoped,
+  isFranchiseScoped,
+  isLoanScoped,
+  notificationScope,
   timeAgo,
+  type NotificationScope,
 } from "../../components/notifications/notificationMeta";
 import { useAuth } from "../../context/AuthContext";
 import { adminLabel, formatDateTime } from "../../utils/auditFormat";
@@ -94,30 +99,10 @@ const typeLabel = (item: AppNotification): string => {
 const isAdminActor = (item: AppNotification): boolean =>
   /admin/i.test(item.actorRole) || (!item.actorRole && /^admin/i.test(item.actorName));
 
-
-type RowScope = "franchise" | "franchise_customer" | "customer" | "loan";
-
-const scopeOf = (item: AppNotification): RowScope => {
-  /* Franchise activity / application rows hamesha franchise ki hoti hain. */
-  if (item.kind === "franchise" || item.targetLabel === "Open franchise") return "franchise";
-
-  
-  if (
-    item.channel === "franchise-customer" ||
-    /franchise[-_]?customers?/i.test(item.targetPath) ||
-    /^FCUST/i.test(item.recordLabel)
-  ) {
-    return "franchise_customer";
-  }
-
-  if (item.channel === "franchise") return "franchise";
-  if (item.channel === "customer" || item.targetLabel === "Open customer") return "customer";
-  if (/^CUST/i.test(item.recordLabel)) return "customer";
-  return "loan";
-};
+/* Scope detection notificationMeta me hai; page sirf usi ko colour/chip deta hai. */
 
 const SCOPE_META: Record<
-  RowScope,
+  NotificationScope,
   { label: string; row: string; accent: string; chip: string; dot: string; active: string }
 > = {
   franchise: {
@@ -155,10 +140,19 @@ const SCOPE_META: Record<
 };
 
 /* Filter ki order — feed me sabse zyada loan rows hoti hain, franchise sabse kam. */
-const SCOPE_ORDER: RowScope[] = ["loan", "customer", "franchise_customer", "franchise"];
+const SCOPE_ORDER: NotificationScope[] = ["loan", "customer", "franchise_customer", "franchise"];
 
 const NotificationsPage = () => {
-  const { role } = useAuth();
+  const { role, isSuperAdmin, canAccessModule, accessibleLoanTypes } = useAuth();
+  /*
+  Module scope: franchise module na ho to franchise rows/chips nahi, aur
+  customers module na ho to direct-customer rows/chips nahi. Isse franchise-
+  only normal admin ko sirf franchise details dikhti hain.
+  */
+  const canSeeFranchises = isSuperAdmin || canAccessModule("franchises");
+  const canSeeCustomers = isSuperAdmin || canAccessModule("customers");
+  /* Loan rows sirf tab jab koi product assigned ho (franchise-only admin ke paas nahi hota). */
+  const canSeeLoans = isSuperAdmin || accessibleLoanTypes.length > 0;
   const navigate = useNavigate();
 
   const [items, setItems] = useState<AppNotification[]>([]);
@@ -170,7 +164,7 @@ const NotificationsPage = () => {
   const [tab, setTab] = useState("all");
   const [roleFilter, setRoleFilter] = useState<ActorLevel | "all">("all");
   /* Record type filter — loan / customer / franchise customer / franchise mix na ho. */
-  const [scopeFilter, setScopeFilter] = useState<RowScope | "all">("all");
+  const [scopeFilter, setScopeFilter] = useState<NotificationScope | "all">("all");
   /* Ek admin chun kar sirf uske kiye updates dekhna. */
   const [actorFilter, setActorFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -200,14 +194,38 @@ const NotificationsPage = () => {
     };
   }, [reloadKey]);
 
+  /* Module scope — feed me aane wali franchise rows ko yahin hata dete hain. */
+  const scopedItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          (canSeeFranchises || !isFranchiseScoped(item)) &&
+          (canSeeCustomers || !isCustomerScoped(item)) &&
+          (canSeeLoans || !isLoanScoped(item))
+      ),
+    [items, canSeeFranchises, canSeeCustomers, canSeeLoans]
+  );
+
   const tabs = TABS_BY_ROLE[role] ?? TABS_BY_ROLE.admin;
   const activeTab = tabs.find((entry) => entry.key === tab) ?? tabs[0];
 
-  const tabItems = useMemo(() => items.filter(activeTab.match), [items, activeTab]);
+  const tabItems = useMemo(() => scopedItems.filter(activeTab.match), [scopedItems, activeTab]);
 
   const tabCounts = useMemo(
-    () => tabs.map((entry) => items.filter(entry.match).length),
-    [tabs, items]
+    () => tabs.map((entry) => scopedItems.filter(entry.match).length),
+    [tabs, scopedItems]
+  );
+
+  /* Type chips bhi sirf allowed scopes ke — franchise-only chips chhup jaati hain. */
+  const scopeOrder = useMemo(
+    () =>
+      SCOPE_ORDER.filter(
+        (scope) =>
+          (canSeeFranchises || (scope !== "franchise" && scope !== "franchise_customer")) &&
+          (canSeeCustomers || scope !== "customer") &&
+          (canSeeLoans || scope !== "loan")
+      ),
+    [canSeeFranchises, canSeeCustomers, canSeeLoans]
   );
 
   /* Kis level se kitni notifications — active tab ke andar. */
@@ -222,14 +240,14 @@ const NotificationsPage = () => {
 
   /* Har scope me kitni rows — chips par count dikhta hai. */
   const scopeCounts = useMemo(() => {
-    const base: Record<RowScope, number> = {
+    const base: Record<NotificationScope, number> = {
       loan: 0,
       customer: 0,
       franchise_customer: 0,
       franchise: 0,
     };
     tabItems.forEach((item) => {
-      base[scopeOf(item)] += 1;
+      base[notificationScope(item)] += 1;
     });
     return base;
   }, [tabItems]);
@@ -269,7 +287,7 @@ const NotificationsPage = () => {
     () =>
       tabItems.filter((item) => {
         if (actorFilter !== "all" && item.actorName.trim() !== actorFilter) return false;
-        if (scopeFilter !== "all" && scopeOf(item) !== scopeFilter) return false;
+        if (scopeFilter !== "all" && notificationScope(item) !== scopeFilter) return false;
         if (roleFilter !== "all" && actorLevel(item.actorRole) !== roleFilter) return false;
         if (!needle) return true;
         return [item.title, item.message, item.actorName, item.recordLabel, item.productLabel]
@@ -454,7 +472,7 @@ const NotificationsPage = () => {
           All
           <span className="tabular-nums opacity-70">{tabItems.length}</span>
         </button>
-        {SCOPE_ORDER.map((scope) => {
+        {scopeOrder.map((scope) => {
           const meta = SCOPE_META[scope];
           const active = scopeFilter === scope;
           return (
@@ -505,25 +523,33 @@ const NotificationsPage = () => {
             {activeTab.label}
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
-              <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.franchise.dot}`} aria-hidden />
-              Franchise
-            </span>
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
-              <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.customer.dot}`} aria-hidden />
-              Customer
-            </span>
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.franchise_customer.dot}`}
-                aria-hidden
-              />
-              Franchise customer
-            </span>
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
-              <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.loan.dot}`} aria-hidden />
-              Loan
-            </span>
+            {canSeeFranchises && (
+              <>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                  <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.franchise.dot}`} aria-hidden />
+                  Franchise
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.franchise_customer.dot}`}
+                    aria-hidden
+                  />
+                  Franchise customer
+                </span>
+              </>
+            )}
+            {canSeeCustomers && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.customer.dot}`} aria-hidden />
+                Customer
+              </span>
+            )}
+            {canSeeLoans && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.loan.dot}`} aria-hidden />
+                Loan
+              </span>
+            )}
             <p className="text-[11px] tabular-nums text-slate-400">
               Showing {visible.length} of {tabItems.length}
             </p>
@@ -581,7 +607,7 @@ const NotificationsPage = () => {
                   const Icon = meta.icon;
                   const isUnread = item.read !== true;
                   const actor = actorLevel(item.actorRole);
-                  const scope = SCOPE_META[scopeOf(item)];
+                  const scope = SCOPE_META[notificationScope(item)];
                   return (
                     <tr
                       key={item.id}
