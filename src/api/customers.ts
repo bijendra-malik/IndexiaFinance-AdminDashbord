@@ -200,7 +200,7 @@ export const getCustomerOverview = async (id: string): Promise<CustomerOverview>
   };
 };
 
-/** DELETE /api/admin/customers/:id — remove a customer account */
+/** DELETE /api/admin/customers/:id — permanently remove the account (backend also removes its closed applications; 409 while Submitted/Pending ones exist) */
 export const deleteCustomer = async (id: string): Promise<void> => {
-  await axiosInstance.delete(`/customers/${id}`);
+  await axiosInstance.delete(`/customers/${encodeURIComponent(id)}`);
 };

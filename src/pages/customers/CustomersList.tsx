@@ -226,18 +226,37 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
     setAppsError(""); setLoadingApps(true); setAppsRefreshKey((k) => k + 1);
   };
 
+  /* DELETE server par permanent hai — account aur uske closed applications ek
+     saath hat jaate hain. Local state sirf turant feedback ke liye update hota
+     hai; success ke baad list dobara server se aati hai taake UI me wahi dikhe
+     jo DB me hai (agar backend ne delete nahi kiya to row wapas aa jaayegi). */
   const handleDelete = async () => {
     if (!pendingDelete) return;
+    const target = pendingDelete;
     setIsDeleting(true);
     try {
-      await deleteCustomer(pendingDelete._id);
-      setCustomers((prev) => prev?.filter((c) => c._id !== pendingDelete._id) ?? prev);
-      showToast(`"${pendingDelete.name}" deleted`, "success");
+      await deleteCustomer(target._id);
+      setCustomers((prev) => prev?.filter((c) => c._id !== target._id) ?? prev);
+      setLoanSummary((cur) => {
+        const next = { ...cur };
+        delete next[target._id];
+        return next;
+      });
+      setCustomerDetail((cur) => (cur && cur._id === target._id ? null : cur));
       setPendingDelete(null); setViewingCustomer(null);
+      showToast(`"${target.name}" deleted permanently`, "success");
+      await load();
     } catch (e) {
       const st = (e as { response?: { status?: number } })?.response?.status;
       const msg = getApiErrorMessage(e, "Unable to delete this customer.");
-      showToast(st === 409 ? `${msg} Resolve open applications first.` : msg, "error");
+      if (st === 404) {
+        /* Pehle hi delete ho chuka — stale row hata do. */
+        setPendingDelete(null); setViewingCustomer(null);
+        showToast("This customer no longer exists.", "success");
+        void load();
+      } else {
+        showToast(st === 409 ? `${msg} Resolve open applications first.` : msg, "error");
+      }
     } finally { setIsDeleting(false); }
   };
 
