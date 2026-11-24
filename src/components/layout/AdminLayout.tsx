@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity, ArrowLeftRight, BarChart3, Briefcase,
+  Activity, ArrowLeftRight, BarChart3, Bell, Briefcase,
   Building2, Car, ChevronDown, ChevronRight, ClipboardList, CreditCard,
   Database, FileText, Globe, GraduationCap,
   Home, Landmark, LayoutDashboard, LogOut, MessageSquare,
@@ -83,8 +83,15 @@ const hoverOff = (e: React.MouseEvent<HTMLElement>, active: boolean) => {
 
 // ── Profile Dropdown ──────────────────────────────────────────────────────────
 const ProfileDropdown = ({
-  name, email, role, onLogout,
-}: { name?: string; email?: string; role?: string; onLogout: () => void }) => {
+  name, email, role, unreadCount = 0, onLogout,
+}: {
+  name?: string;
+  email?: string;
+  role?: string;
+  /** Bell ke saath same server count — menu kholne se pehle hi pending pata chale. */
+  unreadCount?: number;
+  onLogout: () => void;
+}) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -132,12 +139,22 @@ const ProfileDropdown = ({
 
           <div className="py-1">
             {[
-              { icon: UserCircle, label: "Profile Settings",  action: () => { setOpen(false); navigate("/profile?tab=profile");  } },
-              { icon: Settings,   label: "Account Settings",  action: () => { setOpen(false); navigate("/profile?tab=security"); } },
-            ].map(({ icon: Icon, label, action }) => (
+              { icon: Bell,       label: "Notifications",     badge: unreadCount, action: () => { setOpen(false); navigate("/notifications");            } },
+              { icon: UserCircle, label: "Profile Settings",  badge: 0,           action: () => { setOpen(false); navigate("/profile?tab=profile");  } },
+              { icon: Settings,   label: "Account Settings",  badge: 0,           action: () => { setOpen(false); navigate("/profile?tab=security"); } },
+            ].map(({ icon: Icon, label, badge, action }) => (
               <button key={label} onClick={action}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition">
-                <Icon size={15} className="text-slate-400" />{label}
+                <Icon size={15} className="text-slate-400" />
+                <span className="min-w-0 truncate">{label}</span>
+                {badge > 0 && (
+                  <span
+                    aria-label={`${badge} unread notifications`}
+                    className="ml-auto flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white"
+                  >
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -173,6 +190,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
   const [applicationsOpenChoice, setApplicationsOpenChoice] = useState<boolean | null>(null);
   const [franchisesOpenChoice,   setFranchisesOpenChoice]   = useState<boolean | null>(null);
   const [rejectsOpenChoice,      setRejectsOpenChoice]      = useState<boolean | null>(null);
+  /* Bell ka unread count — profile menu ka badge isi se sync rehta hai. */
+  const [unreadNotifications,   setUnreadNotifications]     = useState(0);
 
   const mastersOpen      = mastersOpenChoice      ?? isOnMasters;
   const applicationsOpen = applicationsOpenChoice ?? isOnApplications;
@@ -576,7 +595,10 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             {/* Right */}
             <div className="flex items-center gap-2">
               {/* Notifications — role ke hisaab se scoped feed (NotificationBell). */}
-              <NotificationBell key={admin?.email ?? admin?.loginId ?? "anon"} />
+              <NotificationBell
+                key={admin?.email ?? admin?.loginId ?? "anon"}
+                onUnreadChange={setUnreadNotifications}
+              />
 
               <div className="w-px h-6 bg-slate-200" />
 
@@ -584,6 +606,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                 name={admin?.name}
                 email={admin?.email}
                 role={roleText}
+                unreadCount={unreadNotifications}
                 onLogout={handleLogout}
               />
             </div>

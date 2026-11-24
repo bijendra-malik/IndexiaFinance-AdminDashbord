@@ -67,7 +67,12 @@ const ROLE_HIERARCHY_HINT: Record<AdminRole, string> = {
     "You report to a sub admin: they review your notes and recommendations, and their feedback appears here.",
 };
 
-const NotificationBell = () => {
+const NotificationBell = ({
+  onUnreadChange,
+}: {
+  /** Topbar ke doosre badge (profile menu) ko unread count se sync rakhta hai. */
+  onUnreadChange?: (count: number) => void;
+}) => {
   const { role, isSuperAdmin, can } = useAuth();
   const navigate = useNavigate();
 
@@ -147,6 +152,10 @@ const NotificationBell = () => {
   const activeTab = tabs.find((entry) => entry.key === tab) ?? tabs[0];
 
   const unreadCount = unread;
+
+  useEffect(() => {
+    onUnreadChange?.(unreadCount);
+  }, [unreadCount, onUnreadChange]);
 
   const tabItems = useMemo(() => items.filter(activeTab.match), [items, activeTab]);
 
@@ -465,7 +474,8 @@ const NotificationBell = () => {
                       <button
                         type="button"
                         onClick={() => openItem(item)}
-                        className={`flex w-full gap-2.5 px-3.5 py-3 text-left transition hover:bg-slate-50 ${
+                        title={item.targetPath ? item.targetLabel : undefined}
+                        className={`group flex w-full gap-2.5 px-3.5 py-3 text-left transition hover:bg-slate-50 ${
                           isUnread ? "bg-white" : "bg-slate-50/40"
                         }`}
                       >
@@ -475,7 +485,7 @@ const NotificationBell = () => {
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5">
                             <span
-                              className={`truncate text-xs font-semibold ${
+                              className={`truncate text-xs font-semibold group-hover:text-[rgb(6,106,156)] group-hover:underline ${
                                 isUnread ? "text-slate-800" : "text-slate-600"
                               }`}
                             >
