@@ -151,11 +151,11 @@ const NotificationBell = ({
   const tabs = TABS_BY_ROLE[role] ?? TABS_BY_ROLE.admin;
   const activeTab = tabs.find((entry) => entry.key === tab) ?? tabs[0];
 
-  const unreadCount = unread;
-
+  /* Parent (profile menu badge) ko sirf count chahiye — feed yahin fetch hoti hai,
+     isliye doosri request nahi lagti. */
   useEffect(() => {
-    onUnreadChange?.(unreadCount);
-  }, [unreadCount, onUnreadChange]);
+    onUnreadChange?.(unread);
+  }, [unread, onUnreadChange]);
 
   const tabItems = useMemo(() => items.filter(activeTab.match), [items, activeTab]);
 
@@ -241,16 +241,16 @@ const NotificationBell = ({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={
-          unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"
+          unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
         }
         className={`relative flex h-9 w-9 items-center justify-center rounded-full transition ${
           open ? "bg-slate-100 text-slate-700" : "text-slate-500 hover:bg-slate-100"
         }`}
       >
         <Bell size={17} />
-        {unreadCount > 0 && (
+        {unread > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
-            {unreadCount > 9 ? "9+" : unreadCount}
+            {unread > 9 ? "9+" : unread}
           </span>
         )}
       </button>
@@ -270,7 +270,7 @@ const NotificationBell = ({
               <div className="min-w-0">
                 <p className="text-sm font-bold leading-tight">Notifications</p>
                 <p className="truncate text-[10px] leading-tight text-white/80">
-                  {VIEWER_ROLE_LABEL[role]} · {unreadCount} unread
+                  {VIEWER_ROLE_LABEL[role]} · {unread} unread
                 </p>
               </div>
             </div>
@@ -278,7 +278,7 @@ const NotificationBell = ({
               <button
                 type="button"
                 onClick={markAllRead}
-                disabled={unreadCount === 0}
+                disabled={unread === 0}
                 className="rounded-lg px-2 py-1 text-[10px] font-semibold text-white/90 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Mark all read
