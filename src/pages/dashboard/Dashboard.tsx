@@ -298,7 +298,17 @@ const SupervisorFeedbackPanel = ({ records }: { records: ReviewRecord[] }) => {
 };
 
 const AdminDashboard = () => {
-  const { admin, loanAccess, canAccessLoan, isSuperAdmin } = useAuth();
+  const { admin, loanAccess, canAccessLoan, isSuperAdmin, canAccessModule } = useAuth();
+
+  /*
+  Module dashboards: backend `dashboardMode` bhejta hai, lekin frontend usse
+  aankh band karke render nahi karta. Agar mode signed-in admin ke module
+  access se match nahi karta (misconfigured/legacy response), to wo overview
+  hide ho jaata hai — normal admin ko franchise details aur franchise-only
+  admin ko customer details nahi dikhni chahiye.
+  */
+  const canSeeCustomers = isSuperAdmin || canAccessModule("customers");
+  const canSeeFranchises = isSuperAdmin || canAccessModule("franchises");
 
   const [rawStats, setRawStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState("");
@@ -350,6 +360,23 @@ const AdminDashboard = () => {
   recomputed from those rows so the headline numbers, the donut and the product
   list all describe the same slice instead of leaking org-wide counts.
   */
+  const backendMode = rawStats?.dashboardMode;
+  const modeAllowed =
+    backendMode === "customers"
+      ? canSeeCustomers
+      : backendMode === "franchises"
+        ? canSeeFranchises
+        : backendMode === "accounts"
+          ? canSeeCustomers && canSeeFranchises
+          : false;
+  const dashboardMode = modeAllowed ? backendMode : undefined;
+  /*
+  Backend ne module overview bheja hai lekin wo admin ke access me nahi — ye
+  loan dashboard nahi dikhana, warna module-only admin ko loan KPIs dikh jaate
+  hain. Aise case me saaf "access nahi" state render hoti hai.
+  */
+  const modeBlocked = Boolean(backendMode) && !modeAllowed;
+
   const stats: DashboardStats | null = rawStats
     ? loanAccess === "all"
       ? rawStats
@@ -410,12 +437,27 @@ const AdminDashboard = () => {
   // The dashboard aggregates four endpoints separately, so a partial failure is
   // reported without hiding the numbers that did load.
   const warnings = stats
-    ? [stats.franchiseCustomersError, stats.accountsError].filter(
-        (message): message is string => Boolean(message)
-      )
+    ? [
+        stats.franchiseCustomersError && canSeeFranchises ? stats.franchiseCustomersError : undefined,
+        stats.accountsError && canSeeCustomers && canSeeFranchises ? stats.accountsError : undefined,
+      ].filter((message): message is string => Boolean(message))
     : [];
 
   const theme = isSuperAdmin ? ROLE_THEME.super : ROLE_THEME.admin;
+
+  /* Hero ki ek line — nested ternary JSX me padhna mushkil tha. */
+  const welcomeLine =
+    dashboardMode === "customers"
+      ? "Here is your customer account overview."
+      : dashboardMode === "franchises"
+        ? "Here is your franchise registration overview."
+        : dashboardMode === "accounts"
+          ? "Here is your customer and franchise account overview."
+          : modeBlocked
+            ? "This overview is not included in your module access."
+            : loanAccess === "all"
+              ? "Live overview across every loan product."
+              : `Showing the ${stats?.products.length ?? 0} loan product(s) assigned to you.`;
 
   return (
     <AdminLayout>
@@ -433,16 +475,7 @@ const AdminDashboard = () => {
             </span>
             <h2 className="mt-3 text-2xl font-bold leading-tight tracking-tight sm:text-[28px]">Dashboard</h2>
             <p className="mt-1 max-w-2xl text-sm text-white/85">
-              Welcome back, {admin?.name}.{" "}
-              {rawStats?.dashboardMode === "customers"
-                ? "Here is your customer account overview."
-                : rawStats?.dashboardMode === "franchises"
-                  ? "Here is your franchise registration overview."
-                  : rawStats?.dashboardMode === "accounts"
-                    ? "Here is your customer and franchise account overview."
-                    : loanAccess === "all"
-                ? "Live overview across every loan product."
-                : `Showing the ${stats?.products.length ?? 0} loan product(s) assigned to you.`}
+              Welcome back, {admin?.name}. {welcomeLine}
             </p>
             <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] font-medium text-white/80">
               <span className="rounded-full bg-white/10 px-2 py-0.5 ring-1 ring-inset ring-white/20">
@@ -500,8 +533,30 @@ const AdminDashboard = () => {
         <>
           <DataWarning messages={error ? [error, ...warnings] : warnings} />
           {!isSuperAdmin && <SupervisorFeedbackPanel records={feedback} />}
-          {stats.dashboardMode ? (
-            <ModuleDashboardOverview stats={stats} />
+          {dashboardMode ? (
+            <ModuleDashboardOverview stats={{ ...stats, dashboardMode }} />
+          ) : modeBlocked ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-6 py-14 text-center">
+              <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                <AlertTriangle size={22} />
+              </span>
+              <p className="text-sm font-semibold text-amber-900">
+                Aapke paas is overview ka access nahi hai
+              </p>
+              <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-amber-700">
+                Dashboard response ek module overview{" "}
+                <span className="font-semibold">
+                  {" "}
+                  {backendMode === "franchises"
+                    ? "franchises"
+                    : backendMode === "customers"
+                      ? "customers"
+                      : "accounts"}
+                </span>{" "}
+                ka hai, jo aapke module access me shamil nahi. Super admin se ye access
+                mangwayein, phir dashboard refresh karein.
+              </p>
+            </div>
           ) : (
             <>
 
