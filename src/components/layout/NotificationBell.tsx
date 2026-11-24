@@ -18,6 +18,9 @@ import {
   ROLE_CHAIN,
   ROLE_ICONS,
   TABS_BY_ROLE,
+  isCustomerScoped,
+  isFranchiseScoped,
+  isLoanScoped,
   timeAgo,
 } from "../notifications/notificationMeta";
 import { adminLabel } from "../../utils/auditFormat";
@@ -73,7 +76,11 @@ const NotificationBell = ({
   /** Topbar ke doosre badge (profile menu) ko unread count se sync rakhta hai. */
   onUnreadChange?: (count: number) => void;
 }) => {
-  const { role, isSuperAdmin, can } = useAuth();
+  const { role, isSuperAdmin, can, canAccessModule, accessibleLoanTypes } = useAuth();
+  /* Franchises module na ho to franchise rows dropdown me bhi na aayein. */
+  const canSeeFranchises = isSuperAdmin || canAccessModule("franchises");
+  const canSeeCustomers = isSuperAdmin || canAccessModule("customers");
+  const canSeeLoans = isSuperAdmin || accessibleLoanTypes.length > 0;
   const navigate = useNavigate();
 
   const [open, setOpen] = useState(false);
@@ -148,6 +155,18 @@ const NotificationBell = ({
     };
   }, [open]);
 
+  /* Module scope — franchise rows sirf franchise access wale admin ko. */
+  const scopedItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          (canSeeFranchises || !isFranchiseScoped(item)) &&
+          (canSeeCustomers || !isCustomerScoped(item)) &&
+          (canSeeLoans || !isLoanScoped(item))
+      ),
+    [items, canSeeFranchises, canSeeCustomers, canSeeLoans]
+  );
+
   const tabs = TABS_BY_ROLE[role] ?? TABS_BY_ROLE.admin;
   const activeTab = tabs.find((entry) => entry.key === tab) ?? tabs[0];
 
@@ -157,7 +176,7 @@ const NotificationBell = ({
     onUnreadChange?.(unread);
   }, [unread, onUnreadChange]);
 
-  const tabItems = useMemo(() => items.filter(activeTab.match), [items, activeTab]);
+  const tabItems = useMemo(() => scopedItems.filter(activeTab.match), [scopedItems, activeTab]);
 
   /* Kis level se kitni notifications aayi — active tab ke andar ke counts. */
   const roleCounts = useMemo(() => {
@@ -170,8 +189,8 @@ const NotificationBell = ({
   }, [tabItems]);
 
   const tabCounts = useMemo(
-    () => tabs.map((entry) => items.filter(entry.match).length),
-    [tabs, items]
+    () => tabs.map((entry) => scopedItems.filter(entry.match).length),
+    [tabs, scopedItems]
   );
 
   const visible = useMemo(
