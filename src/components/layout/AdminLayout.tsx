@@ -140,9 +140,9 @@ const ProfileDropdown = ({
           <div className="py-1">
             {[
               { icon: Bell,       label: "Notifications",     badge: unreadCount, action: () => { setOpen(false); navigate("/notifications");            } },
-              { icon: UserCircle, label: "Profile Settings",  badge: 0,           action: () => { setOpen(false); navigate("/profile?tab=profile");  } },
-              { icon: Settings,   label: "Account Settings",  badge: 0,           action: () => { setOpen(false); navigate("/profile?tab=security"); } },
-            ].map(({ icon: Icon, label, badge, action }) => (
+              { icon: UserCircle, label: "Profile Settings",  action: () => { setOpen(false); navigate("/profile?tab=profile");  } },
+              { icon: Settings,   label: "Account Settings",  action: () => { setOpen(false); navigate("/profile?tab=security"); } },
+            ].map(({ icon: Icon, label, badge = 0, action }) => (
               <button key={label} onClick={action}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition">
                 <Icon size={15} className="text-slate-400" />
