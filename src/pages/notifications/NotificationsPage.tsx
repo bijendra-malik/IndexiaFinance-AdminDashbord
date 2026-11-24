@@ -19,9 +19,6 @@ import {
   ROLE_CHAIN,
   ROLE_ICONS,
   TABS_BY_ROLE,
-  isCustomerScoped,
-  isFranchiseScoped,
-  isLoanScoped,
   notificationScope,
   timeAgo,
   type NotificationScope,
@@ -206,16 +203,21 @@ const NotificationsPage = () => {
     };
   }, [reloadKey]);
 
+  /* Ek hi map se rows, chips aur legend tino gate hote hain. */
+  const canSeeScope = useMemo<Record<NotificationScope, boolean>>(
+    () => ({
+      franchise: canSeeFranchises,
+      franchise_customer: canSeeFranchises,
+      customer: canSeeCustomers,
+      loan: canSeeLoans,
+    }),
+    [canSeeFranchises, canSeeCustomers, canSeeLoans]
+  );
+
   /* Module scope — feed me aane wali franchise rows ko yahin hata dete hain. */
   const scopedItems = useMemo(
-    () =>
-      items.filter(
-        (item) =>
-          (canSeeFranchises || !isFranchiseScoped(item)) &&
-          (canSeeCustomers || !isCustomerScoped(item)) &&
-          (canSeeLoans || !isLoanScoped(item))
-      ),
-    [items, canSeeFranchises, canSeeCustomers, canSeeLoans]
+    () => items.filter((item) => canSeeScope[notificationScope(item)]),
+    [items, canSeeScope]
   );
 
   const tabs = TABS_BY_ROLE[role] ?? TABS_BY_ROLE.admin;
@@ -229,16 +231,7 @@ const NotificationsPage = () => {
   );
 
   /* Type chips bhi sirf allowed scopes ke — franchise-only chips chhup jaati hain. */
-  const scopeOrder = useMemo(
-    () =>
-      SCOPE_ORDER.filter(
-        (scope) =>
-          (canSeeFranchises || (scope !== "franchise" && scope !== "franchise_customer")) &&
-          (canSeeCustomers || scope !== "customer") &&
-          (canSeeLoans || scope !== "loan")
-      ),
-    [canSeeFranchises, canSeeCustomers, canSeeLoans]
-  );
+  const scopeOrder = SCOPE_ORDER.filter((scope) => canSeeScope[scope]);
 
   /* Kis level se kitni notifications — active tab ke andar. */
   const roleCounts = useMemo(() => {
@@ -269,29 +262,26 @@ const NotificationsPage = () => {
   Franchise aur customer actors (`actorRole` admin nahi) option list me nahi
   aate, warna dropdown me franchise naam ("Ek Tha Tiger") bhi ghus jaate hain.
   */
-  const actorOptions = useMemo(() => {
+  const { actorOptions, adminActorTotal } = useMemo(() => {
     const counts = new Map<string, { count: number; role: ActorLevel }>();
+    let total = 0;
     tabItems.forEach((item) => {
       if (!isAdminActor(item)) return;
       const name = item.actorName.trim();
       if (!name) return;
+      total += 1;
       const existing = counts.get(name);
       if (existing) existing.count += 1;
       else counts.set(name, { count: 1, role: actorLevel(item.actorRole) });
     });
-    return Array.from(counts.entries())
+    const options = Array.from(counts.entries())
       .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
       .map(([name, { count, role }]) => ({
         value: name,
         label: `${adminLabel(name)} · ${ACTOR_LEVEL_LABEL[role]} (${count})`,
       }));
+    return { actorOptions: options, adminActorTotal: total };
   }, [tabItems]);
-
-  /* "All admins" ka count — rows nahi, sirf admin actors. */
-  const adminActorTotal = useMemo(
-    () => tabItems.filter((item) => isAdminActor(item) && item.actorName.trim()).length,
-    [tabItems]
-  );
 
   const needle = query.trim().toLowerCase();
 
@@ -523,7 +513,7 @@ const NotificationsPage = () => {
             {activeTab.label}
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            {canSeeFranchises && (
+            {canSeeScope.franchise && (
               <>
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
                   <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.franchise.dot}`} aria-hidden />
@@ -538,13 +528,13 @@ const NotificationsPage = () => {
                 </span>
               </>
             )}
-            {canSeeCustomers && (
+            {canSeeScope.customer && (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
                 <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.customer.dot}`} aria-hidden />
                 Customer
               </span>
             )}
-            {canSeeLoans && (
+            {canSeeScope.loan && (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
                 <span className={`h-1.5 w-1.5 rounded-full ${SCOPE_META.loan.dot}`} aria-hidden />
                 Loan
@@ -606,7 +596,9 @@ const NotificationsPage = () => {
                   const meta = KIND_META[item.kind];
                   const Icon = meta.icon;
                   const isUnread = item.read !== true;
+                  const admin = isAdminActor(item);
                   const actor = actorLevel(item.actorRole);
+                  const tag = admin ? null : actorTag(item);
                   const scope = SCOPE_META[notificationScope(item)];
                   return (
                     <tr
@@ -679,19 +671,19 @@ const NotificationsPage = () => {
 
                       <td className="px-4 py-3">
                         <p className="truncate text-xs font-semibold text-slate-700" title={item.actorName}>
-                          {isAdminActor(item) ? adminLabel(item.actorName) : item.actorName}
+                          {admin ? adminLabel(item.actorName) : item.actorName}
                         </p>
-                        {isAdminActor(item) ? (
+                        {tag ? (
+                          <span
+                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${tag.className}`}
+                          >
+                            {tag.label}
+                          </span>
+                        ) : (
                           <span
                             className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${ROLE_CHIP[actor]}`}
                           >
                             {ACTOR_LEVEL_LABEL[actor]}
-                          </span>
-                        ) : (
-                          <span
-                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${actorTag(item).className}`}
-                          >
-                            {actorTag(item).label}
                           </span>
                         )}
                       </td>
