@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  BadgeCheck, Calendar, Clock, Eye, FileText, LoaderCircle, Mail, Phone,
+  ArrowUpRight, BadgeCheck, Calendar, Clock, Eye, FileText, LoaderCircle, Mail, Phone,
   ToggleLeft, ToggleRight, Trash2, 
   UserCheck, UserX, Users, X,
 } from "lucide-react";
@@ -13,12 +13,11 @@ import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
 import SearchBar from "../../components/common/SearchBar";
 import StatusBadge from "../../components/common/StatusBadge";
-import AdminUpdateThread from "../../components/common/AdminUpdateThread";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import {
-  addCustomerUpdate, deleteCustomer, getApiErrorMessage, getCustomer,
+  deleteCustomer, getApiErrorMessage, getCustomer,
   getCustomerApplications, getCustomers, updateCustomerStatus,
   type Customer, type CustomerApplicationGroup,
 } from "../../api/customers";
@@ -26,22 +25,12 @@ import {
   SUPPORTED_LOAN_SLUGS, updateLoanStatusBySlug,
   type LoanStatus, type PersonalLoan,
 } from "../../api/personalLoans";
-import { getLoanTypeLabel } from "../../constants/loanTypes";
+import { getLoanTypeLabel, resolveLoanSlug } from "../../constants/loanTypes";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const BRAND_GRADIENT = "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))";
 const PAGE_SIZE = 20;
 const OPEN_STATUSES = new Set(["Submitted", "Pending"]);
-
-const PRODUCT_SLUGS: Record<string, string> = {
-  personal: "personal-loan", business: "business-loan", home: "home-loan",
-  lap: "loan-against-property", balanceTransfer: "balance-transfer",
-  projectLoan: "project-loan", vehicleLoan: "car-loan", educationLoan: "education-loan",
-  creditCard: "credit-card", workingCapital: "working-capital",
-  commercialPurchase: "commercial-purchase", leaseRentalDiscounting: "lease-rental-discounting",
-  odCcLimit: "odcc-limit", loanAgainstShare: "loan-against-share", npaLoan: "npa-loan",
-  goldLoan: "gold-loan", fdiLoan: "fdi-loan", filmFunding: "film-funding",
-};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtDate = (iso: string | null) =>
@@ -188,7 +177,7 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
       try {
         const groups = await getCustomerApplications(id);
         const apps = groups.flatMap((g) => g.applications);
-        const types = [...new Set(groups.map((g) => PRODUCT_SLUGS[g.product] ?? g.product))];
+        const types = [...new Set(groups.map((g) => resolveLoanSlug(g.product)))];
         return [id, {
           total: apps.length,
           open: apps.filter((a) => OPEN_STATUSES.has(a.status)).length,
@@ -291,22 +280,6 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
     } finally { setUpdatingId(null); }
   };
 
-  /* Regular admin ka note / recommendation — super admin ko decision ke liye jaata hai. */
-  const handleAddUpdate = async (payload: {
-    text: string; tag: string; suggestedStatus?: string;
-  }) => {
-    if (!viewingCustomer?._id) return false;
-    await addCustomerUpdate(viewingCustomer._id, payload);
-    setAppsRefreshKey((k) => k + 1);
-    showToast(
-      payload.suggestedStatus
-        ? "Update saved and sent to the super admin for a decision."
-        : "Update saved to the customer trail.",
-      "success"
-    );
-    return true;
-  };
-
   /* /customers?customer=<id> — activity feed se seedha is customer ka drawer khulta hai. */
   const focusedCustomerId = searchParams.get("customer");
   useEffect(() => {
@@ -329,7 +302,7 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
     group: CustomerApplicationGroup, app: PersonalLoan,
     status: Extract<LoanStatus, "Pending" | "Approved" | "Rejected">, note = ""
   ) => {
-    const slug = PRODUCT_SLUGS[group.product] ?? app.loanType;
+    const slug = resolveLoanSlug(group.product ?? app.loanType);
     if (!slug) { showToast(`Cannot determine loan type for ${app._id}.`, "error"); return; }
     setUpdatingAppId(app._id);
     try {
@@ -616,17 +589,6 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
                       </dl>
                     </div>
                   )}
-
-                  {/* Admin updates thread - only for super admin */}
-                  {customerDetail && !isCustomerOnly && (
-                    <AdminUpdateThread
-                      entity="customer"
-                      updates={customerDetail.adminUpdates}
-                      recommendation={customerDetail.statusRecommendation}
-                      canWrite={!isSuperAdmin}
-                      onSubmit={handleAddUpdate}
-                    />
-                  )}
                 </div>
 
                 {/* Right: Loan Applications Overview */}
@@ -665,19 +627,35 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
                           <div key={group.product} className="rounded-xl border border-slate-200 bg-white shadow-sm">
                             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                               <div>
-                                <h4 className="text-sm font-bold text-slate-800">{getLoanTypeLabel(PRODUCT_SLUGS[group.product] ?? group.product)}</h4>
+                                <h4 className="text-sm font-bold text-slate-800">{getLoanTypeLabel(resolveLoanSlug(group.product))}</h4>
                                 <p className="text-xs text-slate-500">{group.count} application{group.count > 1 ? "s" : ""}</p>
                               </div>
                             </div>
                             <div className="divide-y divide-slate-100">
                               {group.applications.map((app) => {
                                 const isOpen = OPEN_STATUSES.has(app.status);
-                                const slug = PRODUCT_SLUGS[group.product] ?? app.loanType;
+                                const slug = resolveLoanSlug(group.product ?? app.loanType);
+                                const canOpen = SUPPORTED_LOAN_SLUGS.has(slug);
                                 return (
                                   <div key={app._id} className="p-4 hover:bg-slate-50/50">
                                     <div className="flex items-start justify-between gap-3">
                                       <div className="min-w-0 flex-1">
-                                        <p className="font-semibold text-slate-800">{fmtCurrency(app.loanAmount)}</p>
+                                        {canOpen ? (
+                                          <Link
+                                            to={`/applications/${slug}/${encodeURIComponent(app._id)}`}
+                                            title="Open this loan application"
+                                            aria-label={`Open application ${app.applicationNo || app._id}`}
+                                            className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-[rgb(6,106,156)] hover:underline"
+                                          >
+                                            {app.applicationNo || app._id.slice(-8)}
+                                            <ArrowUpRight size={13} aria-hidden />
+                                          </Link>
+                                        ) : (
+                                          <p className="font-mono text-xs text-slate-500">
+                                            {app.applicationNo || app._id.slice(-8)}
+                                          </p>
+                                        )}
+                                        <p className="mt-1 font-semibold text-slate-800">{fmtCurrency(app.loanAmount)}</p>
                                         <p className="mt-1 text-xs text-slate-500">
                                           {app.loanTenure ? `${app.loanTenure} months · ` : ""}
                                           {fmtDate(app.createdAt)}
@@ -690,7 +668,7 @@ const CustomersList = ({ customerOnly = false }: { customerOnly?: boolean }) => 
                                       </div>
                                       <StatusBadge status={app.status} />
                                     </div>
-                                    {isOpen && SUPPORTED_LOAN_SLUGS.has(slug) && (
+                                    {isOpen && canOpen && (
                                       <div className="mt-3 flex gap-2">
                                         <button
                                           onClick={() => { setDecisionNote(""); setPendingDecision({ group, application: app, status: "Rejected" }); }}
