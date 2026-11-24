@@ -90,27 +90,18 @@ const typeLabel = (item: AppNotification): string => {
   return item.activityType === "franchise_read" ? "Franchise activity" : "Franchise application";
 };
 
-/* Franchise rows me actor ek franchise hoti hai; baaki rows me admin. */
-const isAdminActor = (item: AppNotification): boolean => /admin/i.test(item.actorRole);
+/* Franchise rows me actor ek franchise/customer hoti hai; baaki rows me admin. */
+const isAdminActor = (item: AppNotification): boolean =>
+  /admin/i.test(item.actorRole) || (!item.actorRole && /^admin/i.test(item.actorName));
 
-/*
-Row ka scope — record franchise ka hai, customer ka hai, ya loan application
-ka. Har scope ka apna rang hai (violet / emerald / sky) taaki ek nazar me pata
-chale row kis type ki hai; colour sirf row par nahi, reference ID chip par bhi
-lagta hai.
-*/
+
 type RowScope = "franchise" | "franchise_customer" | "customer" | "loan";
 
 const scopeOf = (item: AppNotification): RowScope => {
   /* Franchise activity / application rows hamesha franchise ki hoti hain. */
   if (item.kind === "franchise" || item.targetLabel === "Open franchise") return "franchise";
 
-  /*
-  Franchise customer ka bharosa URL par nahi karte: backend agar `/customers/:id`
-  bhej de to dono customer types ek jaise lagte hain. Pehle server ka explicit
-  `channel` dekhte hain (`franchise-customer`), phir `/franchise-customers/:id`
-  route aur `FCUST…` id fallback ki tarah.
-  */
+  
   if (
     item.channel === "franchise-customer" ||
     /franchise[-_]?customers?/i.test(item.targetPath) ||
@@ -243,17 +234,34 @@ const NotificationsPage = () => {
     return base;
   }, [tabItems]);
 
-  /* Dropdown ke options — active tab me jitne actors hain, count ke saath. */
+  /*
+  Dropdown sirf admin accounts dikhata hai (super / sub / normal admin).
+  Franchise aur customer actors (`actorRole` admin nahi) option list me nahi
+  aate, warna dropdown me franchise naam ("Ek Tha Tiger") bhi ghus jaate hain.
+  */
   const actorOptions = useMemo(() => {
-    const counts = new Map<string, number>();
+    const counts = new Map<string, { count: number; role: ActorLevel }>();
     tabItems.forEach((item) => {
-      const name = item.actorName.trim() || "Admin";
-      counts.set(name, (counts.get(name) ?? 0) + 1);
+      if (!isAdminActor(item)) return;
+      const name = item.actorName.trim();
+      if (!name) return;
+      const existing = counts.get(name);
+      if (existing) existing.count += 1;
+      else counts.set(name, { count: 1, role: actorLevel(item.actorRole) });
     });
     return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([name, count]) => ({ value: name, label: `${adminLabel(name)} (${count})` }));
+      .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
+      .map(([name, { count, role }]) => ({
+        value: name,
+        label: `${adminLabel(name)} · ${ACTOR_LEVEL_LABEL[role]} (${count})`,
+      }));
   }, [tabItems]);
+
+  /* "All admins" ka count — rows nahi, sirf admin actors. */
+  const adminActorTotal = useMemo(
+    () => tabItems.filter((item) => isAdminActor(item) && item.actorName.trim()).length,
+    [tabItems]
+  );
 
   const needle = query.trim().toLowerCase();
 
@@ -481,7 +489,7 @@ const NotificationsPage = () => {
             value={actorFilter}
             onChange={setActorFilter}
             options={[
-              { value: "all", label: `All admins (${tabItems.length})` },
+              { value: "all", label: `All admins (${adminActorTotal})` },
               ...actorOptions,
             ]}
             className="w-56 truncate"
