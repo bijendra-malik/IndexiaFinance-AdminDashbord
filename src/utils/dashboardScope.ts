@@ -1,4 +1,4 @@
-import type { AdminRole, LoanAccess, ModuleAccess } from "../api/adminUsers";
+import type { AdminRole, ModuleAccess } from "../api/adminUsers";
 
 /**
  * Whose dashboard is open, as spelled in the URL.
@@ -12,15 +12,17 @@ import type { AdminRole, LoanAccess, ModuleAccess } from "../api/adminUsers";
  *   /dashboard/admin              normal admin
  *   /dashboard/customer           customer module wala admin
  *   /dashboard/franchise          franchise module wala admin
- *   /dashboard/loan-applications  loan products wala admin
+ *
+ * Sirf loan products wala admin bhi `/dashboard/admin` hi hai — uske products
+ * named URLs par khulte hain (`/dashboard/admin/personalloan`). "loan-applications"
+ * naam ka koi alag dashboard URL nahi hai.
  */
 export type DashboardScope =
   | "super-admin"
   | "sub-admin"
   | "admin"
   | "customer"
-  | "franchise"
-  | "loan-applications";
+  | "franchise";
 
 export interface DashboardScopeMeta {
   /** Page title / hero label: "Sub admin dashboard". */
@@ -57,11 +59,6 @@ export const DASHBOARD_SCOPE_META: Record<DashboardScope, DashboardScopeMeta> = 
     owner: "the franchise network",
     path: "/dashboard/franchise",
   },
-  "loan-applications": {
-    label: "Loan applications dashboard",
-    owner: "loan applications",
-    path: "/dashboard/loan-applications",
-  },
 };
 
 /** Hand-typed / older segments that must still resolve to the same dashboard. */
@@ -75,9 +72,6 @@ const SCOPE_ALIASES: Record<string, DashboardScope> = {
   customers: "customer",
   franchise: "franchise",
   franchises: "franchise",
-  "loan-application": "loan-applications",
-  "loan-applications": "loan-applications",
-  loans: "loan-applications",
 };
 
 export const parseDashboardScope = (segment?: string | null): DashboardScope | null => {
@@ -101,30 +95,28 @@ export const workspacePathForScope = (scope: DashboardScope): string =>
  *
  * Role decides the top of the tree — super admin ka plain `/dashboard` hi rehta
  * hai. Normal admin ka URL wahi slice batata hai jo super admin ne assign kiya:
- * sirf customers, sirf franchises, ya uske loan products.
+ * sirf customers, sirf franchises, ya baaki sab (loan products) `/dashboard/admin`.
  */
 export const dashboardScopeFor = ({
   role,
   moduleAccess,
-  loanAccess,
 }: {
   role: AdminRole;
   moduleAccess: ModuleAccess;
-  loanAccess: LoanAccess;
 }): DashboardScope => {
   if (role === "super_admin") return "super-admin";
   if (role === "sub_admin") return "sub-admin";
 
   const modules = moduleAccess === "all" ? [] : moduleAccess;
   if (modules.length === 1) return modules[0] === "customers" ? "customer" : "franchise";
-  if (modules.length === 0 && (loanAccess === "all" || loanAccess.length > 0)) {
-    return "loan-applications";
-  }
+  /*
+  Sirf loan products wala admin — uske liye alag scope nahi. Wo `/dashboard/admin`
+  par rehta hai, aur uske products `/dashboard/admin/<loan-name>` par khulte hain.
+  */
   return "admin";
 };
 
 export const dashboardPathFor = (args: {
   role: AdminRole;
   moduleAccess: ModuleAccess;
-  loanAccess: LoanAccess;
 }): string => dashboardPathForScope(dashboardScopeFor(args));

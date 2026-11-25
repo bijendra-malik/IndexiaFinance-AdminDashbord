@@ -157,7 +157,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const moduleAccess = resolveModuleAccess(directory, admin, isSuperAdmin);
   const canAccessModule = (module?: string) => moduleIsAllowed(moduleAccess, module);
   /* Dashboard ka URL role/module se banta hai — ek hi jagah decide hota hai. */
-  const dashboardScope = dashboardScopeFor({ role, moduleAccess, loanAccess });
+  const dashboardScope = dashboardScopeFor({ role, moduleAccess });
   const dashboardPath = dashboardPathForScope(dashboardScope);
   const workspacePath = workspacePathForScope(dashboardScope);
 
