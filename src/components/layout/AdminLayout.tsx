@@ -9,6 +9,7 @@ import {
   Wallet, Coins, XCircle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { loanRouteName, loanSlugFromRouteParam } from "../../constants/loanTypes";
 import NotificationBell from "./NotificationBell";
 import logo from "../../assets/main-logo.gif";
 
@@ -173,17 +174,35 @@ const ProfileDropdown = ({
 
 // ── Main Layout ───────────────────────────────────────────────────────────────
 const AdminLayout = ({ children }: { children: ReactNode }) => {
-  const { admin, logout, accessibleLoanTypes, isSuperAdmin, isSubAdmin, can, canAccessModule } =
-    useAuth();
+  const {
+    admin, logout, accessibleLoanTypes, isSuperAdmin, isSubAdmin, can, canAccessModule,
+    dashboardPath, workspacePath: workspaceBase,
+  } = useAuth();
   /* "Admin" ki jagah "Normal admin" — warna sub admin se farq clear nahi hota. */
   const roleText = isSuperAdmin ? "Super admin" : isSubAdmin ? "Sub admin" : "Normal admin";
   const navigate  = useNavigate();
   const location  = useLocation();
 
-  const isOnMasters      = location.pathname.startsWith("/masters");
-  const isOnApplications = location.pathname.startsWith(APPLICATIONS_BASE);
-  const isOnFranchises   = isFranchiseSection(location.pathname);
-  const isOnRejects      = isRejectSection(location.pathname);
+  /*
+  Scope ke andar ka path: `/dashboard/admin/customers` → `/customers`. Sidebar
+  ke flat links isi se match hote hain, warna nested URL par koi item active
+  nahi dikhta. Super admin ka landing `/dashboard` hai, workspace
+  `/dashboard/super-admin` — dono "/" par normalize hote hain.
+  */
+  const workspacePath =
+    location.pathname === workspaceBase || location.pathname === dashboardPath
+      ? "/"
+      : location.pathname.startsWith(`${workspaceBase}/`)
+        ? location.pathname.slice(workspaceBase.length)
+        : location.pathname;
+
+  const isOnMasters      = workspacePath.startsWith("/masters");
+  /* Loan product pages ab apne naam par hain: /dashboard/admin/personalloan. */
+  const isOnApplications =
+    workspacePath.startsWith(APPLICATIONS_BASE) ||
+    Boolean(loanSlugFromRouteParam(workspacePath.split("/")[1] ?? ""));
+  const isOnFranchises   = isFranchiseSection(workspacePath);
+  const isOnRejects      = isRejectSection(workspacePath);
 
   // null = follow the route (a section opens automatically); true/false = the user's own choice.
   const [mastersOpenChoice,      setMastersOpenChoice]      = useState<boolean | null>(null);
@@ -210,7 +229,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
         {/* Logo */}
         <div className="px-5 pt-5 pb-4">
-          <Link to="/dashboard"
+          <Link to={dashboardPath}
             className="block bg-white rounded-xl px-4 py-3 shadow-md hover:shadow-lg transition">
             <img src={logo} alt="Indexia Finance" className="w-full h-auto" />
           </Link>
@@ -226,7 +245,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
           {/* Flat links */}
           {[
-            { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+            { to: dashboardPath, label: "Dashboard", icon: LayoutDashboard },
             ...(isSuperAdmin || canAccessModule("customers")
               ? [{ to: "/customers", label: "Customers", icon: Users }]
               : []),
@@ -240,7 +259,8 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               ? [{ to: "/eligibility-checks", label: "Eligibility Checks", icon: ClipboardList }]
               : []),
           ].map(({ to, label, icon: Icon }) => {
-            const isActive = location.pathname === to;
+            const isActive =
+              to === dashboardPath ? workspacePath === "/" : workspacePath === to;
             return (
               <Link key={to} to={to}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
@@ -281,7 +301,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               {rejectsOpen && (
                 <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5">
                   {REJECT_LINKS.map(({ to, label, icon: Icon, match }) => {
-                    const isActive = match(location.pathname);
+                    const isActive = match(workspacePath);
                     return (
                       <Link key={to} to={to}
                         className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
@@ -339,7 +359,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             {franchisesOpen && (
               <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5">
                 {(isSuperAdmin ? FRANCHISE_LINKS : FRANCHISE_LINKS.filter((link) => link.to !== "/franchise-plans")).map(({ to, label, icon: Icon, match }) => {
-                  const isActive = match(location.pathname);
+                  const isActive = match(workspacePath);
                   return (
                     <Link key={to} to={to}
                       className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
@@ -384,7 +404,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
             {mastersOpen && (
               <div className="ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5">
                 {MASTERS_LINKS.map(({ to, label, icon: Icon }) => {
-                  const isActive = location.pathname === to;
+                  const isActive = workspacePath === to;
                   return (
                     <Link key={to} to={to}
                       className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
@@ -422,7 +442,7 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
               <div className="scrollbar-hidden ml-4 mt-0.5 pl-3 border-l border-white/10 space-y-0.5 max-h-64 overflow-y-auto">
                 {accessibleLoanTypes.map(({ slug, label }) => {
                   const to = `${APPLICATIONS_BASE}/${slug}`;
-                  const isActive = location.pathname === to;
+                  const isActive = workspacePath === `/${loanRouteName(slug)}`;
                   const cfg = LOAN_TYPE_CONFIG[slug];
                   const Icon = cfg?.icon ?? FileText;
                   return (
@@ -481,12 +501,12 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {isSubAdmin && can("updates.review") && (
             <Link to="/review"
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-              style={location.pathname === "/review"
+              style={workspacePath === "/review"
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
                 : { color: "rgba(255,255,255,0.75)" }}
-              onMouseEnter={e => hoverOn(e, location.pathname === "/review")}
-              onMouseLeave={e => hoverOff(e, location.pathname === "/review")}>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/review" ? "bg-white/20" : "bg-white/10"}`}>
+              onMouseEnter={e => hoverOn(e, workspacePath === "/review")}
+              onMouseLeave={e => hoverOff(e, workspacePath === "/review")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${workspacePath === "/review" ? "bg-white/20" : "bg-white/10"}`}>
                 <ShieldCheck size={15} />
               </div>
               <span className="flex-1">Review Queue</span>
@@ -495,12 +515,12 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {isSubAdmin && can("updates.view") && (
             <Link to="/activity"
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-              style={location.pathname === "/activity"
+              style={workspacePath === "/activity"
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
                 : { color: "rgba(255,255,255,0.75)" }}
-              onMouseEnter={e => hoverOn(e, location.pathname === "/activity")}
-              onMouseLeave={e => hoverOff(e, location.pathname === "/activity")}>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/activity" ? "bg-white/20" : "bg-white/10"}`}>
+              onMouseEnter={e => hoverOn(e, workspacePath === "/activity")}
+              onMouseLeave={e => hoverOff(e, workspacePath === "/activity")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${workspacePath === "/activity" ? "bg-white/20" : "bg-white/10"}`}>
                 <Activity size={15} />
               </div>
               <span className="flex-1">Admin Updates</span>
@@ -511,12 +531,12 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {isSuperAdmin && (
             <Link to="/activity"
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-              style={location.pathname === "/activity"
+              style={workspacePath === "/activity"
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
                 : { color: "rgba(255,255,255,0.75)" }}
-              onMouseEnter={e => hoverOn(e, location.pathname === "/activity")}
-              onMouseLeave={e => hoverOff(e, location.pathname === "/activity")}>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/activity" ? "bg-white/20" : "bg-white/10"}`}>
+              onMouseEnter={e => hoverOn(e, workspacePath === "/activity")}
+              onMouseLeave={e => hoverOff(e, workspacePath === "/activity")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${workspacePath === "/activity" ? "bg-white/20" : "bg-white/10"}`}>
                 <Activity size={15} />
               </div>
               <span className="flex-1">Admin Updates</span>
@@ -527,12 +547,12 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {isSuperAdmin && (
             <Link to="/review"
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-              style={location.pathname === "/review"
+              style={workspacePath === "/review"
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
                 : { color: "rgba(255,255,255,0.75)" }}
-              onMouseEnter={e => hoverOn(e, location.pathname === "/review")}
-              onMouseLeave={e => hoverOff(e, location.pathname === "/review")}>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/review" ? "bg-white/20" : "bg-white/10"}`}>
+              onMouseEnter={e => hoverOn(e, workspacePath === "/review")}
+              onMouseLeave={e => hoverOff(e, workspacePath === "/review")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${workspacePath === "/review" ? "bg-white/20" : "bg-white/10"}`}>
                 <ShieldCheck size={15} />
               </div>
               <span className="flex-1">Review Queue</span>
@@ -543,12 +563,12 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
           {isSuperAdmin && (
             <Link to="/team"
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-              style={location.pathname === "/team"
+              style={workspacePath === "/team"
                 ? { background: activeBg, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
                 : { color: "rgba(255,255,255,0.75)" }}
-              onMouseEnter={e => hoverOn(e, location.pathname === "/team")}
-              onMouseLeave={e => hoverOff(e, location.pathname === "/team")}>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${location.pathname === "/team" ? "bg-white/20" : "bg-white/10"}`}>
+              onMouseEnter={e => hoverOn(e, workspacePath === "/team")}
+              onMouseLeave={e => hoverOff(e, workspacePath === "/team")}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${workspacePath === "/team" ? "bg-white/20" : "bg-white/10"}`}>
                 <ShieldCheck size={15} />
               </div>
               <span className="flex-1">Team &amp; Access</span>
