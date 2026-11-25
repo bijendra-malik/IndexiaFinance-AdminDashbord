@@ -50,6 +50,14 @@ export const canAccessLoan = (access: LoanAccess, slug?: string): boolean => {
   return access.includes(slug as LoanTypeSlug);
 };
 
+/**
+ * Franchise-only admin: Franchises module mila hai, Customers nahi. Aise admin
+ * ko loan applications me sirf franchise customers ke records dikhte hain —
+ * normal (direct) customer ki applications nahi.
+ */
+export const isFranchiseOnlyScope = (access: ModuleAccess): boolean =>
+  access !== "all" && access.includes("franchises") && !access.includes("customers");
+
 export const loanTypesFor = (access: LoanAccess): LoanTypeDef[] =>
   access === "all"
     ? LOAN_TYPES

@@ -4,6 +4,7 @@ import { getApiErrorMessage } from "../utils/apiError";
 import { getCustomers } from "./customers";
 import { getFranchises } from "./franchises";
 import { resourceToSlug } from "./personalLoans";
+import { getLoanTypeLabel, resolveLoanSlug } from "../constants/loanTypes";
 
 export interface ProductStat {
   /**
@@ -351,6 +352,15 @@ export interface DashboardStats {
   recentUpdates: AdminActivityUpdate[];
   generatedAt: string;
   franchiseCustomerTotal: number;
+  /**
+   * Franchise customers ke loans, product-wise — `/franchise-customers/stats` se.
+   * Assigned admin ke dashboard par bhi aate hain, uske assigned products tak
+   * filter karke (`canAccessLoan`).
+   */
+  franchiseCustomerLoans?: {
+    total: number;
+    products: { slug?: string; label: string; count: number }[];
+  };
   franchiseCustomersError?: string;
   totalFranchises: number;
   pendingFranchises?: number;
@@ -399,19 +409,21 @@ interface DashboardStatsResponse {
 }
 
 export const getDashboardStats = async (
-  options: { includeAccounts?: boolean } = {}
+  options: { includeAccounts?: boolean; includeFranchiseLoans?: boolean } = {}
 ): Promise<DashboardStats> => {
   /*
   Customer / franchise account context belongs to the super admin's dashboard.
   A restricted admin never asks for it — the three extra calls are skipped
-  entirely instead of being fetched and then hidden.
+  entirely instead of being fetched and then hidden. Franchise-customer loans
+  are the exception: assigned admin ko wo numbers chahiye, is liye alag flag.
   */
   const includeAccounts = options.includeAccounts !== false;
+  const includeFranchiseStats = includeAccounts || options.includeFranchiseLoans === true;
 
   const [dashboardResult, franchiseCustomersResult, customersResult, franchisesResult] =
     await Promise.allSettled([
       axiosInstance.get<DashboardStatsResponse>("/dashboard/stats"),
-      includeAccounts ? getFranchiseCustomerStats() : Promise.resolve(null),
+      includeFranchiseStats ? getFranchiseCustomerStats() : Promise.resolve(null),
       includeAccounts ? getCustomers() : Promise.resolve(null),
       includeAccounts ? getFranchises({ page: 1, limit: 10 }) : Promise.resolve(null),
     ]);
@@ -421,6 +433,38 @@ export const getDashboardStats = async (
   }
 
   const stats = dashboardResult.value.data.stats;
+
+  /*
+  Franchise-customer loans: `/franchise-customers/stats` ke har franchise row me
+  uske customers ke loans aate hain. Aggregate dono dashboard modes ke liye chahiye
+  (loan charts aur franchise module overview), is liye yahan ek hi baar banta hai.
+  */
+  const franchiseLoanProducts = new Map<string, number>();
+  let franchiseLoanTotal = 0;
+  if (franchiseCustomersResult.status === "fulfilled" && franchiseCustomersResult.value) {
+    franchiseCustomersResult.value.byFranchise.forEach((row) => {
+      franchiseLoanTotal += toCount(row.loans?.total);
+      (row.loans?.byProduct ?? []).forEach((entry) => {
+        const count = toCount(entry.count);
+        /* Ek product key/slug/label teeno form me aa sakta hai — slug par merge. */
+        const slug = resolveLoanSlug(entry.product);
+        if (!slug || count === 0) return;
+        franchiseLoanProducts.set(slug, (franchiseLoanProducts.get(slug) ?? 0) + count);
+      });
+    });
+  }
+  const franchiseLoanStats = Array.from(franchiseLoanProducts.entries()).map(([slug, count]) => ({
+    slug,
+    label: getLoanTypeLabel(slug),
+    count,
+  }));
+  const franchiseCustomerLoans = {
+    /* Product rows hain to unhi ka sum, warna backend ka per-franchise total. */
+    total: franchiseLoanStats.length
+      ? franchiseLoanStats.reduce((sum, product) => sum + product.count, 0)
+      : franchiseLoanTotal,
+    products: franchiseLoanStats,
+  };
   if (
     stats?.dashboardMode === "customers" ||
     stats?.dashboardMode === "franchises" ||
@@ -459,7 +503,11 @@ export const getDashboardStats = async (
       recent: [],
       recentUpdates: [],
       generatedAt: stats.generatedAt ?? new Date().toISOString(),
-      franchiseCustomerTotal: 0,
+      franchiseCustomerTotal:
+        franchiseCustomersResult.status === "fulfilled" && franchiseCustomersResult.value
+          ? franchiseCustomersResult.value.total
+          : 0,
+      franchiseCustomerLoans,
     };
   }
 
@@ -582,6 +630,7 @@ export const getDashboardStats = async (
       franchiseCustomersResult.status === "fulfilled" && franchiseCustomersResult.value
         ? franchiseCustomersResult.value.total
         : 0,
+    franchiseCustomerLoans,
     franchiseCustomersError:
       franchiseCustomersResult.status === "rejected"
         ? getApiErrorMessage(

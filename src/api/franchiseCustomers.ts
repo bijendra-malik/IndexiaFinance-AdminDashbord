@@ -34,7 +34,13 @@ export interface FranchiseCustomer {
   cibil?: FranchiseCustomerCibil;
   loanForm?: { locked?: boolean; reason?: string | null; canApplyLoan?: boolean };
   franchise?: FranchiseSummary | null;
-  loans?: { count?: number; lastAppliedAt?: string | null };
+  loans?: {
+    count?: number;
+    lastAppliedAt?: string | null;
+    /** Product-wise names — newer list responses bhejte hain, warna detail se aate hain. */
+    byProduct?: { product: string; count: number }[];
+    products?: string[];
+  };
 }
 
 export interface FranchiseCustomerPage {
@@ -85,11 +91,19 @@ export interface FranchiseCustomerStats {
 }
 
 export interface FranchiseCustomerLoan {
+  /** Application id — detail route ke liye. Backend `_id` ya `applicationId` bhejta hai. */
+  _id?: string;
+  applicationId?: string;
+  id?: string;
   applicationNo?: string;
   status?: string;
   stage?: string;
   stageKey?: string;
   step?: number;
+  loanAmount?: number | null;
+  loanType?: string;
+  /** Product ka route slug, jab row khud bheje. */
+  slug?: string;
 }
 
 export interface FranchiseCustomerLoanGroup {
@@ -139,6 +153,14 @@ export const getFranchiseCustomer = async (id: string): Promise<{
     loans: NonNullable<FranchiseCustomerDetail["loans"]>;
   }>(`/franchise-customers/${encodeURIComponent(id)}`);
   return response.data;
+};
+
+/*
+DELETE /franchise-customers/:id
+Super admin only — franchise customer record (CIBIL audit trail ke saath) hat jaata hai.
+*/
+export const deleteFranchiseCustomer = async (id: string): Promise<void> => {
+  await axiosInstance.delete(`/franchise-customers/${encodeURIComponent(id)}`);
 };
 
 export { getApiErrorMessage } from "../utils/apiError";

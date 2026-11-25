@@ -40,6 +40,13 @@ export interface PersonalLoan {
   /** Source channel — `franchise`/`franchiseCode` present = franchise sale, absent = direct customer. */
   franchise?: string | null;
   franchiseCode?: string | null;
+  /** Franchise-customer reference — set jab franchise ne apne customer ke liye file ki ho. */
+  franchiseCustomer?: string | null;
+  franchiseId?: string | null;
+  franchiseCustomerId?: string | null;
+  franchiseCustomerCode?: string | null;
+  isFranchiseCustomer?: boolean;
+  channel?: string;
   /** Rejection / review note saved with the last status change (max 500 chars). */
   adminNote?: string;
   approvedBy?: string | null;
@@ -237,6 +244,70 @@ export const resourceToSlug = (resource?: string): string | undefined =>
   resource ? RESOURCE_TO_SLUG[resource] : undefined;
 
 // ── API calls ─────────────────────────────────────────────────────────────────
+
+/** Populated reference bhi chal jaaye — `{ _id }`, `{ id }` ya plain string. */
+const referenceText = (value: unknown): string => {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return referenceText(record._id ?? record.id ?? record.code);
+  }
+  return "";
+};
+
+/**
+ * Application franchise side se aayi hai? Direct customer ki application par koi
+ * franchise reference nahi hota. Backend alag-alag field names bhejta hai,
+ * isliye sab known references check hote hain.
+ */
+export const isFranchiseCustomerLoan = (loan: PersonalLoan): boolean => {
+  if (loan.isFranchiseCustomer === true) return true;
+  if ((loan.channel ?? "").trim().toLowerCase() === "franchise-customer") return true;
+  return [
+    loan.franchise,
+    loan.franchiseCode,
+    loan.franchiseCustomer,
+    loan.franchiseId,
+    loan.franchiseCustomerId,
+    loan.franchiseCustomerCode,
+  ].some((value) => Boolean(referenceText(value)));
+};
+
+/** `LOAN000143`, `LOAN-000143` ya `loan 143` — ek hi number maane jaate hain. */
+const normalizeApplicationNo = (value?: string | null): string =>
+  (value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** Application number har record par alag naam se mil sakta hai. */
+const loanApplicationNo = (loan: PersonalLoan): string => {
+  const raw = loan.applicationNo ?? loan.applicationNumber ?? loan.appNo;
+  return typeof raw === "string" ? normalizeApplicationNo(raw) : "";
+};
+
+/**
+ * Application number se loan dhoondho — pehle preferred product, phir baaki.
+ * Franchise-customer detail product label se slug guess karta hai, jo hamesha
+ * sahi nahi hota; isliye fallback me saare products try hote hain.
+ */
+export const findLoanByApplicationNo = async (
+  applicationNo: string,
+  slugs: string[]
+): Promise<{ slug: string; loan: PersonalLoan } | null> => {
+  const target = normalizeApplicationNo(applicationNo);
+  if (!target) return null;
+
+  const queue = [...new Set(slugs)].filter((slug) => SUPPORTED_LOAN_SLUGS.has(slug));
+  for (const slug of queue) {
+    try {
+      const loans = await getLoansBySlug(slug);
+      const match = loans.find((loan) => loanApplicationNo(loan) === target);
+      if (match) return { slug, loan: match };
+    } catch {
+      /* Ek product fail ho to baaki products try karte raho. */
+    }
+  }
+  return null;
+};
 
 /** Fetch all applications for a given loan type slug */
 export const getLoansBySlug = async (slug: string): Promise<PersonalLoan[]> => {
