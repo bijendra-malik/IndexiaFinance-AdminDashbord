@@ -47,6 +47,31 @@ export const LOAN_TYPES: LoanTypeDef[] = [
 export const getLoanTypeLabel = (slug: string): string =>
   LOAN_TYPES.find((l) => l.slug === slug)?.label ?? slug;
 
+/**
+ * URL me loan ka naam — slug bina hyphen ke: `personal-loan` → `personalloan`.
+ * Dashboard ke route isi naam se chalte hain (/dashboard/admin/personalloan).
+ */
+export const loanRouteName = (slug: string): string =>
+  resolveLoanSlug(slug).replace(/-/g, "");
+
+/**
+ * URL ka segment → product slug. `personalloan`, `personal-loan`,
+ * `personal_loan` aur label "Personal Loan" — sab ek hi product par jaate hain.
+ */
+export const loanSlugFromRouteParam = (value?: string | null): LoanTypeSlug | null => {
+  const key = (value ?? "").trim().toLowerCase();
+  if (!key) return null;
+  const compact = key.replace(/[\s_-]+/g, "");
+  return (
+    LOAN_TYPES.find(
+      (type) =>
+        type.slug === key ||
+        type.slug.replace(/-/g, "") === compact ||
+        type.label.toLowerCase().replace(/\s+/g, "") === compact
+    )?.slug ?? null
+  );
+};
+
 /** Overview/list API product key ("creditCard") route slug ("credit-card") me. */
 export const PRODUCT_SLUGS: Record<string, string> = {
   personal: "personal-loan", business: "business-loan", home: "home-loan",
