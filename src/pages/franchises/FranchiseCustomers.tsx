@@ -138,7 +138,8 @@ const FranchiseCustomers = () => {
   const [openingKey, setOpeningKey] = useState<string | null>(null);
   /* List me loan product names aur "View loans" panel — detail se per customer cache. */
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const isStatsPage = location.pathname === "/franchise-customers/stats";
+  /* Nested URL (/dashboard/admin/franchise-customers/stats) bhi same page hai. */
+  const isStatsPage = location.pathname.endsWith("/franchise-customers/stats");
 
   const [searchParams, setSearchParams] = useSearchParams();
   // A franchise detail page can deep-link here as /franchise-customers?franchise=<code|id>
