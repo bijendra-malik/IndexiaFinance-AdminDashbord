@@ -9,9 +9,10 @@ import StatusBadge from "../../components/common/StatusBadge";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import { getLoanTypeLabel, type LoanTypeSlug } from "../../constants/loanTypes";
 import {
-  getLoansBySlug, SUPPORTED_LOAN_SLUGS,
+  getLoansBySlug, SUPPORTED_LOAN_SLUGS, isFranchiseCustomerLoan,
   getApiErrorMessage, type PersonalLoan,
 } from "../../api/personalLoans";
+import { isFranchiseOnlyScope } from "../../utils/adminAccess";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 10;
@@ -39,8 +40,13 @@ const LoanApplicationsList = () => {
   const isSupported  = SUPPORTED_LOAN_SLUGS.has(loanType ?? "");
   // Super admins can hand out access per product; an unassigned product must not
   // even be fetched, let alone rendered.
-  const { canAccessLoan, accessibleLoanTypes } = useAuth();
+  const { canAccessLoan, accessibleLoanTypes, moduleAccess } = useAuth();
   const allowed      = canAccessLoan(loanType);
+  /*
+  Franchise-scope admin (Franchises tick, Customers nahi) ko assigned product ke
+  sirf franchise-customer applications dikhte hain — direct customer ke nahi.
+  */
+  const franchiseOnly = isFranchiseOnlyScope(moduleAccess);
 
   const [loans, setLoans]               = useState<PersonalLoan[] | null>(null);
   const [error, setError]               = useState("");
@@ -73,9 +79,24 @@ const LoanApplicationsList = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [loanType, allowed]);
 
+  /*
+  Filter sirf tab lagta hai jab API franchise source mark karti hai. Kuch products
+  ka list payload ye fields nahi bhejta — tab sab filter kar dena page ko khaali
+  kar deta tha, isliye us case me saari applications dikhti hain.
+  */
+  const franchiseMarked = useMemo(
+    () => (loans ?? []).some(isFranchiseCustomerLoan),
+    [loans]
+  );
+  const franchiseFilterOn = franchiseOnly && franchiseMarked;
+  const visibleLoans = useMemo(
+    () => (loans && franchiseFilterOn ? loans.filter(isFranchiseCustomerLoan) : loans),
+    [loans, franchiseFilterOn]
+  );
+
   const filtered = useMemo(() => {
-    if (!loans) return [];
-    return loans.filter((l) => {
+    if (!visibleLoans) return [];
+    return visibleLoans.filter((l) => {
       const q = search.trim().toLowerCase();
       const matchSearch = !q ||
         (l.fullName ?? "").toLowerCase().includes(q) ||
@@ -86,16 +107,16 @@ const LoanApplicationsList = () => {
         (l.status ?? "").toLowerCase() === statusFilter.toLowerCase();
       return matchSearch && matchStatus;
     });
-  }, [loans, search, statusFilter]);
+  }, [visibleLoans, search, statusFilter]);
 
   const counts = useMemo(() => {
-    if (!loans) return {} as Record<string, number>;
-    return loans.reduce<Record<string, number>>((acc, l) => {
+    if (!visibleLoans) return {} as Record<string, number>;
+    return visibleLoans.reduce<Record<string, number>>((acc, l) => {
       const k = STATUS_KEYS.find((k) => k.toLowerCase() === (l.status ?? "").toLowerCase()) ?? (l.status ?? "Other");
       acc[k] = (acc[k] ?? 0) + 1;
       return acc;
     }, {});
-  }, [loans]);
+  }, [visibleLoans]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);
@@ -136,12 +157,14 @@ const LoanApplicationsList = () => {
       <PageHeader
         icon={FileText}
         title={`${label} Applications`}
-        subtitle={`Applications submitted for ${label.toLowerCase()}`}
+        subtitle={franchiseFilterOn
+          ? `Franchise customer applications for ${label.toLowerCase()}`
+          : `Applications submitted for ${label.toLowerCase()}`}
         onRefresh={() => void load()}
         refreshing={loans === null && !error}
       >
         {/* Status count chips */}
-        {loans && (
+        {visibleLoans && (
           <div className="flex flex-wrap items-center gap-1.5">
             {(Object.keys(STATUS_BTN) as string[]).map((s) => (
               <span key={s} className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_BTN[s]}`}>
@@ -152,9 +175,16 @@ const LoanApplicationsList = () => {
         )}
       </PageHeader>
 
+      {franchiseOnly && loans && loans.length > 0 && !franchiseMarked && (
+        <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          The applications API does not mark which rows came from a franchise customer, so all
+          {` ${label.toLowerCase()} `}applications are listed here.
+        </p>
+      )}
+
       <TableCard>
         {/* Filter bar */}
-        {loans && loans.length > 0 && (
+        {visibleLoans && visibleLoans.length > 0 && (
           <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
             <div className="relative flex-1 max-w-xs">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -187,15 +217,23 @@ const LoanApplicationsList = () => {
 
         {error ? (
           <TableError message={error} onRetry={() => void load()} />
-        ) : loans === null ? (
+        ) : !visibleLoans ? (
           <TableSkeleton rows={8} />
         ) : filtered.length === 0 ? (
           <TableEmpty
             icon={FileText}
-            title={loans.length === 0
-              ? isSupported ? "No applications yet" : `API endpoint for ${label} not available`
+            title={visibleLoans.length === 0
+              ? !isSupported
+                ? `API endpoint for ${label} not available`
+                : franchiseFilterOn
+                  ? "No franchise customer applications yet"
+                  : "No applications yet"
               : "No results found"}
-            description={loans.length > 0 ? "Try adjusting your search or filter." : undefined}
+            description={visibleLoans.length > 0
+              ? "Try adjusting your search or filter."
+              : franchiseFilterOn
+                ? "Direct customer applications are not shown to franchise admins."
+                : undefined}
           />
         ) : (
           <>

@@ -1,16 +1,22 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  ArrowLeft, CheckCircle2, Clock3, FileText, Gauge,
-  LoaderCircle, RefreshCw, Search, ShieldCheck, Users, XCircle,
+  ArrowLeft, ArrowUpRight, CheckCircle2, Clock3, FileText, Gauge,
+  LoaderCircle, RefreshCw, Search, ShieldCheck, Trash2, Users, XCircle,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/common/StatCard";
+import { useAuth } from "../../context/AuthContext";
+import { useToast } from "../../context/ToastContext";
+import { SUPPORTED_LOAN_SLUGS, findLoanByApplicationNo } from "../../api/personalLoans";
+import { resolveLoanSlug } from "../../constants/loanTypes";
 import {
-  getApiErrorMessage, getFranchiseCustomer, getFranchiseCustomers,
+  deleteFranchiseCustomer, getApiErrorMessage, getFranchiseCustomer, getFranchiseCustomers,
   getFranchiseCustomerStats, type FranchiseCustomerStats,
   type FranchiseCustomer as FranchiseCustomerRecord,
+  type FranchiseCustomerLoan,
 } from "../../api/franchiseCustomers";
 import Pagination from "../../components/common/Pagination";
 
@@ -33,6 +39,57 @@ const statusClass = (status?: string) => {
     case "Failed":  return "bg-red-50 text-red-700";
     default:        return "bg-slate-100 text-slate-600";
   }
+};
+
+/**
+ * Ek loan application ka open link. Backend id deta hai to seedha application
+ * khulta hai; sirf application number mila to list se id resolve hoti hai.
+ * List ke "View loans" panel aur detail table dono yahi use karte hain.
+ */
+const ApplicationLink = ({
+  product, application, onOpenByNo, openingKey,
+}: {
+  product: string;
+  application: FranchiseCustomerLoan;
+  onOpenByNo: (slug: string, applicationNo: string) => void;
+  openingKey: string | null;
+}) => {
+  const slug = application.slug || resolveLoanSlug(product);
+  const appId = application._id || application.applicationId || application.id;
+  const applicationNo = application.applicationNo ?? "";
+  if (!SUPPORTED_LOAN_SLUGS.has(slug)) return <>{applicationNo || "—"}</>;
+
+  if (appId) {
+    return (
+      <Link
+        to={`/applications/${slug}/${encodeURIComponent(appId)}`}
+        title="Open this loan application"
+        className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-[rgb(6,106,156)] hover:underline"
+      >
+        {applicationNo || appId.slice(-8)}
+        <ArrowUpRight size={12} aria-hidden />
+      </Link>
+    );
+  }
+  if (!applicationNo) return <>—</>;
+
+  const openKey = `${slug}:${applicationNo}`;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenByNo(slug, applicationNo)}
+      disabled={openingKey === openKey}
+      title="Find and open this loan application"
+      className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-[rgb(6,106,156)] hover:underline disabled:opacity-60"
+    >
+      {applicationNo}
+      {openingKey === openKey ? (
+        <LoaderCircle size={12} className="animate-spin" aria-hidden />
+      ) : (
+        <ArrowUpRight size={12} aria-hidden />
+      )}
+    </button>
+  );
 };
 
 const Field = ({ label, children }: { label: string; children: ReactNode }) => (
@@ -69,6 +126,18 @@ const FUNNEL_COLUMNS: { key: FunnelColumnKey; label: string }[] = [
 const FranchiseCustomers = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isSuperAdmin, accessibleLoanTypes } = useAuth();
+  const { showToast } = useToast();
+  /* Delete sirf super admin ka — franchise admin ke liye ye page read-only hai. */
+  const [pendingDelete, setPendingDelete] = useState<
+    { id: string; name: string; fromDetail: boolean } | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
+  /* Application id na aaye to number se resolve karke usi loan par jaate hain. */
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
+  /* List me loan product names aur "View loans" panel — detail se per customer cache. */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const isStatsPage = location.pathname === "/franchise-customers/stats";
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -81,6 +150,26 @@ const FranchiseCustomers = () => {
   const [appliedFranchise, setAppliedFranchise] = useState(franchiseParam);
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const [loanInfo, setLoanInfo] = useState<Record<string, {
+    data: Awaited<ReturnType<typeof getFranchiseCustomer>> | null;
+    error: string;
+  }>>({});
+  const requestedLoans = useRef<Set<string>>(new Set());
+
+  const loadLoans = useCallback((customerId: string) => {
+    /* Key me refresh count — refresh par names/loans dobara load hote hain. */
+    const key = `${refreshKey}:${customerId}`;
+    if (requestedLoans.current.has(key)) return;
+    requestedLoans.current.add(key);
+    setLoanInfo((current) => ({ ...current, [key]: { data: null, error: "" } }));
+    getFranchiseCustomer(customerId)
+      .then((data) => setLoanInfo((current) => ({ ...current, [key]: { data, error: "" } })))
+      .catch((error: unknown) => setLoanInfo((current) => ({
+        ...current,
+        [key]: { data: null, error: getApiErrorMessage(error, "Unable to load this customer's loans.") },
+      })));
+  }, [refreshKey]);
 
   const [list, setList] = useState<{
     key: string;
@@ -153,6 +242,13 @@ const FranchiseCustomers = () => {
   const currentDetailKey = id ? `${id}:${refreshKey}` : "";
   const currentDetail = detail?.key === currentDetailKey ? detail : null;
 
+  /* List payload product names nahi bhejta, isliye har visible row ka detail ek baar. */
+  useEffect(() => {
+    const rows = currentList?.result?.customers;
+    if (!rows?.length) return;
+    rows.forEach((customer) => loadLoans(customer._id));
+  }, [currentList, loadLoans]);
+
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPage(1);
@@ -181,8 +277,70 @@ const FranchiseCustomers = () => {
 
   const refresh = () => setRefreshKey((key) => key + 1);
 
+  /**
+   * Product group se slug guess galat ho sakta hai, isliye pehle wahi product,
+   * phir assigned products me application number search hota hai.
+   */
+  const openByApplicationNo = async (slug: string, applicationNo: string) => {
+    const key = `${slug}:${applicationNo}`;
+    if (openingKey) return;
+    setOpeningKey(key);
+    try {
+      const found = await findLoanByApplicationNo(applicationNo, [
+        slug,
+        ...accessibleLoanTypes.map((loan) => loan.slug),
+      ]);
+      if (found?.loan._id) {
+        navigate(`/applications/${found.slug}/${encodeURIComponent(found.loan._id)}`);
+      } else {
+        showToast(`Application ${applicationNo} was not found in the applications API.`, "error");
+      }
+    } catch (error: unknown) {
+      showToast(getApiErrorMessage(error, "Unable to open this application."), "error");
+    } finally {
+      setOpeningKey(null);
+    }
+  };
+
+  /** Row ka loans panel toggle; detail ek hi baar load hota hai. */
+  const toggleLoans = (customerId: string) => {
+    setExpandedId((current) => (current === customerId ? null : customerId));
+    loadLoans(customerId);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteFranchiseCustomer(pendingDelete.id);
+      showToast("Franchise customer deleted.", "success");
+      const { fromDetail } = pendingDelete;
+      setPendingDelete(null);
+      if (fromDetail) navigate("/franchise-customers");
+      else refresh();
+    } catch (error: unknown) {
+      showToast(getApiErrorMessage(error, "Unable to delete this franchise customer."), "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  /* List aur detail dono wahi confirm dialog use karte hain. */
+  const deleteDialog = pendingDelete ? (
+    <ConfirmDialog
+      title={`Delete ${pendingDelete.name}?`}
+      message="This franchise customer and their CIBIL audit trail will be removed. This cannot be undone."
+      confirmLabel="Delete"
+      danger
+      isSubmitting={deleting}
+      onCancel={() => setPendingDelete(null)}
+      onConfirm={() => void confirmDelete()}
+    />
+  ) : null;
+
   if (id) {
     const record = currentDetail?.data?.customer;
+    const recordName = record?.fullName || record?.mobile || "this franchise customer";
     const owner = currentDetail?.data?.franchise;
     const loans = currentDetail?.data?.loans;
     const cibil = record?.cibil;
@@ -192,9 +350,20 @@ const FranchiseCustomers = () => {
           <Link to="/franchise-customers" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800">
             <ArrowLeft size={16} /> Franchise customers
           </Link>
-          <button type="button" onClick={refresh} disabled={!currentDetail} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-            <RefreshCw size={14} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && id && (
+              <button
+                type="button"
+                onClick={() => setPendingDelete({ id, name: recordName, fromDetail: true })}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+            )}
+            <button type="button" onClick={refresh} disabled={!currentDetail} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
         </div>
         {!currentDetail && (
           <div className="flex items-center justify-center gap-2 py-16 text-slate-500"><LoaderCircle size={18} className="animate-spin" /> Loading customer report...</div>
@@ -277,15 +446,29 @@ const FranchiseCustomers = () => {
                   <h3 className="bg-slate-50 px-5 py-3 text-sm font-semibold capitalize text-slate-700">{titleCase(group.product)} <span className="ml-1 text-xs font-normal">({group.count})</span></h3>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[560px] text-left text-sm">
-                      <thead className="text-xs uppercase text-slate-500"><tr><th className="px-5 py-2">Application</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Stage</th><th className="px-4 py-2">Step</th></tr></thead>
+                      <thead className="text-xs uppercase text-slate-500">
+                        <tr>
+                          <th className="px-5 py-2">Application</th>
+                          <th className="px-4 py-2">Status</th>
+                          <th className="px-4 py-2">Stage</th>
+                          <th className="px-4 py-2">Step</th>
+                        </tr>
+                      </thead>
                       <tbody className="divide-y divide-slate-100">
                         {group.applications.map((application, index) => (
-                          <tr key={application.applicationNo || `${group.product}-${index}`}>
-                            <td className="px-5 py-3 font-mono text-xs text-slate-700">{application.applicationNo || "—"}</td>
-                            <td className="px-4 py-3 text-slate-600">{application.status || "—"}</td>
-                            <td className="px-4 py-3 text-slate-600">{application.stage || "—"}</td>
-                            <td className="px-4 py-3 text-slate-600">{application.step ?? "—"}</td>
-                          </tr>
+                            <tr key={application._id || application.applicationId || application.id || application.applicationNo || `${group.product}-${index}`}>
+                              <td className="px-5 py-3 font-mono text-xs text-slate-700">
+                                <ApplicationLink
+                                  product={group.product}
+                                  application={application}
+                                  onOpenByNo={openByApplicationNo}
+                                  openingKey={openingKey}
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{application.status || "—"}</td>
+                              <td className="px-4 py-3 text-slate-600">{application.stage || "—"}</td>
+                              <td className="px-4 py-3 text-slate-600">{application.step ?? "—"}</td>
+                            </tr>
                         ))}
                       </tbody>
                     </table>
@@ -295,6 +478,8 @@ const FranchiseCustomers = () => {
             </section>
           </>
         )}
+
+        {deleteDialog}
       </AdminLayout>
     );
   }
@@ -398,6 +583,17 @@ const FranchiseCustomers = () => {
   const showCibil    = customers.some((c) => Boolean(c.cibil));
   const showLoanForm = customers.some((c) => Boolean(c.loanForm));
   const hasFilters   = !!(appliedSearch || appliedFranchise);
+  /* List payload loan names bheje to wahi, warna row ke detail se product names. */
+  const loanProductNames = (
+    customer: FranchiseCustomerRecord,
+    info: Awaited<ReturnType<typeof getFranchiseCustomer>> | null | undefined
+  ): string[] => {
+    const fromList = customer.loans?.byProduct?.map((entry) => titleCase(entry.product))
+      ?? customer.loans?.products?.map(titleCase);
+    if (fromList?.length) return fromList;
+    return info?.loans.data.map((group) => titleCase(group.product)) ?? [];
+  };
+  const columnCount = 6 + (showCibil ? 2 : 0) + (showLoanForm ? 1 : 0);
   return (
     <AdminLayout>
       <PageHeader
@@ -454,8 +650,12 @@ const FranchiseCustomers = () => {
                   <tr>{["Customer", "Franchise", "PAN", ...(showCibil ? ["CIBIL", "Score"] : []), ...(showLoanForm ? ["Loan form"] : []), "Loans", "Last applied", ""].map((label, index) => <th key={`${label}-${index}`} className="px-4 py-3">{label}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {customers.map((customer) => (
-                    <tr key={customer._id} className="hover:bg-slate-50/70">
+                  {customers.map((customer) => {
+                    const info = loanInfo[`${refreshKey}:${customer._id}`];
+                    const productNames = loanProductNames(customer, info?.data);
+                    return (
+                    <Fragment key={customer._id}>
+                    <tr className="hover:bg-slate-50/70">
                       <td className="px-4 py-3">
                         <Link to={`/franchise-customers/${encodeURIComponent(customer._id)}`} className="font-semibold text-sky-800 hover:underline">{customer.fullName || "Customer"}</Link>
                         <p className="mt-0.5 text-xs text-slate-500">{customer.mobile || customer.email || "—"}</p>
@@ -465,11 +665,85 @@ const FranchiseCustomers = () => {
                       {showCibil && <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(customer.cibil?.status)}`}>{titleCase(customer.cibil?.status)}</span></td>}
                       {showCibil && <td className="px-4 py-3 text-slate-600">{customer.cibil?.score ?? "—"}</td>}
                       {showLoanForm && <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${customer.loanForm?.locked ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{customer.loanForm?.locked ? "Locked" : "Unlocked"}</span></td>}
-                      <td className="px-4 py-3 text-slate-600">{customer.loans?.count ?? 0}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        <span className="font-semibold text-slate-700">{customer.loans?.count ?? 0}</span>
+                        {productNames.length > 0 && (
+                          <p className="mt-0.5 text-[11px] text-slate-400">{productNames.join(" · ")}</p>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-slate-500">{formatDate(customer.loans?.lastAppliedAt)}</td>
-                      <td className="px-4 py-3"><Link to={`/franchise-customers/${encodeURIComponent(customer._id)}`} className="text-xs font-semibold text-sky-700 hover:underline">Audit</Link></td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleLoans(customer._id)}
+                            aria-expanded={expandedId === customer._id}
+                            title="See which loans this customer applied for"
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                          >
+                            <FileText size={13} />
+                            {expandedId === customer._id ? "Hide loans" : "View loans"}
+                          </button>
+                          <Link to={`/franchise-customers/${encodeURIComponent(customer._id)}`} className="text-xs font-semibold text-sky-700 hover:underline">Audit</Link>
+                          {isSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setPendingDelete({ id: customer._id, name: customer.fullName || customer.mobile || "this franchise customer", fromDetail: false })}
+                              aria-label={`Delete ${customer.fullName || customer._id}`}
+                              title="Delete franchise customer"
+                              className="rounded-md p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
-                  ))}
+                    {expandedId === customer._id && (
+                      <tr className="bg-slate-50/60">
+                        <td colSpan={columnCount} className="px-4 pb-4 pt-1">
+                          {!info ? null : !info.data && !info.error ? (
+                            <p className="flex items-center gap-2 text-sm text-slate-500">
+                              <LoaderCircle size={14} className="animate-spin" /> Loading loans...
+                            </p>
+                          ) : info.error ? (
+                            <p className="text-sm text-red-600">{info.error}</p>
+                          ) : !info.data?.loans.data.length ? (
+                            <p className="text-sm text-slate-500">No loan applications found for this customer.</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {info.data!.loans.data.map((group) => (
+                                <div key={group.product}>
+                                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                                    {titleCase(group.product)}{" "}
+                                    <span className="font-normal">({group.count})</span>
+                                  </p>
+                                  <div className="mt-1.5 flex flex-wrap gap-2">
+                                    {group.applications.map((application, index) => (
+                                      <span
+                                        key={application._id || application.applicationId || application.id || application.applicationNo || `${group.product}-${index}`}
+                                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5"
+                                      >
+                                        <ApplicationLink
+                                          product={group.product}
+                                          application={application}
+                                          onOpenByNo={openByApplicationNo}
+                                          openingKey={openingKey}
+                                        />
+                                        <span className="text-[11px] text-slate-400">{application.status || "—"}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -484,6 +758,8 @@ const FranchiseCustomers = () => {
           </>
         )}
       </section>
+
+      {deleteDialog}
     </AdminLayout>
   );
 };

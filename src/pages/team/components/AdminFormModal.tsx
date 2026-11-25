@@ -753,6 +753,15 @@ const AdminFormModal = ({
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
                   Products and modules can be assigned together. Only the ticked products and
                   modules appear for this admin — the rest of the app stays hidden.
+                  {selectedModules.includes("franchises") && (
+                    <>
+                      {" "}
+                      Franchises tick hone par is admin ko sirf franchise customers ke loans dikhte
+                      hain — sirf unhi loan products ke jo yahan tick kiye hain. Direct customers
+                      ki applications list me nahi aati; Customers bhi tick karo to dono dikhte
+                      hain.
+                    </>
+                  )}
                 </p>
               </div>
 
