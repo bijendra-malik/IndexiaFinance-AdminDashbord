@@ -309,15 +309,6 @@ export const findLoanByApplicationNo = async (
   return null;
 };
 
-/**
- * Pending product list requests, endpoint ke hisaab se.
- *
- * Ek hi list do jagah se ek saath maangi ja sakti hai — StrictMode dev me har
- * effect do baar chalta hai, aur dashboard refresh bhi wahi list dobara maangta
- * hai. Pending request share karne se 18 products ka load aadha ho jaata hai;
- * request complete hote hi entry hat jaati hai, is liye agli call phir bhi fresh
- * data laati hai.
- */
 const inFlightLoanLists = new Map<string, Promise<PersonalLoan[]>>();
 
 /** Fetch all applications for a given loan type slug */

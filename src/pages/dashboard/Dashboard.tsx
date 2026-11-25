@@ -466,7 +466,11 @@ const AdminDashboard = () => {
     if (!franchiseOnlyAdmin) return;
     let cancelled = false;
     const key = franchiseDirectoryKey;
-    getFranchiseCustomerDirectory()
+    /*
+    Refresh par directory cache bypass — warna naya franchise customer 5 minute
+    tak na dikhe. Pehli load cache se hoti hai, is liye navigation fast rehti hai.
+    */
+    getFranchiseCustomerDirectory({ fresh: reloadToken > 0 })
       .then((rows) => {
         if (!cancelled) {
           setFranchiseDirectory({ key, lookup: buildFranchiseLookup(rows), error: "" });
@@ -484,7 +488,7 @@ const AdminDashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [franchiseOnlyAdmin, franchiseDirectoryKey]);
+  }, [franchiseOnlyAdmin, franchiseDirectoryKey, reloadToken]);
 
   useEffect(() => {
     if (isSuperAdmin) return;
