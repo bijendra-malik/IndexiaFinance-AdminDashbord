@@ -12,6 +12,11 @@ import {
   resolveModuleAccess,
   resolvePermissions,
 } from "../utils/adminAccess";
+import {
+  dashboardPathForScope,
+  dashboardScopeFor,
+  workspacePathForScope,
+} from "../utils/dashboardScope";
 import { AuthContext } from "./AuthContext";
 
 /*
@@ -151,6 +156,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const canAccessLoan = (slug?: string) => loanIsAllowed(loanAccess, slug);
   const moduleAccess = resolveModuleAccess(directory, admin, isSuperAdmin);
   const canAccessModule = (module?: string) => moduleIsAllowed(moduleAccess, module);
+  /* Dashboard ka URL role/module se banta hai — ek hi jagah decide hota hai. */
+  const dashboardScope = dashboardScopeFor({ role, moduleAccess, loanAccess });
+  const dashboardPath = dashboardPathForScope(dashboardScope);
+  const workspacePath = workspacePathForScope(dashboardScope);
 
   return (
     <AuthContext.Provider
@@ -172,6 +181,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         canAccessLoan,
         moduleAccess,
         canAccessModule,
+        dashboardScope,
+        dashboardPath,
+        workspacePath,
         refreshAccess,
       }}
     >
