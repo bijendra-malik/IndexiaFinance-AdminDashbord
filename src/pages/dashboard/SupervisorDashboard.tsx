@@ -125,7 +125,7 @@ const scopeText = (stats: SupervisorStats | null): string => {
 };
 
 const SupervisorDashboard = () => {
-  const { admin, can, permissions } = useAuth();
+  const { admin, can, permissions, dashboardPath } = useAuth();
 
   const [stats, setStats] = useState<SupervisorStats | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
@@ -227,6 +227,9 @@ const SupervisorDashboard = () => {
                 </span>
                 <span className="rounded-lg bg-white/15 px-2.5 py-1 font-semibold backdrop-blur">
                   {scopeText(stats)}
+                </span>
+                <span className="rounded-lg bg-white/10 px-2.5 py-1 font-mono text-white/85 backdrop-blur">
+                  {dashboardPath}
                 </span>
                 <span className="rounded-lg bg-white/10 px-2.5 py-1 text-white/85 backdrop-blur">
                   Last {stats?.windowDays || 30} days
