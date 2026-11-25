@@ -7,7 +7,7 @@ import PageHeader from "../../components/common/PageHeader";
 import Pagination from "../../components/common/Pagination";
 import StatusBadge from "../../components/common/StatusBadge";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
-import { getLoanTypeLabel, type LoanTypeSlug } from "../../constants/loanTypes";
+import { getLoanTypeLabel, loanSlugFromRouteParam, type LoanTypeSlug } from "../../constants/loanTypes";
 import {
   getLoansBySlug, SUPPORTED_LOAN_SLUGS, isFranchiseCustomerLoan,
   getApiErrorMessage, type PersonalLoan,
@@ -34,7 +34,9 @@ const fmtDate = (iso: string) =>
 
 // ── Component ──────────────────────────────────────────────────────────────────
 const LoanApplicationsList = () => {
-  const { loanType } = useParams<{ loanType: LoanTypeSlug }>();
+  const { loanType: loanRouteSegment } = useParams<{ loanType: string }>();
+  /* URL product ka naam bhejta hai (personalloan), API slug maangti hai. */
+  const loanType = (loanSlugFromRouteParam(loanRouteSegment) ?? loanRouteSegment ?? "") as LoanTypeSlug;
   const navigate     = useNavigate();
   const label        = getLoanTypeLabel(loanType ?? "");
   const isSupported  = SUPPORTED_LOAN_SLUGS.has(loanType ?? "");
