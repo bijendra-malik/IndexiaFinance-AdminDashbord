@@ -3,6 +3,7 @@ import type { ApiAdmin } from "../api/auth";
 import type { AdminRole, LoanAccess, ModuleAccess } from "../api/adminUsers";
 import type { AdminPermission } from "../constants/adminPermissions";
 import type { LoanTypeDef } from "../constants/loanTypes";
+import type { DashboardScope } from "../utils/dashboardScope";
 
 export interface AuthContextType {
   admin: ApiAdmin | null;
@@ -28,6 +29,12 @@ export interface AuthContextType {
   /** `"all"` or the module keys a super admin assigned to this account. */
   moduleAccess: ModuleAccess;
   canAccessModule: (module?: string) => boolean;
+  /** Whose dashboard this session owns; the URL mirrors it. */
+  dashboardScope: DashboardScope;
+  /** Landing dashboard (`/dashboard`, `/dashboard/admin`, …). */
+  dashboardPath: string;
+  /** Nested workspace base (`/dashboard/<scope>`) — har page isi ke andar. */
+  workspacePath: string;
   /** Re-read the team directory (call after a super admin saves access). */
   refreshAccess: () => void;
 }
