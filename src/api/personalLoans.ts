@@ -309,13 +309,34 @@ export const findLoanByApplicationNo = async (
   return null;
 };
 
-/** Fetch all applications for a given loan type slug */
-export const getLoansBySlug = async (slug: string): Promise<PersonalLoan[]> => {
-  const endpoint = SLUG_ENDPOINT[slug];
-  if (!endpoint) throw new Error(`No endpoint mapped for slug: ${slug}`);
+/**
+ * Pending product list requests, endpoint ke hisaab se.
+ *
+ * Ek hi list do jagah se ek saath maangi ja sakti hai — StrictMode dev me har
+ * effect do baar chalta hai, aur dashboard refresh bhi wahi list dobara maangta
+ * hai. Pending request share karne se 18 products ka load aadha ho jaata hai;
+ * request complete hote hi entry hat jaati hai, is liye agli call phir bhi fresh
+ * data laati hai.
+ */
+const inFlightLoanLists = new Map<string, Promise<PersonalLoan[]>>();
 
-  const res = await axiosInstance.get<Record<string, unknown>>(endpoint);
-  return extractList(res.data);
+/** Fetch all applications for a given loan type slug */
+export const getLoansBySlug = (slug: string): Promise<PersonalLoan[]> => {
+  const endpoint = SLUG_ENDPOINT[slug];
+  if (!endpoint) return Promise.reject(new Error(`No endpoint mapped for slug: ${slug}`));
+
+  const pending = inFlightLoanLists.get(endpoint);
+  if (pending) return pending;
+
+  const request = axiosInstance
+    .get<Record<string, unknown>>(endpoint)
+    .then((res) => extractList(res.data))
+    .finally(() => {
+      inFlightLoanLists.delete(endpoint);
+    });
+
+  inFlightLoanLists.set(endpoint, request);
+  return request;
 };
 
 /** Fetch a single application by ID for a given loan type slug */
