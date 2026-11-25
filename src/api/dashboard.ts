@@ -501,7 +501,11 @@ export const getDashboardStats = async (
       approvalRate: 0,
       products: [],
       recent: [],
-      recentUpdates: [],
+      /*
+      Module modes par bhi feed aati hai — franchise admin ka dashboard usi se
+      apne franchise-customer loans ke updates dikhata hai.
+      */
+      recentUpdates: (stats.recentUpdates ?? []).map(toAdminActivity),
       generatedAt: stats.generatedAt ?? new Date().toISOString(),
       franchiseCustomerTotal:
         franchiseCustomersResult.status === "fulfilled" && franchiseCustomersResult.value
