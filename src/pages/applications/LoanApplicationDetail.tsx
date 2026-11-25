@@ -11,7 +11,7 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { getLoanTypeLabel } from "../../constants/loanTypes";
+import { getLoanTypeLabel, loanSlugFromRouteParam } from "../../constants/loanTypes";
 import {
   addLoanUpdateBySlug,
   deleteLoanBySlug,
@@ -234,11 +234,13 @@ const KpiTile = ({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 const LoanApplicationDetail = () => {
-  const { loanType, id } = useParams<{ loanType: string; id: string }>();
+  const { loanType: loanRouteSegment, id } = useParams<{ loanType: string; id: string }>();
+  /* URL product ka naam bhejta hai (personalloan), API slug maangti hai. */
+  const loanType = loanSlugFromRouteParam(loanRouteSegment) ?? loanRouteSegment ?? "";
   const navigate = useNavigate();
   const { showToast } = useToast();
   const label    = getLoanTypeLabel(loanType ?? "");
-  const { admin, canAccessLoan, isSuperAdmin, isSubAdmin, can } = useAuth();
+  const { admin, canAccessLoan, isSuperAdmin, isSubAdmin, can, dashboardPath } = useAuth();
   const allowed  = canAccessLoan(loanType);
   /*
   Status finalise karna sirf super admin ka kaam nahi — sub admin isi liye banta
@@ -579,7 +581,7 @@ const LoanApplicationDetail = () => {
         <p className="mt-1 text-sm text-slate-500">
           This application belongs to a product your super admin has not assigned to you.
         </p>
-        <button onClick={() => navigate("/dashboard")}
+        <button onClick={() => navigate(dashboardPath)}
           className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
           style={{ background: "linear-gradient(135deg,rgb(6,106,156),rgb(38,174,144))" }}>
           Back to dashboard
