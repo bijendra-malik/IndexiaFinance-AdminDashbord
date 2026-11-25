@@ -16,6 +16,10 @@ import {
   type RecentApplication,
 } from "../../api/dashboard";
 import { getLoansBySlug, isFranchiseCustomerLoan, type PersonalLoan } from "../../api/personalLoans";
+import {
+  getFranchiseCustomerDirectory,
+  type FranchiseCustomerContact,
+} from "../../api/franchiseCustomers";
 import { getLoanTypeLabel, LOAN_TYPES } from "../../constants/loanTypes";
 import {
   adminLabel, applicationDetailPath, formatCompactCurrency, formatCurrency, formatDateTime,
@@ -35,11 +39,49 @@ import { AdminUpdatesTable, RecentAccountsTable, RecentApplicationsTable } from 
 import ProductExplorer from "./components/ProductExplorer";
 import ModuleDashboardOverview from "./ModuleDashboardOverview";
 import SupervisorDashboard from "./SupervisorDashboard";
+import { DASHBOARD_SCOPE_META } from "../../utils/dashboardScope";
 
 /** Product rows have no dependable slug, so fall back to matching the label. */
 const productSlug = (row: { slug?: string; label?: string }): string | undefined =>
   row.slug ??
   LOAN_TYPES.find((loan) => loan.label.toLowerCase() === (row.label ?? "").toLowerCase())?.slug;
+
+/** Franchise customers ke applicant keys — mobile + email sets. */
+interface FranchiseCustomerLookup {
+  mobiles: Set<string>;
+  emails: Set<string>;
+}
+
+const mobileLookupKey = (value?: string | null) => {
+  const digits = (value ?? "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+};
+
+const emailLookupKey = (value?: string | null) => (value ?? "").trim().toLowerCase();
+
+const buildFranchiseLookup = (rows: FranchiseCustomerContact[]): FranchiseCustomerLookup => ({
+  mobiles: new Set(rows.map((row) => mobileLookupKey(row.mobile)).filter(Boolean)),
+  emails: new Set(rows.map((row) => emailLookupKey(row.email)).filter(Boolean)),
+});
+
+/**
+ * Ye application kisi franchise customer ki hai? Backend har product ke payload
+ * me franchise reference nahi bhejta, is liye marker ke baad directory se
+ * applicant ka mobile / email match hota hai. Naam se match nahi karte — same
+ * naam wale direct customer ka loan andar aa jaata.
+ */
+const isFranchiseCustomerApplication = (
+  loan: PersonalLoan,
+  lookup: FranchiseCustomerLookup
+): boolean => {
+  if (isFranchiseCustomerLoan(loan)) return true;
+
+  const mobile = mobileLookupKey(loan.mobile);
+  if (mobile && lookup.mobiles.has(mobile)) return true;
+
+  const email = emailLookupKey(loan.email);
+  return Boolean(email && lookup.emails.has(email));
+};
 
 type TabId = "products" | "applications" | "updates" | "accounts";
 
@@ -302,7 +344,10 @@ const SupervisorFeedbackPanel = ({ records }: { records: ReviewRecord[] }) => {
 };
 
 const AdminDashboard = () => {
-  const { admin, loanAccess, canAccessLoan, accessibleLoanTypes, isSuperAdmin, canAccessModule, moduleAccess } =
+  const {
+    admin, loanAccess, canAccessLoan, accessibleLoanTypes, isSuperAdmin, canAccessModule, moduleAccess,
+    dashboardScope, dashboardPath,
+  } =
     useAuth();
 
  
@@ -327,16 +372,32 @@ const AdminDashboard = () => {
     products: { slug: string; rows: PersonalLoan[] }[] | null;
     error: string;
   } | null>(null);
+  /*
+  Franchise-only dashboard: scope sirf franchise customers ke loans. Loan
+  payload markers par depend nahi karte — directory se applicant match hota hai.
+  */
+  const [franchiseDirectory, setFranchiseDirectory] = useState<{
+    key: string;
+    lookup: FranchiseCustomerLookup | null;
+    error: string;
+  } | null>(null);
   const loanSlugKey = accessibleLoanTypes.map((loan) => loan.slug).join(",");
   const franchiseLoansKey = `${loanSlugKey}:${reloadToken}`;
   const currentFranchiseLoans =
     franchiseLoans?.key === franchiseLoansKey ? franchiseLoans : null;
+  const franchiseDirectoryKey = String(reloadToken);
+  const currentDirectory =
+    franchiseDirectory?.key === franchiseDirectoryKey ? franchiseDirectory : null;
+  const directoryLookup = currentDirectory?.lookup ?? null;
+  const franchiseDirectoryError = currentDirectory?.error ?? "";
   /*
-  Load hone tak normal (org-wide) dashboard flash na ho; aur koi product fail
-  (403/500) ho to zeros ke bajaye backend stats par fallback rahe.
+  Load hone tak normal (org-wide) dashboard flash na ho. Directory aur loans
+  dono chahiye — dono ke bina scope adhoora hai.
   */
-  const franchiseLoansPending =
-    franchiseOnlyAdmin && Boolean(loanSlugKey) && !currentFranchiseLoans;
+  const franchiseScopeLoading =
+    franchiseOnlyAdmin &&
+    Boolean(loanSlugKey) &&
+    (!currentFranchiseLoans || !currentDirectory);
   const franchiseLoansError = currentFranchiseLoans?.error ?? "";
 
   // No synchronous setState in the effect body — the previous version needed an
@@ -400,6 +461,31 @@ const AdminDashboard = () => {
     };
   }, [franchiseOnlyAdmin, loanSlugKey, reloadToken]);
 
+  /* Franchise customers ki directory — loan rows ko applicant se match karne ke liye. */
+  useEffect(() => {
+    if (!franchiseOnlyAdmin) return;
+    let cancelled = false;
+    const key = franchiseDirectoryKey;
+    getFranchiseCustomerDirectory()
+      .then((rows) => {
+        if (!cancelled) {
+          setFranchiseDirectory({ key, lookup: buildFranchiseLookup(rows), error: "" });
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setFranchiseDirectory({
+            key,
+            lookup: null,
+            error: getApiErrorMessage(err, "Unable to load the franchise customer list."),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [franchiseOnlyAdmin, franchiseDirectoryKey]);
+
   useEffect(() => {
     if (isSuperAdmin) return;
     let cancelled = false;
@@ -442,17 +528,16 @@ const AdminDashboard = () => {
   /*
   Franchise-only admin ke dashboard numbers franchise loans se bante hain —
   normal customer ki applications kisi bhi KPI, chart ya table me nahi aati.
-  Jab API franchise source mark hi nahi karti, tab rows sabhi assigned products
-  ki hoti hain (list page jaisa hi fail-safe).
+  Directory ke bina scope verify nahi hota, is liye us case me null (error state).
   */
   const franchiseScope = useMemo(() => {
     const groups = currentFranchiseLoans?.products;
-    if (!franchiseOnlyAdmin || !groups) return null;
-    /* Ek hi product marker bhejta hai to poore scope me filter valid hai. */
-    const marked = groups.some(({ rows }) => rows.some(isFranchiseCustomerLoan));
+    if (!franchiseOnlyAdmin || !groups || !directoryLookup) return null;
+
+    /* Sirf franchise customers ke loans — marker, warna applicant ka mobile/email. */
     const scopedGroups = groups.map(({ slug, rows }) => ({
       slug,
-      rows: marked ? rows.filter(isFranchiseCustomerLoan) : rows,
+      rows: rows.filter((loan) => isFranchiseCustomerApplication(loan, directoryLookup)),
     }));
 
     const products: ProductStat[] = scopedGroups.map(({ slug, rows: scoped }) => {
@@ -504,7 +589,7 @@ const AdminDashboard = () => {
       approvedAmount: products.reduce((total, product) => total + product.approvedAmount, 0),
       approvalRate: decided > 0 ? (approved / decided) * 100 : 0,
     };
-  }, [franchiseOnlyAdmin, currentFranchiseLoans]);
+  }, [franchiseOnlyAdmin, currentFranchiseLoans, directoryLookup]);
 
   const baseStats: DashboardStats | null = rawStats
     ? loanAccess === "all"
@@ -542,16 +627,13 @@ const AdminDashboard = () => {
 
   /*
   Franchise-only admin: base (org-wide) numbers ki jagah franchise loans ka
-  scope. Load hone tak stats null (normal data flash nahi hota); koi product
-  fail ho to backend stats par fallback. Admin updates bhi sirf inhi
-  applications ke rakhe jaate hain.
+  scope. Load/error me stats null rehta hai — org-wide numbers kabhi flash nahi
+  hote. Admin updates bhi sirf inhi applications ke rakhe jaate hain.
   */
   const stats: DashboardStats | null = !franchiseOnlyAdmin
     ? baseStats
-    : franchiseLoansPending
-      ? null
-      : franchiseScope && baseStats
-        ? {
+    : franchiseScope && baseStats
+      ? {
           ...baseStats,
           products: franchiseScope.products,
           recent: franchiseScope.recent,
@@ -563,11 +645,15 @@ const AdminDashboard = () => {
           requestedAmount: franchiseScope.requestedAmount,
           approvedAmount: franchiseScope.approvedAmount,
           approvalRate: franchiseScope.approvalRate,
-            recentUpdates: baseStats.recentUpdates.filter((update) =>
-              franchiseScope.loanIds.has(update.applicationId)
-            ),
-          }
-        : baseStats;
+          recentUpdates: baseStats.recentUpdates.filter((update) =>
+            franchiseScope.loanIds.has(update.applicationId)
+          ),
+        }
+      : null;
+
+  /* Franchise scope verify na ho to org-wide numbers dikhane se behtar error hai. */
+  const blockingError =
+    error || (franchiseOnlyAdmin ? franchiseDirectoryError || franchiseLoansError : "");
 
   /*
   "Recent Accounts" lists customer and franchise logins — super-admin context.
@@ -593,32 +679,26 @@ const AdminDashboard = () => {
     : [];
 
   /*
-  Franchise customers ke loans — assigned admin ke liye, aur sirf uske assigned
-  products tak. Franchise-only admin ka poora dashboard hi in loans ka hai,
-  isliye panel ke numbers bhi scope se aate hain — do jagah alag counts nahi.
+  Franchise customer loans panel — assigned admin ke liye, uske assigned
+  products tak. Franchise admin ka poora dashboard hi ye loans hai, is liye
+  uska alag panel nahi.
   */
-  const franchiseLoanRows = franchiseScope
-    ? franchiseScope.products
-        .filter((product) => product.total > 0)
-        .map((product) => ({ slug: product.slug, label: product.label, count: product.total }))
-    : (stats?.franchiseCustomerLoans?.products ?? []).filter((product) =>
-        canAccessLoan(product.slug)
-      );
-  const franchiseLoanTotal = franchiseScope
-    ? franchiseScope.totalApplications
-    : franchiseLoanRows.length
-      ? franchiseLoanRows.reduce((total, product) => total + product.count, 0)
-      : loanAccess === "all"
-        ? stats?.franchiseCustomerLoans?.total ?? 0
-        : 0;
   const showFranchiseLoans =
     !isSuperAdmin &&
+    !franchiseOnlyAdmin &&
     canSeeFranchises &&
     accessibleLoanTypes.length > 0 &&
     !!stats &&
-    !modeBlocked &&
-    /* Scope fail/load ho raha ho to mixed (fallback) stats ke saath panel na dikhe. */
-    (!franchiseOnlyAdmin || Boolean(franchiseScope));
+    !modeBlocked;
+
+  const franchiseLoanRows = (stats?.franchiseCustomerLoans?.products ?? []).filter((product) =>
+    canAccessLoan(product.slug)
+  );
+  const franchiseLoanTotal = franchiseLoanRows.length
+    ? franchiseLoanRows.reduce((total, product) => total + product.count, 0)
+    : loanAccess === "all"
+      ? stats?.franchiseCustomerLoans?.total ?? 0
+      : 0;
 
   const franchiseLoansPanel = showFranchiseLoans ? (
     <Panel
@@ -666,8 +746,9 @@ const AdminDashboard = () => {
   const theme = isSuperAdmin ? ROLE_THEME.super : ROLE_THEME.admin;
 
   /* Hero ki ek line — nested ternary JSX me padhna mushkil tha. */
-  const welcomeLine =
-    dashboardMode === "customers"
+  const welcomeLine = franchiseOnlyAdmin
+    ? `Loan applications filed by franchise customers, across the ${stats?.products.length ?? 0} product(s) assigned to you.`
+    : dashboardMode === "customers"
       ? "Here is your customer account overview."
       : dashboardMode === "franchises"
         ? "Here is your franchise registration overview."
@@ -693,7 +774,9 @@ const AdminDashboard = () => {
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset ring-white/25">
               <theme.icon size={11} /> {theme.label}
             </span>
-            <h2 className="mt-3 text-2xl font-bold leading-tight tracking-tight sm:text-[28px]">Dashboard</h2>
+            <h2 className="mt-3 text-2xl font-bold leading-tight tracking-tight sm:text-[28px]">
+              {DASHBOARD_SCOPE_META[dashboardScope].label}
+            </h2>
             <p className="mt-1 max-w-2xl text-sm text-white/85">
               Welcome back, {admin?.name}. {welcomeLine}
             </p>
@@ -702,6 +785,10 @@ const AdminDashboard = () => {
                 {isSuperAdmin
                   ? "Full organisation access"
                   : `${stats?.products.length ?? 0} assigned product(s)`}
+              </span>
+              {/* URL bhi dikhta hai — path se hi pata chale ki dashboard kiska hai. */}
+              <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono ring-1 ring-inset ring-white/20">
+                {dashboardPath}
               </span>
               {stats && <span>Updated {formatDateTime(stats.generatedAt)}</span>}
             </div>
@@ -722,12 +809,12 @@ const AdminDashboard = () => {
         />
       </div>
 
-      {error && !stats ? (
+      {blockingError && !stats ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
             <AlertTriangle size={22} className="text-red-400" />
           </div>
-          <p className="text-sm font-medium text-red-600">{error}</p>
+          <p className="text-sm font-medium text-red-600">{blockingError}</p>
           <button
             onClick={refresh}
             className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-50"
@@ -735,7 +822,7 @@ const AdminDashboard = () => {
             <RefreshCw size={14} /> Retry
           </button>
         </div>
-      ) : (loading || franchiseLoansPending) && !stats ? (
+      ) : (loading || franchiseScopeLoading) && !stats ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, index) => (
@@ -749,11 +836,22 @@ const AdminDashboard = () => {
           </div>
           <div className="h-72 animate-pulse rounded-2xl bg-slate-100" />
         </div>
+      ) : franchiseOnlyAdmin && !loanSlugKey ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-14 text-center">
+          <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+            <FileText size={22} />
+          </span>
+          <p className="text-sm font-semibold text-slate-800">No loan products assigned</p>
+          <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-slate-500">
+            Super admin ne aapko koi loan product assign nahi kiya, isliye franchise customers
+            ki applications load nahi ho sakti. Access milne par dashboard refresh karein.
+          </p>
+        </div>
       ) : stats ? (
         <>
           <DataWarning messages={error ? [error, ...warnings] : warnings} />
           {!isSuperAdmin && <SupervisorFeedbackPanel records={feedback} />}
-          {dashboardMode ? (
+          {dashboardMode && !franchiseOnlyAdmin ? (
             <>
               <ModuleDashboardOverview stats={{ ...stats, dashboardMode }} />
               {franchiseLoansPanel}
@@ -840,6 +938,16 @@ const AdminDashboard = () => {
                         label: "Franchise Customers",
                         value: stats.franchiseCustomerTotal.toLocaleString("en-IN"),
                         title: "Customers referred by franchises",
+                      },
+                    ]
+                  : []),
+                /* Franchise admin ka poora dashboard hi franchise customers ke loans hai. */
+                ...(franchiseOnlyAdmin
+                  ? [
+                      {
+                        label: "Franchise customers",
+                        value: stats.franchiseCustomerTotal.toLocaleString("en-IN"),
+                        title: "Customers registered through franchises",
                       },
                     ]
                   : []),
