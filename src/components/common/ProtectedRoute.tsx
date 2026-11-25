@@ -17,7 +17,7 @@ const ProtectedRoute = ({
   /** Sub-admin capability gate (super admins hold every permission). */
   requirePermission?: AdminPermission;
 }) => {
-  const { isLoggedIn, isLoading, isSuperAdmin, canAccessModule, can } = useAuth();
+  const { isLoggedIn, isLoading, isSuperAdmin, canAccessModule, can, dashboardPath } = useAuth();
 
   if (isLoading) {
     return (
@@ -32,15 +32,15 @@ const ProtectedRoute = ({
   }
 
   if (requireSuperAdmin && !isSuperAdmin) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={dashboardPath} replace />;
   }
 
   if (requireModule && !canAccessModule(requireModule)) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={dashboardPath} replace />;
   }
 
   if (requirePermission && !can(requirePermission)) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={dashboardPath} replace />;
   }
 
   return <>{children}</>;
