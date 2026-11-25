@@ -54,10 +54,10 @@ const PREVIEW_LIMIT = 10;
  */
 const FETCH_LIMIT = 50;
 
-const FOOTER_BY_ROLE: Record<AdminRole, { to: string; label: string }> = {
+/** Normal admin ka footer link uske scoped dashboard URL se aata hai. */
+const FOOTER_BY_ROLE: Record<Exclude<AdminRole, "admin">, { to: string; label: string }> = {
   super_admin: { to: "/activity", label: "Open Admin Updates" },
   sub_admin: { to: "/review", label: "Open Review Queue" },
-  admin: { to: "/dashboard", label: "Open Dashboard" },
 };
 
 /** Viewer ke hisaab se ek line me uski position define. */
@@ -76,7 +76,7 @@ const NotificationBell = ({
   /** Topbar ke doosre badge (profile menu) ko unread count se sync rakhta hai. */
   onUnreadChange?: (count: number) => void;
 }) => {
-  const { role, isSuperAdmin, can, canAccessModule, accessibleLoanTypes } = useAuth();
+  const { role, isSuperAdmin, can, canAccessModule, accessibleLoanTypes, dashboardPath } = useAuth();
   /* Franchises module na ho to franchise rows dropdown me bhi na aayein. */
   const canSeeFranchises = isSuperAdmin || canAccessModule("franchises");
   const canSeeCustomers = isSuperAdmin || canAccessModule("customers");
@@ -241,7 +241,9 @@ const NotificationBell = ({
     if (item.targetPath) navigate(item.targetPath);
   };
 
-  const footer = FOOTER_BY_ROLE[role] ?? FOOTER_BY_ROLE.admin;
+  /* Normal admin apne scoped URL par jaata hai (`/dashboard/admin`, ...). */
+  const footer =
+    role === "admin" ? { to: dashboardPath, label: "Open Dashboard" } : FOOTER_BY_ROLE[role];
   const canOpenFooter =
     footer.to !== "/review" || isSuperAdmin || can("updates.review");
 
