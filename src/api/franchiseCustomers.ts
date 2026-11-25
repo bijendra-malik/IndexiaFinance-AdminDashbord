@@ -132,6 +132,39 @@ export const getFranchiseCustomers = async (params: {
   return response.data;
 };
 
+/**
+ * Franchise customer ka applicant contact — loan row sirf inhi fields se match
+ * hoti hai (naam unique nahi hota, is liye usse match nahi karte).
+ */
+export interface FranchiseCustomerContact {
+  mobile: string;
+  email: string;
+}
+
+/**
+ * Poore network ke franchise customers, page-by-page.
+ *
+ * Har loan product ka list payload franchise reference nahi bhejta, is liye
+ * "franchise customer ka loan" filter sirf row marker par nahi chhod sakte —
+ * warna marker na hone par direct customers ki applications bhi aa jaati hain.
+ * Pages par cap nahi: adhoori directory ka matlab adhoora (galat) scope hai.
+ */
+export const getFranchiseCustomerDirectory = async (): Promise<FranchiseCustomerContact[]> => {
+  const pageSize = 100;
+  const first = await getFranchiseCustomers({ page: 1, limit: pageSize });
+  const rows = [...first.customers];
+
+  for (let page = 2; page <= (first.totalPages || 1); page += 1) {
+    const next = await getFranchiseCustomers({ page, limit: pageSize });
+    rows.push(...next.customers);
+  }
+
+  return rows.map((customer) => ({
+    mobile: customer.mobile ?? "",
+    email: customer.email ?? "",
+  }));
+};
+
 /** GET /franchise-customers/stats — network-wide count, franchise by franchise. */
 export const getFranchiseCustomerStats = async (): Promise<FranchiseCustomerStats> => {
   const response = await axiosInstance.get<{ stats?: FranchiseCustomerStats }>("/franchise-customers/stats");
