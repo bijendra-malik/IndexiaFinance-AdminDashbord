@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { getApiErrorMessage } from "../utils/apiError";
 
 const Login = () => {
-  const { isLoggedIn, login } = useAuth();
+  const { isLoggedIn, login, dashboardPath } = useAuth();
   const navigate = useNavigate();
 
   const [identifier, setIdentifier] = useState("");
@@ -14,7 +14,7 @@ const Login = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isLoggedIn) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={dashboardPath} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -26,7 +26,7 @@ const Login = () => {
       // The backend accepts an email or an admin ID (`admin02`).
       const res = await loginAdmin({ email: identifier.trim(), password });
       login(res.token, res.admin);
-      navigate("/dashboard", { replace: true });
+      navigate(dashboardPath, { replace: true });
     } catch (err) {
       setError(getApiErrorMessage(err, "Unable to login. Please try again."));
     } finally {
