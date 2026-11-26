@@ -251,6 +251,12 @@ const LoanApplicationDetail = () => {
   */
   const canDecide = isSuperAdmin || can("loans.decide");
   const canUpdateStatus = canDecide || !isSubAdmin;
+  /*
+  `/reviews` sirf `updates.view` wale reviewer ke liye khula hai. Normal admin
+  (jaise franchise admin) review queue nahi chalata, isliye uska request 403 hi
+  laata tha — uske apne updates ka feedback notifications me aata hai.
+  */
+  const canReadReviews = isSuperAdmin || (isSubAdmin && can("updates.view"));
 
   const [loan,  setLoan]  = useState<PersonalLoan | null>(null);
   const [error, setError] = useState("");
@@ -281,7 +287,7 @@ const LoanApplicationDetail = () => {
     try {
       const [loanData, reviewData] = await Promise.all([
         getLoanBySlug(loanType, id),
-        fetchReviews().catch(() => ({}))
+        canReadReviews ? fetchReviews().catch(() => ({})) : Promise.resolve({} as Record<string, ReviewRecord>)
       ]);
       setLoan(loanData);
       setReviews(reviewData);
