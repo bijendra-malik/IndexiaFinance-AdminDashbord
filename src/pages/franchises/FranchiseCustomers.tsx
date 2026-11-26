@@ -47,16 +47,26 @@ const statusClass = (status?: string) => {
  * List ke "View loans" panel aur detail table dono yahi use karte hain.
  */
 const ApplicationLink = ({
-  product, application, onOpenByNo, openingKey,
+  product, application, onOpenByNo, openingKey, applicantMobile,
 }: {
   product: string;
   application: FranchiseCustomerLoan;
-  onOpenByNo: (slug: string, applicationNo: string) => void;
+  onOpenByNo: (slug: string, applicationNo: string, mobile?: string) => void;
   openingKey: string | null;
+  /** Row par application number na ho to isi se loan match hota hai. */
+  applicantMobile?: string;
 }) => {
   const slug = application.slug || resolveLoanSlug(product);
-  const appId = application._id || application.applicationId || application.id;
-  const applicationNo = application.applicationNo ?? "";
+  const appId =
+    application._id ||
+    application.applicationId ||
+    application.id ||
+    application.loanId ||
+    application.loan?._id ||
+    application.loan?.id ||
+    application.application?._id ||
+    application.application?.id;
+  const applicationNo = application.applicationNo ?? application.loan?.applicationNo ?? "";
   if (!SUPPORTED_LOAN_SLUGS.has(slug)) return <>{applicationNo || "—"}</>;
 
   if (appId) {
@@ -77,7 +87,7 @@ const ApplicationLink = ({
   return (
     <button
       type="button"
-      onClick={() => onOpenByNo(slug, applicationNo)}
+      onClick={() => onOpenByNo(slug, applicationNo, applicantMobile)}
       disabled={openingKey === openKey}
       title="Find and open this loan application"
       className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-[rgb(6,106,156)] hover:underline disabled:opacity-60"
@@ -280,17 +290,24 @@ const FranchiseCustomers = () => {
 
   /**
    * Product group se slug guess galat ho sakta hai, isliye pehle wahi product,
-   * phir assigned products me application number search hota hai.
+   * phir assigned products me application number search hota hai. Number list me
+   * na mile to applicant ka mobile unique match deta hai (detail API kai rows par
+   * application number bhejti hai, id nahi).
    */
-  const openByApplicationNo = async (slug: string, applicationNo: string) => {
+  const openByApplicationNo = async (
+    slug: string,
+    applicationNo: string,
+    mobile?: string
+  ) => {
     const key = `${slug}:${applicationNo}`;
     if (openingKey) return;
     setOpeningKey(key);
     try {
-      const found = await findLoanByApplicationNo(applicationNo, [
-        slug,
-        ...accessibleLoanTypes.map((loan) => loan.slug),
-      ]);
+      const found = await findLoanByApplicationNo(
+        applicationNo,
+        [slug, ...accessibleLoanTypes.map((loan) => loan.slug)],
+        { mobile }
+      );
       if (found?.loan._id) {
         navigate(`/applications/${found.slug}/${encodeURIComponent(found.loan._id)}`);
       } else {
@@ -464,6 +481,7 @@ const FranchiseCustomers = () => {
                                   application={application}
                                   onOpenByNo={openByApplicationNo}
                                   openingKey={openingKey}
+                                  applicantMobile={record?.mobile}
                                 />
                               </td>
                               <td className="px-4 py-3 text-slate-600">{application.status || "—"}</td>
@@ -730,6 +748,7 @@ const FranchiseCustomers = () => {
                                           application={application}
                                           onOpenByNo={openByApplicationNo}
                                           openingKey={openingKey}
+                                          applicantMobile={customer.mobile}
                                         />
                                         <span className="text-[11px] text-slate-400">{application.status || "—"}</span>
                                       </span>
