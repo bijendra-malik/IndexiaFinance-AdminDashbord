@@ -9,7 +9,7 @@ import StatusBadge from "../../components/common/StatusBadge";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import { getLoanTypeLabel, loanSlugFromRouteParam, type LoanTypeSlug } from "../../constants/loanTypes";
 import {
-  getLoansBySlug, SUPPORTED_LOAN_SLUGS, isFranchiseCustomerLoan,
+  getLoansBySlug, SUPPORTED_LOAN_SLUGS, isFranchiseCustomerLoan, loanChannelOf,
   getApiErrorMessage, type PersonalLoan,
 } from "../../api/personalLoans";
 import { isFranchiseOnlyScope } from "../../utils/adminAccess";
@@ -82,12 +82,12 @@ const LoanApplicationsList = () => {
   useEffect(() => { void load(); }, [loanType, allowed]);
 
   /*
-  Filter sirf tab lagta hai jab API franchise source mark karti hai. Kuch products
+  Filter tab lagta hai jab API row ka source batati hai (franchise ya direct). Kuch products
   ka list payload ye fields nahi bhejta — tab sab filter kar dena page ko khaali
   kar deta tha, isliye us case me saari applications dikhti hain.
   */
   const franchiseMarked = useMemo(
-    () => (loans ?? []).some(isFranchiseCustomerLoan),
+    () => (loans ?? []).some((loan) => loanChannelOf(loan) !== "unknown"),
     [loans]
   );
   const franchiseFilterOn = franchiseOnly && franchiseMarked;
