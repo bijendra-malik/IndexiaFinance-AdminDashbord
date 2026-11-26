@@ -256,22 +256,50 @@ const referenceText = (value: unknown): string => {
   return "";
 };
 
+/** Channel as the application row itself declares it. */
+export type LoanChannel = "franchise-customer" | "franchise" | "customer" | "unknown";
+
 /**
- * Application franchise side se aayi hai? Direct customer ki application par koi
- * franchise reference nahi hota. Backend alag-alag field names bhejta hai,
- * isliye sab known references check hote hain.
+ * Row apne aap ko kis channel ka batati hai?
+ *
+ * Backend source alag-alag key me bhejta hai (`channel`, `applicationSource`,
+ * `source`, `customerType`) aur kabhi bilkul nahi. Declared source reference se
+ * pehle dekha jaata hai: ek direct customer ki application par pada purana
+ * franchise reference use franchise-customer bana deta tha, aur wo loan
+ * franchise admin ke dashboard me ghus jaata tha.
  */
-export const isFranchiseCustomerLoan = (loan: PersonalLoan): boolean => {
-  if (loan.isFranchiseCustomer === true) return true;
-  if ((loan.channel ?? "").trim().toLowerCase() === "franchise-customer") return true;
-  return [
-    loan.franchise,
-    loan.franchiseCode,
+export const loanChannelOf = (loan: PersonalLoan): LoanChannel => {
+  if (loan.isFranchiseCustomer === true) return "franchise-customer";
+
+  const declared = [loan.channel, loan.applicationSource, loan.source, loan.customerType]
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    .map((value) => value.trim().toLowerCase())
+    .join(" ");
+
+  const hasFranchiseCustomerRef = [
     loan.franchiseCustomer,
-    loan.franchiseId,
     loan.franchiseCustomerId,
     loan.franchiseCustomerCode,
   ].some((value) => Boolean(referenceText(value)));
+  const hasFranchiseRef = [loan.franchise, loan.franchiseCode, loan.franchiseId].some((value) =>
+    Boolean(referenceText(value))
+  );
+
+  if (/franchise[\s_-]*customer/.test(declared) || hasFranchiseCustomerRef) {
+    return "franchise-customer";
+  }
+  /* Application khud "customer"/"direct" kehti hai — uspar laga franchise
+     reference purana ho sakta hai, isliye declared source hi jeetta hai. */
+  if (/\bcustomer\b|\bdirect\b/.test(declared)) return "customer";
+  if (/\bfranchise\b/.test(declared) || hasFranchiseRef) return "franchise";
+
+  return "unknown";
+};
+
+/** Application franchise side se aayi hai? Source na ho to references decide karte hain. */
+export const isFranchiseCustomerLoan = (loan: PersonalLoan): boolean => {
+  const channel = loanChannelOf(loan);
+  return channel === "franchise-customer" || channel === "franchise";
 };
 
 /** `LOAN000143`, `LOAN-000143` ya `loan 143` — ek hi number maane jaate hain. */
@@ -284,29 +312,76 @@ const loanApplicationNo = (loan: PersonalLoan): string => {
   return typeof raw === "string" ? normalizeApplicationNo(raw) : "";
 };
 
+/** Sirf digits — number formats `LOAN000096`, `LOAN-96` aur `96` ko jodne ke liye. */
+const digitsOnly = (value?: string | null): string => (value ?? "").replace(/\D/g, "");
+
+/** Mobile compare ke liye aakhri 10 digits. */
+const mobileDigits = (value?: string | null): string => {
+  const digits = digitsOnly(value);
+  return digits.length >= 10 ? digits.slice(-10) : "";
+};
+
+export interface LoanLookupHints {
+  /** Applicant ka mobile — row par application number na ho to isi se match. */
+  mobile?: string;
+}
+
 /**
- * Application number se loan dhoondho — pehle preferred product, phir baaki.
+ * Application number se loan dhoondho.
+ *
  * Franchise-customer detail product label se slug guess karta hai, jo hamesha
- * sahi nahi hota; isliye fallback me saare products try hote hain.
+ * sahi nahi hota, isliye saare assigned products ek saath try hote hain. Poora
+ * number match na ho to digits se compare hota hai (`LOAN000096` vs `96`), aur
+ * jis row par number hi nahi hota wahan applicant ka mobile unique match deta
+ * hai. Har step par sirf **ek** match hi liya jaata hai — do possible loans me
+ * se koi bhi kholna galat record khol dega.
  */
 export const findLoanByApplicationNo = async (
   applicationNo: string,
-  slugs: string[]
+  slugs: string[],
+  hints: LoanLookupHints = {}
 ): Promise<{ slug: string; loan: PersonalLoan } | null> => {
   const target = normalizeApplicationNo(applicationNo);
-  if (!target) return null;
+  const targetDigits = digitsOnly(target);
+  const mobile = mobileDigits(hints.mobile);
+  if (!target && !mobile) return null;
 
   const queue = [...new Set(slugs)].filter((slug) => SUPPORTED_LOAN_SLUGS.has(slug));
-  for (const slug of queue) {
-    try {
-      const loans = await getLoansBySlug(slug);
-      const match = loans.find((loan) => loanApplicationNo(loan) === target);
-      if (match) return { slug, loan: match };
-    } catch {
-      /* Ek product fail ho to baaki products try karte raho. */
-    }
+  const lists = await Promise.all(
+    queue.map(async (slug) => {
+      try {
+        return { slug, loans: await getLoansBySlug(slug) };
+      } catch {
+        /* Ek product fail ho to baaki products decide karte rahein. */
+        return { slug, loans: [] as PersonalLoan[] };
+      }
+    })
+  );
+
+  const single = (matches: { slug: string; loan: PersonalLoan }[]) =>
+    matches.length === 1 ? matches[0] : null;
+  const collect = (predicate: (loan: PersonalLoan) => boolean) =>
+    lists.flatMap(({ slug, loans }) =>
+      loans.filter(predicate).map((loan) => ({ slug, loan }))
+    );
+
+  if (target) {
+    const exact = single(collect((loan) => loanApplicationNo(loan) === target));
+    if (exact) return exact;
   }
-  return null;
+
+  if (targetDigits) {
+    const byDigits = single(
+      collect((loan) => {
+        const rowDigits = digitsOnly(loanApplicationNo(loan));
+        return Boolean(rowDigits) && Number(rowDigits) === Number(targetDigits);
+      })
+    );
+    if (byDigits) return byDigits;
+  }
+
+  if (!mobile) return null;
+  return single(collect((loan) => mobileDigits(loan.mobile) === mobile));
 };
 
 const inFlightLoanLists = new Map<string, Promise<PersonalLoan[]>>();
