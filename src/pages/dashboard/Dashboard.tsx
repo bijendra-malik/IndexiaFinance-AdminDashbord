@@ -16,10 +16,6 @@ import {
   type RecentApplication,
 } from "../../api/dashboard";
 import { getLoansBySlug, isFranchiseCustomerLoan, type PersonalLoan } from "../../api/personalLoans";
-import {
-  getFranchiseCustomerDirectory,
-  type FranchiseCustomerContact,
-} from "../../api/franchiseCustomers";
 import { getLoanTypeLabel, LOAN_TYPES } from "../../constants/loanTypes";
 import {
   adminLabel, applicationDetailPath, formatCompactCurrency, formatCurrency, formatDateTime,
@@ -45,43 +41,6 @@ import { DASHBOARD_SCOPE_META } from "../../utils/dashboardScope";
 const productSlug = (row: { slug?: string; label?: string }): string | undefined =>
   row.slug ??
   LOAN_TYPES.find((loan) => loan.label.toLowerCase() === (row.label ?? "").toLowerCase())?.slug;
-
-/** Franchise customers ke applicant keys — mobile + email sets. */
-interface FranchiseCustomerLookup {
-  mobiles: Set<string>;
-  emails: Set<string>;
-}
-
-const mobileLookupKey = (value?: string | null) => {
-  const digits = (value ?? "").replace(/\D/g, "");
-  return digits.length >= 10 ? digits.slice(-10) : "";
-};
-
-const emailLookupKey = (value?: string | null) => (value ?? "").trim().toLowerCase();
-
-const buildFranchiseLookup = (rows: FranchiseCustomerContact[]): FranchiseCustomerLookup => ({
-  mobiles: new Set(rows.map((row) => mobileLookupKey(row.mobile)).filter(Boolean)),
-  emails: new Set(rows.map((row) => emailLookupKey(row.email)).filter(Boolean)),
-});
-
-/**
- * Ye application kisi franchise customer ki hai? Backend har product ke payload
- * me franchise reference nahi bhejta, is liye marker ke baad directory se
- * applicant ka mobile / email match hota hai. Naam se match nahi karte — same
- * naam wale direct customer ka loan andar aa jaata.
- */
-const isFranchiseCustomerApplication = (
-  loan: PersonalLoan,
-  lookup: FranchiseCustomerLookup
-): boolean => {
-  if (isFranchiseCustomerLoan(loan)) return true;
-
-  const mobile = mobileLookupKey(loan.mobile);
-  if (mobile && lookup.mobiles.has(mobile)) return true;
-
-  const email = emailLookupKey(loan.email);
-  return Boolean(email && lookup.emails.has(email));
-};
 
 type TabId = "products" | "applications" | "updates" | "accounts";
 
@@ -372,32 +331,13 @@ const AdminDashboard = () => {
     products: { slug: string; rows: PersonalLoan[] }[] | null;
     error: string;
   } | null>(null);
-  /*
-  Franchise-only dashboard: scope sirf franchise customers ke loans. Loan
-  payload markers par depend nahi karte — directory se applicant match hota hai.
-  */
-  const [franchiseDirectory, setFranchiseDirectory] = useState<{
-    key: string;
-    lookup: FranchiseCustomerLookup | null;
-    error: string;
-  } | null>(null);
   const loanSlugKey = accessibleLoanTypes.map((loan) => loan.slug).join(",");
   const franchiseLoansKey = `${loanSlugKey}:${reloadToken}`;
   const currentFranchiseLoans =
     franchiseLoans?.key === franchiseLoansKey ? franchiseLoans : null;
-  const franchiseDirectoryKey = String(reloadToken);
-  const currentDirectory =
-    franchiseDirectory?.key === franchiseDirectoryKey ? franchiseDirectory : null;
-  const directoryLookup = currentDirectory?.lookup ?? null;
-  const franchiseDirectoryError = currentDirectory?.error ?? "";
-  /*
-  Load hone tak normal (org-wide) dashboard flash na ho. Directory aur loans
-  dono chahiye — dono ke bina scope adhoora hai.
-  */
+  /* Load hone tak normal (org-wide) dashboard flash na ho. */
   const franchiseScopeLoading =
-    franchiseOnlyAdmin &&
-    Boolean(loanSlugKey) &&
-    (!currentFranchiseLoans || !currentDirectory);
+    franchiseOnlyAdmin && Boolean(loanSlugKey) && !currentFranchiseLoans;
   const franchiseLoansError = currentFranchiseLoans?.error ?? "";
 
   // No synchronous setState in the effect body — the previous version needed an
@@ -461,35 +401,6 @@ const AdminDashboard = () => {
     };
   }, [franchiseOnlyAdmin, loanSlugKey, reloadToken]);
 
-  /* Franchise customers ki directory — loan rows ko applicant se match karne ke liye. */
-  useEffect(() => {
-    if (!franchiseOnlyAdmin) return;
-    let cancelled = false;
-    const key = franchiseDirectoryKey;
-    /*
-    Refresh par directory cache bypass — warna naya franchise customer 5 minute
-    tak na dikhe. Pehli load cache se hoti hai, is liye navigation fast rehti hai.
-    */
-    getFranchiseCustomerDirectory({ fresh: reloadToken > 0 })
-      .then((rows) => {
-        if (!cancelled) {
-          setFranchiseDirectory({ key, lookup: buildFranchiseLookup(rows), error: "" });
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setFranchiseDirectory({
-            key,
-            lookup: null,
-            error: getApiErrorMessage(err, "Unable to load the franchise customer list."),
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [franchiseOnlyAdmin, franchiseDirectoryKey, reloadToken]);
-
   useEffect(() => {
     if (isSuperAdmin) return;
     let cancelled = false;
@@ -536,12 +447,16 @@ const AdminDashboard = () => {
   */
   const franchiseScope = useMemo(() => {
     const groups = currentFranchiseLoans?.products;
-    if (!franchiseOnlyAdmin || !groups || !directoryLookup) return null;
+    if (!franchiseOnlyAdmin || !groups) return null;
 
-    /* Sirf franchise customers ke loans — marker, warna applicant ka mobile/email. */
+    /*
+    Backend franchise-scope admin ko sirf franchise customers ki applications
+    deta hai (franchiseCustomer set). Marker filter safety hai — direct customer
+    ka loan kisi bhi KPI, chart ya table me na gin jaye.
+    */
     const scopedGroups = groups.map(({ slug, rows }) => ({
       slug,
-      rows: rows.filter((loan) => isFranchiseCustomerApplication(loan, directoryLookup)),
+      rows: rows.filter(isFranchiseCustomerLoan),
     }));
 
     const products: ProductStat[] = scopedGroups.map(({ slug, rows: scoped }) => {
@@ -593,7 +508,7 @@ const AdminDashboard = () => {
       approvedAmount: products.reduce((total, product) => total + product.approvedAmount, 0),
       approvalRate: decided > 0 ? (approved / decided) * 100 : 0,
     };
-  }, [franchiseOnlyAdmin, currentFranchiseLoans, directoryLookup]);
+  }, [franchiseOnlyAdmin, currentFranchiseLoans]);
 
   const baseStats: DashboardStats | null = rawStats
     ? loanAccess === "all"
@@ -656,8 +571,7 @@ const AdminDashboard = () => {
       : null;
 
   /* Franchise scope verify na ho to org-wide numbers dikhane se behtar error hai. */
-  const blockingError =
-    error || (franchiseOnlyAdmin ? franchiseDirectoryError || franchiseLoansError : "");
+  const blockingError = error || (franchiseOnlyAdmin ? franchiseLoansError : "");
 
   /*
   "Recent Accounts" lists customer and franchise logins — super-admin context.
