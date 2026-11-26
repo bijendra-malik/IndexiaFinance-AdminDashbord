@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, Clock3, Mail, Phone, MapPin, Trash2, XCircle } from "lucide-react";
+import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, Clock3, Mail, Phone, MapPin, Trash2, Users, XCircle } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Pagination from "../../components/common/Pagination";
@@ -10,6 +10,7 @@ import StatCard from "../../components/common/StatCard";
 import { TableCard, TableEmpty, TableError, TableSkeleton, Th } from "../../components/common/TableShell";
 import StatusPill from "./components/StatusPill";
 import { deleteFranchise, getApiErrorMessage, getFranchises, type Franchise } from "../../api/franchises";
+import { getFranchiseCustomerStats } from "../../api/franchiseCustomers";
 import {
   BRAND_GRADIENT, STATUS_FILTER_OPTIONS,
   contactName, displayName, formatDate, initialsOf, locationOf,
@@ -36,6 +37,8 @@ const FranchiseList = () => {
   const [refreshKey, setRefreshKey]       = useState(0);
   const [state, setState]                 = useState<ListState | null>(null);
   const [counts, setCounts]               = useState<AllCounts | null>(null);
+  /* Per-franchise customer totals + network-wide total (ek hi stats call). */
+  const [customerStats, setCustomerStats] = useState<{ total: number; byId: Record<string, number> } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Franchise | null>(null);
   const [isDeleting, setIsDeleting]       = useState(false);
   const { showToast }                     = useToast();
@@ -70,6 +73,23 @@ const FranchiseList = () => {
     });
     return () => { cancelled = true; };
    
+  }, [refreshKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getFranchiseCustomerStats()
+      .then((stats) => {
+        if (cancelled) return;
+        const byId: Record<string, number> = {};
+        stats.byFranchise.forEach((row) => {
+          const id = row.franchise?._id;
+          if (id) byId[id] = row.total;
+        });
+        setCustomerStats({ total: stats.total, byId });
+      })
+      /* Counts optional hain — stats fail ho to list phir bhi chalti rahe. */
+      .catch(() => { if (!cancelled) setCustomerStats(null); });
+    return () => { cancelled = true; };
   }, [refreshKey]);
 
   const active     = state?.key === buildKey(status, appliedSearch, page, refreshKey) ? state : null;
@@ -107,11 +127,12 @@ const FranchiseList = () => {
       />
 
       {/* Stat cards — clickable filter shortcuts */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="All Franchises"  value={counts?.total    ?? "—"} icon={Building2}    bgClass="bg-sky-50"     iconClass="text-sky-600"     labelClass="text-sky-700"     active={status === "All"}      onClick={() => { setStatus("All");      setPage(1); }} />
         <StatCard label="Pending Review"  value={counts?.pending  ?? "—"} icon={Clock3}       bgClass="bg-amber-50"   iconClass="text-amber-600"   labelClass="text-amber-700"   active={status === "Pending"}  onClick={() => { setStatus("Pending");  setPage(1); }} />
         <StatCard label="Approved"        value={counts?.approved ?? "—"} icon={CheckCircle2} bgClass="bg-emerald-50" iconClass="text-emerald-600" labelClass="text-emerald-700" active={status === "Approved"} onClick={() => { setStatus("Approved"); setPage(1); }} />
         <StatCard label="Rejected"        value={counts?.rejected ?? "—"} icon={XCircle}      bgClass="bg-red-50"     iconClass="text-red-600"     labelClass="text-red-700"     active={status === "Rejected"} onClick={() => { setStatus("Rejected"); setPage(1); }} />
+        <StatCard label="Franchise Customers" value={customerStats?.total ?? "—"} icon={Users}      bgClass="bg-violet-50"  iconClass="text-violet-600" labelClass="text-violet-700" />
       </div>
 
       {/* Table card */}
@@ -149,11 +170,11 @@ const FranchiseList = () => {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-left text-sm">
+              <table className="w-full min-w-[1000px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/80">
                     <Th>Franchise</Th><Th>Login ID / PAN</Th><Th>Contact</Th>
-                    <Th>Location</Th><Th>Package</Th><Th>Applied</Th>
+                    <Th>Location</Th><Th>Package</Th><Th>Customers</Th><Th>Applied</Th>
                     <Th>Status</Th><Th right>Actions</Th>
                   </tr>
                 </thead>
@@ -194,6 +215,15 @@ const FranchiseList = () => {
                         {item.package ? (
                           <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">{item.package}</span>
                         ) : <span className="text-slate-400">—</span>}
+                      </td>
+                      {/* Customers */}
+                      <td className="px-4 py-3.5">
+                        <Link
+                          to={`/franchise-customers?franchise=${encodeURIComponent(item.franchiseId || item._id)}`}
+                          className={`inline-flex items-center gap-1 font-semibold hover:underline ${customerStats?.byId[item._id] ? "text-slate-700 hover:text-sky-700" : "text-slate-400"}`}
+                        >
+                          {customerStats ? customerStats.byId[item._id] ?? 0 : "—"}
+                        </Link>
                       </td>
                       {/* Applied */}
                       <td className="px-4 py-3.5 whitespace-nowrap text-slate-500">{formatDate(item.franchiseAppliedAt || item.createdAt)}</td>
