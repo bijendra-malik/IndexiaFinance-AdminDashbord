@@ -175,12 +175,11 @@ export const getEligibilityChecks = async (
 };
 
 export const getEligibilityCheck = async (id: string): Promise<EligibilityCheck> => {
-  const { data } = await axiosInstance.get<Record<string, unknown>>(
+  const { data } = await axiosInstance.get<{ check?: unknown }>(
     `/eligibility-checks/${id}`
   );
-  const body = recordOf(data);
 
-  return toCheck("check" in body ? body.check : data);
+  return toCheck(data.check);
 };
 
 /* Permanent delete — backend 404 deta hai agar row pehle hi delete ho chuki ho. */

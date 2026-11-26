@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   BadgeCheck, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Inbox, Loader2, Mail,
   Phone, RefreshCw, Search, Trash2, Wallet, X, XCircle,
@@ -247,14 +247,14 @@ const EligibilityChecks = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<EligibilityCheck | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
-  /* Detail call ka token — purani response naye drawer ko overwrite na kare. */
-  const detailToken = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
 
     const request = async () => {
       try {
@@ -287,7 +287,6 @@ const EligibilityChecks = () => {
   const summary = stats ?? EMPTY_STATS;
 
   const resetPage = () => {
-    setLoading(true);
     setPage(1);
   };
 
@@ -298,60 +297,62 @@ const EligibilityChecks = () => {
   };
 
   const refresh = () => {
-    setLoading(true);
     setReloadKey((current) => current + 1);
   };
 
   /*
-  Row ka data list me already hai, isliye drawer turant khulta hai; saath me
+  Row ka data list me already hai, isliye drawer turant khulta hai; phir
   GET /eligibility-checks/:id se fresh record aata hai (kisi aur admin ne
-  delete/update kiya ho to drawer purana na dikhe).
+  check update/delete kiya ho to purana na dikhe). Effect ka cancel flag
+  purani response ko naye drawer par overwrite hone se rokta hai.
   */
-  const openCheck = (check: EligibilityCheck) => {
-    const token = detailToken.current + 1;
-    detailToken.current = token;
-    setSelected(check);
+  useEffect(() => {
+    if (!selectedId) return undefined;
+
+    let cancelled = false;
     setDetailLoading(true);
 
-    getEligibilityCheck(check.id)
+    getEligibilityCheck(selectedId)
       .then((fresh) => {
-        if (detailToken.current === token) setSelected(fresh);
+        if (!cancelled) setSelected(fresh);
       })
       .catch(() => {
         /* Detail fail ho to list row hi dikhado — drawer khaali na ho. */
       })
       .finally(() => {
-        if (detailToken.current === token) setDetailLoading(false);
+        if (!cancelled) setDetailLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  const openCheck = (check: EligibilityCheck) => {
+    setSelected(check);
+    setSelectedId(check.id);
   };
 
   const closeCheck = () => {
-    detailToken.current += 1;
-    setDetailLoading(false);
+    setSelectedId(null);
     setSelected(null);
+    setDetailLoading(false);
   };
 
   const removeCheck = async (check: EligibilityCheck) => {
     const label = check.checkNo || check.name || "this check";
-    if (!window.confirm(`Delete ${label}? Ye permanent hai aur wapas nahi aayega.`)) return;
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
 
     setDeleting(true);
     setError("");
     try {
       await deleteEligibilityCheck(check.id);
-
-      detailToken.current += 1;
-      setSelected(null);
-      setDetailLoading(false);
+      closeCheck();
       setNotice(`${label} deleted.`);
 
       /* Page ki aakhri row delete hui to pichhle page par aa jao. */
-      if (checks.length === 1 && page > 1) {
-        setLoading(true);
-        setPage((current) => Math.max(1, current - 1));
-      } else {
-        refresh();
-      }
+      if (checks.length === 1 && page > 1) setPage((current) => current - 1);
+      else refresh();
     } catch (deleteError) {
       setError(getApiErrorMessage(deleteError, "Could not delete this check."));
     } finally {
@@ -804,10 +805,7 @@ const EligibilityChecks = () => {
             <div className="flex gap-1.5">
               <button
                 type="button"
-                onClick={() => {
-                  setLoading(true);
-                  setPage((current) => Math.max(1, current - 1));
-                }}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
                 disabled={currentPage <= 1}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 font-semibold disabled:opacity-40"
               >
@@ -815,10 +813,7 @@ const EligibilityChecks = () => {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setLoading(true);
-                  setPage((current) => Math.min(totalPages, current + 1));
-                }}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
                 disabled={currentPage >= totalPages}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 font-semibold disabled:opacity-40"
               >
@@ -1012,9 +1007,7 @@ const EligibilityChecks = () => {
             )}
 
             <div className="mt-5 flex items-center justify-between gap-2 border-t border-slate-100 pt-4">
-              <p className="text-[11px] text-slate-400">
-                {detailLoading ? "Loading latest record…" : "Delete permanent hai."}
-              </p>
+              <p className="text-[11px] text-slate-400">Delete is permanent.</p>
               <button
                 type="button"
                 onClick={() => void removeCheck(selected)}
