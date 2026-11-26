@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Building2, Check, CheckCircle2, Coins, Copy, Eye, EyeOff, FileText, LoaderCircle, Mail, MapPin,
-  Phone, RefreshCw, ShieldCheck, UserRound, Users, X,
+  ArrowRight, Phone, RefreshCw, ShieldCheck, UserRound, Users, X,
   Trash2,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
@@ -687,13 +687,23 @@ const FranchiseDetail = () => {
                         <th className="px-4 py-3">Loans</th>
                         <th className="px-4 py-3">Loan status</th>
                         <th className="px-4 py-3">Registered</th>
+                        <th className="px-4 py-3 text-right"> </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {franchise.customers.data.map((customer) => (
                         <tr key={customer._id} className="transition hover:bg-sky-50/40">
                           <td className="px-5 py-3 font-semibold text-slate-800">
-                            {customer.fullName || "—"}
+                            {customer._id ? (
+                              <Link
+                                to={`/franchise-customers/${encodeURIComponent(customer._id)}`}
+                                className="text-[rgb(6,106,156)] hover:underline"
+                              >
+                                {customer.fullName || "View customer"}
+                              </Link>
+                            ) : (
+                              customer.fullName || "—"
+                            )}
                           </td>
                           <td className="px-4 py-3 text-slate-500">{customer.mobile || "—"}</td>
                           <td className="px-4 py-3 font-semibold text-slate-700">
@@ -723,6 +733,16 @@ const FranchiseDetail = () => {
                           </td>
                           <td className="px-4 py-3 text-slate-500">
                             {formatDate(customer.createdAt)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {customer._id && (
+                              <Link
+                                to={`/franchise-customers/${encodeURIComponent(customer._id)}`}
+                                className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-sky-700 hover:underline"
+                              >
+                                View loans <ArrowRight size={12} />
+                              </Link>
+                            )}
                           </td>
                         </tr>
                       ))}
