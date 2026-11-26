@@ -24,6 +24,7 @@ export interface EligibilityCheck {
   /** Product code (personal_loan) — filter/list isi par chalta hai. */
   product: string;
   productLabel: string;
+  family: string;
   monthlyIncome: number;
   existingEmi: number;
   netIncome: number;
@@ -35,6 +36,14 @@ export interface EligibilityCheck {
   emi: number | null;
   eligible: boolean;
   reason: string | null;
+  /** Machine-readable rule that stopped the check (null when eligible). */
+  reasonCode: string | null;
+  /** Full sentence the applicant saw on the website. */
+  message: string;
+  suggestions: string[];
+  /** Which cap bounded the amount — e.g. "Repayment capacity". */
+  binding: string | null;
+  caps: { key: string; label: string; value: number }[];
   source: string;
   checkedAt: string | null;
 }
@@ -112,12 +121,23 @@ const toCheck = (value: unknown): EligibilityCheck => {
     netIncome: asNumber(item.netIncome),
     foirPercent: asNumberOrNull(item.foirPercent),
     maxEmi: asNumber(item.maxEmi),
+    family: asText(item.family),
     roi: asNumberOrNull(item.roi),
     tenureMonths: asNumberOrNull(item.tenureMonths),
     maxLoanAmount: asNumberOrNull(item.maxLoanAmount),
     emi: asNumberOrNull(item.emi),
     eligible: Boolean(item.eligible),
     reason: asText(item.reason) || null,
+    reasonCode: asText(item.reasonCode) || null,
+    message: asText(item.message),
+    suggestions: Array.isArray(item.suggestions)
+      ? item.suggestions.map(asText).filter(Boolean)
+      : [],
+    binding: asText(item.binding) || null,
+    caps: (Array.isArray(item.caps) ? item.caps : []).map((cap) => {
+      const row = recordOf(cap);
+      return { key: asText(row.key), label: asText(row.label), value: asNumber(row.value) };
+    }),
     source: asText(item.source),
     checkedAt: asDate(item.checkedAt ?? item.createdAt),
   };
@@ -152,6 +172,20 @@ export const getEligibilityChecks = async (
     limit: asNumber(data.limit) || 25,
     pages: Math.max(1, asNumber(data.pages) || 1),
   };
+};
+
+export const getEligibilityCheck = async (id: string): Promise<EligibilityCheck> => {
+  const { data } = await axiosInstance.get<Record<string, unknown>>(
+    `/eligibility-checks/${id}`
+  );
+  const body = recordOf(data);
+
+  return toCheck("check" in body ? body.check : data);
+};
+
+/* Permanent delete — backend 404 deta hai agar row pehle hi delete ho chuki ho. */
+export const deleteEligibilityCheck = async (id: string): Promise<void> => {
+  await axiosInstance.delete(`/eligibility-checks/${id}`);
 };
 
 export const getEligibilityCheckStats = async (): Promise<EligibilityCheckStats> => {
