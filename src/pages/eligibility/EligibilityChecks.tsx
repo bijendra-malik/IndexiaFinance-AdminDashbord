@@ -251,6 +251,8 @@ const EligibilityChecks = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
+  /* Delete confirm modal — null hone par modal band. */
+  const [pendingDelete, setPendingDelete] = useState<EligibilityCheck | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -339,14 +341,23 @@ const EligibilityChecks = () => {
     setDetailLoading(false);
   };
 
-  const removeCheck = async (check: EligibilityCheck) => {
+  const requestDelete = (check: EligibilityCheck) => setPendingDelete(check);
+
+  const cancelDelete = () => {
+    if (!deleting) setPendingDelete(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+
+    const check = pendingDelete;
     const label = check.checkNo || check.name || "this check";
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
 
     setDeleting(true);
     setError("");
     try {
       await deleteEligibilityCheck(check.id);
+      setPendingDelete(null);
       closeCheck();
       setNotice(`${label} deleted.`);
 
@@ -779,7 +790,7 @@ const EligibilityChecks = () => {
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            void removeCheck(check);
+                            requestDelete(check);
                           }}
                           disabled={deleting}
                           title="Delete check"
@@ -824,28 +835,38 @@ const EligibilityChecks = () => {
         )}
       </div>
 
-      {/* Detail drawer */}
+      {/* View modal — centered, poora data */}
       {selected && (
         <div
-          className="fixed inset-0 z-50 flex justify-end bg-slate-900/30"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/40 p-4"
           onClick={closeCheck}
         >
-          <aside
-            className="h-full w-full max-w-md overflow-y-auto bg-white p-5 shadow-2xl"
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Eligibility check ${selected.checkNo || selected.name}`}
+            className="my-auto w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <header className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  Eligibility check {selected.checkNo || ""}
-                </p>
-                <h2 className="mt-0.5 text-lg font-bold text-slate-900">
-                  {selected.name || "Unnamed"}
-                </h2>
-                <p className="flex items-center gap-1.5 text-xs text-slate-400">
-                  {dateTime(selected.checkedAt)} · {selected.source || "website"}
-                  {detailLoading && <Loader2 size={11} className="animate-spin" />}
-                </p>
+            <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div className="flex items-start gap-3">
+                <span
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white"
+                  style={{ background: BRAND }}
+                  aria-hidden
+                >
+                  {initialsOf(selected.name)}
+                </span>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Eligibility check {selected.checkNo || "—"}
+                  </p>
+                  <h2 className="text-lg font-bold text-slate-900">{selected.name || "Unnamed"}</h2>
+                  <p className="flex items-center gap-1.5 text-xs text-slate-400">
+                    {dateTime(selected.checkedAt)} · {selected.source || "website"}
+                    {detailLoading && <Loader2 size={11} className="animate-spin" />}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -857,172 +878,261 @@ const EligibilityChecks = () => {
               </button>
             </header>
 
-            <div className="mt-4 space-y-2 text-sm">
-              <a
-                href={`tel:${selected.mobile}`}
-                className="flex items-center gap-2 text-slate-700 hover:text-[rgb(6,106,156)]"
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
+              <section
+                className={`rounded-xl border p-3 ${
+                  selected.eligible
+                    ? "border-emerald-200 bg-emerald-50/60"
+                    : "border-rose-200 bg-rose-50/60"
+                }`}
               >
-                <Phone size={14} className="text-slate-400" />
-                {selected.mobile || "—"}
-              </a>
-              <a
-                href={`mailto:${selected.email}`}
-                className="flex items-center gap-2 break-all text-slate-700 hover:text-[rgb(6,106,156)]"
-              >
-                <Mail size={14} className="shrink-0 text-slate-400" />
-                {selected.email || "—"}
-              </a>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                    Result
+                  </p>
+                  {selected.eligible ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      <BadgeCheck size={12} /> Eligible
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">
+                      <XCircle size={12} /> Not eligible
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-2 text-lg font-bold text-slate-900">
+                  {selected.eligible
+                    ? formatRupees(selected.maxLoanAmount)
+                    : selected.reason || "Not eligible for this product."}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  {selected.message ||
+                    (selected.eligible
+                      ? `Up to ${formatRupees(selected.maxLoanAmount)} for ${selected.tenureMonths} months at ${selected.roi}% p.a.`
+                      : "No message was stored for this check.")}
+                </p>
+
+                {selected.reasonCode && (
+                  <p className="mt-2 inline-flex rounded-md bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-700 ring-1 ring-rose-200">
+                    {reasonCodeLabel(selected.reasonCode)}
+                  </p>
+                )}
+
+                {selected.suggestions.length > 0 && (
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] leading-relaxed text-slate-600">
+                    {selected.suggestions.map((suggestion) => (
+                      <li key={suggestion}>{suggestion}</li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <section>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Applicant
+                  </p>
+                  <dl className="mt-1.5 space-y-1.5 text-xs">
+                    {[
+                      ["Full name", selected.name || "—"],
+                      ["Age", selected.age !== null ? `${selected.age} yrs` : "—"],
+                      ["Occupation", selected.occupation || "—"],
+                      ["Country", selected.country || "—"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex justify-between gap-3">
+                        <dt className="text-slate-400">{label}</dt>
+                        <dd className="text-right font-semibold text-slate-700">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div className="mt-2 space-y-1.5 text-xs">
+                    <a
+                      href={`tel:${selected.mobile}`}
+                      className="flex items-center gap-1.5 text-slate-700 hover:text-[rgb(6,106,156)]"
+                    >
+                      <Phone size={12} className="shrink-0 text-slate-400" />
+                      {selected.mobile || "—"}
+                    </a>
+                    <a
+                      href={`mailto:${selected.email}`}
+                      className="flex items-center gap-1.5 break-all text-slate-700 hover:text-[rgb(6,106,156)]"
+                    >
+                      <Mail size={12} className="shrink-0 text-slate-400" />
+                      {selected.email || "—"}
+                    </a>
+                  </div>
+                </section>
+
+                <section>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Product
+                  </p>
+                  <dl className="mt-1.5 space-y-1.5 text-xs">
+                    {[
+                      ["Product", selected.productLabel],
+                      ["Code", selected.product || "—"],
+                      ["Category", selected.family || "—"],
+                      ["Source", selected.source || "—"],
+                      ["ROI", selected.roi !== null ? `${selected.roi}% p.a.` : "On request"],
+                      ["Tenure", selected.tenureMonths ? `${selected.tenureMonths} months` : "—"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex justify-between gap-3">
+                        <dt className="text-slate-400">{label}</dt>
+                        <dd className="max-w-[60%] text-right font-semibold break-words text-slate-700">
+                          {value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+
+                <section className="sm:col-span-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Calculation
+                  </p>
+                  <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
+                    {[
+                      ["Monthly income", formatRupees(selected.monthlyIncome)],
+                      ["Existing EMI", formatRupees(selected.existingEmi)],
+                      ["Net income", formatRupees(selected.netIncome)],
+                      ["FOIR", selected.foirPercent !== null ? `${selected.foirPercent}%` : "—"],
+                      ["Max EMI", formatRupees(selected.maxEmi)],
+                      ["Max loan", formatRupees(selected.maxLoanAmount)],
+                      ["Estimated EMI", selected.emi !== null ? formatRupees(selected.emi) : "—"],
+                      ["Binding cap", selected.binding || "—"],
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                          {label}
+                        </dt>
+                        <dd className="font-semibold text-slate-700">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+
+                {selected.caps.length > 0 && (
+                  <section className="sm:col-span-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Caps used
+                    </p>
+                    <ul className="mt-1.5 grid gap-1.5 text-xs sm:grid-cols-2">
+                      {selected.caps.map((cap) => {
+                        const isBinding =
+                          selected.binding !== null && cap.label === selected.binding;
+                        return (
+                          <li
+                            key={`${cap.key}-${cap.label}`}
+                            className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 ${
+                              isBinding
+                                ? "border-amber-200 bg-amber-50/70"
+                                : "border-slate-200 bg-slate-50/60"
+                            }`}
+                          >
+                            <span className="min-w-0 text-slate-600">
+                              {cap.label}
+                              {isBinding && (
+                                <span className="ml-1.5 rounded bg-white px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 ring-1 ring-amber-200">
+                                  limit
+                                </span>
+                              )}
+                            </span>
+                            <span className="shrink-0 font-semibold tabular-nums text-slate-800">
+                              {formatRupees(cap.value)}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                )}
+
+                <section className="sm:col-span-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Record
+                  </p>
+                  <dl className="mt-1.5 space-y-1.5 text-xs">
+                    {[
+                      ["Check no.", selected.checkNo || "—"],
+                      ["Record id", selected.id || "—"],
+                      ["Checked at", dateTime(selected.checkedAt)],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex justify-between gap-3">
+                        <dt className="text-slate-400">{label}</dt>
+                        <dd className="font-mono text-right break-all text-slate-600">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              </div>
             </div>
 
-            <section
-              className={`mt-4 rounded-xl border p-3 ${
-                selected.eligible
-                  ? "border-emerald-200 bg-emerald-50/60"
-                  : "border-rose-200 bg-rose-50/60"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                  Result
-                </p>
-                {selected.eligible ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                    <BadgeCheck size={12} /> Eligible
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">
-                    <XCircle size={12} /> Not eligible
-                  </span>
-                )}
-              </div>
-
-              <p className="mt-2 text-sm font-semibold text-slate-800">
-                {selected.eligible
-                  ? formatRupees(selected.maxLoanAmount)
-                  : selected.reason || "Not eligible for this product."}
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                {selected.message ||
-                  (selected.eligible
-                    ? `Up to ${formatRupees(selected.maxLoanAmount)} for ${selected.tenureMonths} months at ${selected.roi}% p.a.`
-                    : "No message was stored for this check.")}
-              </p>
-
-              {selected.reasonCode && (
-                <p className="mt-2 inline-flex rounded-md bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-700 ring-1 ring-rose-200">
-                  {reasonCodeLabel(selected.reasonCode)}
-                </p>
-              )}
-
-              {selected.suggestions.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] leading-relaxed text-slate-600">
-                  {selected.suggestions.map((suggestion) => (
-                    <li key={suggestion}>{suggestion}</li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="mt-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Applicant & product
-              </p>
-              <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                {[
-                  ["Product", selected.productLabel],
-                  ["Category", selected.family || "—"],
-                  ["Age", selected.age !== null ? `${selected.age} yrs` : "—"],
-                  ["Occupation", selected.occupation || "—"],
-                  ["Country", selected.country || "—"],
-                  ["Source", selected.source || "—"],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
-                    <dd className="font-semibold text-slate-700">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-
-            <section className="mt-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Calculation
-              </p>
-              <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                {[
-                  ["Monthly income", formatRupees(selected.monthlyIncome)],
-                  ["Existing EMI", formatRupees(selected.existingEmi)],
-                  ["Net income", formatRupees(selected.netIncome)],
-                  ["FOIR", selected.foirPercent !== null ? `${selected.foirPercent}%` : "—"],
-                  ["Max EMI", formatRupees(selected.maxEmi)],
-                  ["ROI", selected.roi !== null ? `${selected.roi}% p.a.` : "On request"],
-                  ["Tenure", selected.tenureMonths ? `${selected.tenureMonths} months` : "—"],
-                  [
-                    "Max loan amount",
-                    selected.maxLoanAmount !== null ? formatRupees(selected.maxLoanAmount) : "—",
-                  ],
-                  ["Estimated EMI", selected.emi !== null ? `${formatRupees(selected.emi)}/mo` : "—"],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
-                    <dd className="font-semibold text-slate-700">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-
-            {selected.caps.length > 0 && (
-              <section className="mt-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  Caps used
-                </p>
-                <ul className="mt-1.5 space-y-1.5 text-xs">
-                  {selected.caps.map((cap) => {
-                    const isBinding = selected.binding !== null && cap.label === selected.binding;
-                    return (
-                      <li
-                        key={`${cap.key}-${cap.label}`}
-                        className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 ${
-                          isBinding
-                            ? "border-amber-200 bg-amber-50/70"
-                            : "border-slate-200 bg-slate-50/60"
-                        }`}
-                      >
-                        <span className="min-w-0 text-slate-600">
-                          {cap.label}
-                          {isBinding && (
-                            <span className="ml-1.5 rounded bg-white px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 ring-1 ring-amber-200">
-                              limit
-                            </span>
-                          )}
-                        </span>
-                        <span className="shrink-0 font-semibold tabular-nums text-slate-800">
-                          {formatRupees(cap.value)}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-
-            <div className="mt-5 flex items-center justify-between gap-2 border-t border-slate-100 pt-4">
+            <footer className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-3">
               <p className="text-[11px] text-slate-400">Delete is permanent.</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={closeCheck}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestDelete(selected)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                >
+                  <Trash2 size={13} /> Delete check
+                </button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm — centered modal */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={cancelDelete}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Delete eligibility check"
+            className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+              <Trash2 size={20} />
+            </span>
+            <h2 className="mt-3 text-base font-bold text-slate-900">Delete this check?</h2>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              {pendingDelete.checkNo ? `${pendingDelete.checkNo} · ` : ""}
+              {pendingDelete.name || "Unnamed"} ka record permanently delete ho jayega — ye wapas
+              nahi aayega.
+            </p>
+            <div className="mt-4 flex gap-2">
               <button
                 type="button"
-                onClick={() => void removeCheck(selected)}
+                onClick={cancelDelete}
                 disabled={deleting}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
               >
-                {deleting ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Trash2 size={13} />
-                )}
-                {deleting ? "Deleting…" : "Delete check"}
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDelete()}
+                disabled={deleting}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+              >
+                {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                {deleting ? "Deleting…" : "Delete"}
               </button>
             </div>
-          </aside>
+          </div>
         </div>
       )}
     </AdminLayout>
