@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   BadgeCheck, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Inbox, Loader2, Mail,
   Phone, RefreshCw, Search, Trash2, Wallet, X, XCircle,
@@ -93,57 +93,90 @@ const Pricing = ({ check }: { check: EligibilityCheck }) => {
   );
 };
 
-/**
- * Eligible vs not-eligible ring. Total 0 par khaali ring + "0%" dikhta hai —
- * panel ka shape tab bhi bana rehta hai, isliye page khaali nahi lagta.
- */
-const RING = { size: 170, stroke: 16 };
+/*
+Ek hi donut ring dono jagah: eligibility rate card aur product tile. Sirf
+size/colors badalte hain, geometry aur progress arc yahin rehti hai. Total 0
+par arc nahi banti, ring khaali dikhti hai — panel ka shape bana rehta hai.
+*/
+const Ring = ({
+  size,
+  stroke,
+  share,
+  track,
+  progress,
+  className,
+  label,
+  children,
+}: {
+  size: number;
+  stroke: number;
+  /** 0..1 */
+  share: number;
+  track: string;
+  progress: string;
+  className: string;
+  label?: string;
+  children: ReactNode;
+}) => {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  return (
+    <div className="relative shrink-0">
+      <svg
+        viewBox={`0 0 ${size} ${size}`}
+        className={className}
+        role={label ? "img" : undefined}
+        aria-label={label}
+        aria-hidden={label ? undefined : true}
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={track}
+          strokeWidth={stroke}
+        />
+        {share > 0 && (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={progress}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${circumference * share} ${circumference}`}
+          />
+        )}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
+    </div>
+  );
+};
 
 const RateRing = ({ stats }: { stats: EligibilityCheckStats }) => {
   const total = stats.total;
-  const radius = (RING.size - RING.stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const share = percentOf(stats.eligible, total) / 100;
 
   return (
     <div className="flex flex-col items-center gap-5 px-5 pb-5 sm:flex-row sm:justify-center sm:gap-7">
-      <div className="relative shrink-0">
-        <svg
-          viewBox={`0 0 ${RING.size} ${RING.size}`}
-          className="h-40 w-40 -rotate-90"
-          role="img"
-          aria-label={`${stats.eligible} of ${total} checks eligible`}
-        >
-          <circle
-            cx={RING.size / 2}
-            cy={RING.size / 2}
-            r={radius}
-            fill="none"
-            stroke="#f1f5f9"
-            strokeWidth={RING.stroke}
-          />
-          {total > 0 && (
-            <circle
-              cx={RING.size / 2}
-              cy={RING.size / 2}
-              r={radius}
-              fill="none"
-              stroke="#10b981"
-              strokeWidth={RING.stroke}
-              strokeLinecap="round"
-              strokeDasharray={`${circumference * share} ${circumference}`}
-            />
-          )}
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold leading-none tabular-nums text-slate-900">
-            {stats.eligibleRate}%
-          </span>
-          <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-            eligible
-          </span>
-        </div>
-      </div>
+      <Ring
+        size={170}
+        stroke={16}
+        share={percentOf(stats.eligible, total) / 100}
+        track="#f1f5f9"
+        progress="#10b981"
+        className="h-40 w-40 -rotate-90"
+        label={`${stats.eligible} of ${total} checks eligible`}
+      >
+        <span className="text-3xl font-bold leading-none tabular-nums text-slate-900">
+          {stats.eligibleRate}%
+        </span>
+        <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          eligible
+        </span>
+      </Ring>
 
       <ul className="w-full space-y-2.5 text-xs sm:w-auto">
         {[
@@ -165,7 +198,30 @@ const RateRing = ({ stats }: { stats: EligibilityCheckStats }) => {
   );
 };
 
-/** Product-wise bars: emerald = eligible, rose = not eligible. Click = us product ka filter. */
+/**
+ * Product-wise tiles — har product ka apna chhota ring (eligible share) aur
+ * eligible/rejected counts. Ring ka base rose hai aur upar emerald arc, isliye
+ * ek nazar me pata chalta hai kitne percent checks pass hue. Click = filter.
+ */
+const ProductRing = ({ eligible, total }: { eligible: number; total: number }) => {
+  const share = total > 0 ? eligible / total : 0;
+
+  return (
+    <Ring
+      size={44}
+      stroke={6}
+      share={share}
+      track="#fecdd3"
+      progress="#10b981"
+      className="h-11 w-11 -rotate-90"
+    >
+      <span className="text-[10px] font-bold tabular-nums text-slate-700">
+        {Math.round(share * 100)}%
+      </span>
+    </Ring>
+  );
+};
+
 const ProductMix = ({
   rows,
   selected,
@@ -187,12 +243,12 @@ const ProductMix = ({
     );
   }
 
-  const peak = Math.max(...rows.map((row) => row.total), 1);
+  const totalChecks = rows.reduce((sum, row) => sum + row.total, 0);
 
   return (
-    <div className="space-y-1 px-3 pb-4">
+    <div className="grid gap-2.5 px-3 pb-4 sm:[grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
       {rows.map((row) => {
-        const rejected = Math.max(0, row.total - row.eligible);
+        const rejected = row.total - row.eligible;
         const active = selected === row.product;
 
         return (
@@ -201,29 +257,36 @@ const ProductMix = ({
             type="button"
             onClick={() => onPick(active ? "all" : row.product)}
             title={`${row.label}: ${row.total} checks, ${row.eligible} eligible`}
-            className={`w-full rounded-xl px-2.5 py-2 text-left transition ${
-              active ? "bg-sky-50 ring-1 ring-sky-200" : "hover:bg-slate-50"
+            className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${
+              active
+                ? "border-sky-300 bg-sky-50/70 ring-1 ring-sky-200"
+                : "border-slate-200 bg-white hover:border-sky-200 hover:bg-slate-50"
             }`}
           >
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0 truncate text-xs font-semibold text-slate-700">
-                {row.label}
-              </span>
-              <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
-                {count(row.total)} checks ·{" "}
-                <span className="font-semibold text-emerald-700">{count(row.eligible)} eligible</span>
-                {rejected > 0 && <span className="text-rose-500"> · {count(rejected)} rejected</span>}
-              </span>
-            </div>
-            <div className="mt-1.5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-slate-100">
-              <span
-                className="rounded-full bg-emerald-500 transition-[width]"
-                style={{ width: `${(row.eligible / peak) * 100}%` }}
-              />
-              <span
-                className="rounded-full bg-rose-300 transition-[width]"
-                style={{ width: `${(rejected / peak) * 100}%` }}
-              />
+            <ProductRing eligible={row.eligible} total={row.total} />
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate text-xs font-semibold text-slate-700">{row.label}</span>
+                <span className="shrink-0 text-[10px] tabular-nums text-slate-400">
+                  {percentOf(row.total, totalChecks).toFixed(0)}%
+                </span>
+              </div>
+              <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
+                {count(row.total)} checks
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px] font-semibold">
+                <span className="inline-flex items-center gap-1 text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  {count(row.eligible)} eligible
+                </span>
+                {rejected > 0 && (
+                  <span className="inline-flex items-center gap-1 text-rose-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                    {count(rejected)} rejected
+                  </span>
+                )}
+              </div>
             </div>
           </button>
         );
@@ -501,7 +564,7 @@ const EligibilityChecks = () => {
         <Panel
           className="lg:col-span-2"
           title="Product mix"
-          subtitle="Checks per product — click a row to filter the table"
+          subtitle="Checks per product — click a tile to filter the table"
           action={
             <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-500">
               {summary.byProduct.length} product{summary.byProduct.length === 1 ? "" : "s"}
@@ -726,7 +789,7 @@ const EligibilityChecks = () => {
                         {check.age !== null ? `${check.age} yrs` : "—"}
                       </p>
                       <p className="text-slate-400">
-                        {[check.occupation, check.country].filter(Boolean).join(" · ") || "—"}
+                        {check.occupation || "—"}
                       </p>
                     </td>
                     <td className="px-4 py-3">
@@ -935,10 +998,8 @@ const EligibilityChecks = () => {
                   </p>
                   <dl className="mt-1.5 space-y-1.5 text-xs">
                     {[
-                      ["Full name", selected.name || "—"],
                       ["Age", selected.age !== null ? `${selected.age} yrs` : "—"],
                       ["Occupation", selected.occupation || "—"],
-                      ["Country", selected.country || "—"],
                     ].map(([label, value]) => (
                       <div key={label} className="flex justify-between gap-3">
                         <dt className="text-slate-400">{label}</dt>
@@ -973,7 +1034,6 @@ const EligibilityChecks = () => {
                       ["Product", selected.productLabel],
                       ["Code", selected.product || "—"],
                       ["Category", selected.family || "—"],
-                      ["Source", selected.source || "—"],
                       ["ROI", selected.roi !== null ? `${selected.roi}% p.a.` : "On request"],
                       ["Tenure", selected.tenureMonths ? `${selected.tenureMonths} months` : "—"],
                     ].map(([label, value]) => (
@@ -1052,18 +1112,9 @@ const EligibilityChecks = () => {
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                     Record
                   </p>
-                  <dl className="mt-1.5 space-y-1.5 text-xs">
-                    {[
-                      ["Check no.", selected.checkNo || "—"],
-                      ["Record id", selected.id || "—"],
-                      ["Checked at", dateTime(selected.checkedAt)],
-                    ].map(([label, value]) => (
-                      <div key={label} className="flex justify-between gap-3">
-                        <dt className="text-slate-400">{label}</dt>
-                        <dd className="font-mono text-right break-all text-slate-600">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
+                  <p className="mt-1.5 font-mono text-xs break-all text-slate-600">
+                    {selected.id || "—"}
+                  </p>
                 </section>
               </div>
             </div>
