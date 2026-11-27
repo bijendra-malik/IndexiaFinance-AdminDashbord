@@ -19,7 +19,6 @@ export interface EligibilityCheck {
   mobile: string;
   email: string;
   age: number | null;
-  country: string;
   occupation: string;
   /** Product code (personal_loan) — filter/list isi par chalta hai. */
   product: string;
@@ -112,7 +111,6 @@ const toCheck = (value: unknown): EligibilityCheck => {
     mobile: asText(item.mobile),
     email: asText(item.email),
     age: asNumberOrNull(item.age),
-    country: asText(item.country),
     occupation: asText(item.occupation),
     product: asText(item.product),
     productLabel: asText(item.productLabel) || "—",
