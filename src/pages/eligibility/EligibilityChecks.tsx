@@ -35,7 +35,7 @@ rate + product mix, neeche filters aur checks table.
 */
 
 const BRAND = "linear-gradient(135deg, rgb(6,106,156), rgb(38,174,144))";
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 20;
 
 const EMPTY_STATS: EligibilityCheckStats = {
   total: 0,
@@ -728,7 +728,8 @@ const EligibilityChecks = () => {
             <table className="w-full min-w-[1080px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-slate-100 bg-slate-50/90 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500 backdrop-blur">
-                  <th className="px-5 py-2.5">Applicant</th>
+                  <th className="w-14 px-5 py-2.5">S.No.</th>
+                  <th className="px-4 py-2.5">Applicant</th>
                   <th className="px-4 py-2.5">Contact</th>
                   <th className="px-4 py-2.5">Profile</th>
                   <th className="px-4 py-2.5">Product</th>
@@ -740,13 +741,16 @@ const EligibilityChecks = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {checks.map((check) => (
+                {checks.map((check, index) => (
                   <tr
                     key={check.id}
                     onClick={() => openCheck(check)}
                     className="cursor-pointer align-top transition hover:bg-slate-50/70"
                   >
-                    <td className="px-5 py-3">
+                    <td className="px-5 py-3 text-[11px] font-semibold text-slate-400">
+                      {(currentPage - 1) * PAGE_SIZE + index + 1}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <span
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
@@ -1053,6 +1057,9 @@ const EligibilityChecks = () => {
                   </p>
                   <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
                     {[
+                      ...(selected.annualIncome > 0
+                        ? [["Annual income", formatRupees(selected.annualIncome)]]
+                        : []),
                       ["Monthly income", formatRupees(selected.monthlyIncome)],
                       ["Existing EMI", formatRupees(selected.existingEmi)],
                       ["Net income", formatRupees(selected.netIncome)],
