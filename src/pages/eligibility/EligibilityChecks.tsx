@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   BadgeCheck, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Inbox, Loader2, Mail,
-  Phone, RefreshCw, Search, Trash2, Wallet, X, XCircle,
+  Phone, RefreshCw, Search, Trash2, Users, Wallet, X, XCircle,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { getApiErrorMessage } from "../../utils/apiError";
@@ -36,6 +36,58 @@ rate + product mix, neeche filters aur checks table.
 
 const BRAND = "linear-gradient(135deg, rgb(6,106,156), rgb(38,174,144))";
 const PAGE_SIZE = 20;
+
+/*
+Ek hi client ke saare checks — same mobile ya email = same client. Isse list
+me Ravi Kumar ki 15 rows ki jagah ek row aati hai, aur andar uske sab checks.
+*/
+type ClientGroup = {
+  key: string;
+  name: string;
+  mobile: string;
+  emails: string[];
+  checks: EligibilityCheck[];
+  eligible: number;
+  lastCheckAt: string | null;
+  products: string[];
+};
+
+const clientKeyOf = (check: EligibilityCheck) =>
+  check.mobile.trim() || check.email.trim().toLowerCase() || check.name.trim().toLowerCase();
+
+const groupChecksByClient = (checks: EligibilityCheck[]): ClientGroup[] => {
+  const groups = new Map<string, ClientGroup>();
+
+  for (const check of checks) {
+    const key = clientKeyOf(check);
+    if (!key) continue;
+
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        name: check.name || "Unnamed",
+        mobile: check.mobile,
+        emails: [],
+        checks: [],
+        eligible: 0,
+        lastCheckAt: null,
+        products: [],
+      };
+      groups.set(key, group);
+    }
+
+    group.checks.push(check);
+    if (check.email && !group.emails.includes(check.email)) group.emails.push(check.email);
+    if (check.eligible) group.eligible += 1;
+    if (check.productLabel && !group.products.includes(check.productLabel)) {
+      group.products.push(check.productLabel);
+    }
+    if (!group.lastCheckAt && check.checkedAt) group.lastCheckAt = check.checkedAt;
+  }
+
+  return [...groups.values()];
+};
 
 const EMPTY_STATS: EligibilityCheckStats = {
   total: 0,
@@ -305,6 +357,13 @@ const EligibilityChecks = () => {
   const [page, setPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
 
+  /* List view: har check alag, ya ek row per client (same mobile/email). */
+  const [view, setView] = useState<"checks" | "clients">("checks");
+  const [clientChecks, setClientChecks] = useState<EligibilityCheck[]>([]);
+  const [clientChecksLoading, setClientChecksLoading] = useState(false);
+  const [clientPage, setClientPage] = useState(1);
+  const [selectedClientKey, setSelectedClientKey] = useState<string | null>(null);
+
   const [data, setData] = useState<EligibilityCheckList | null>(null);
   const [stats, setStats] = useState<EligibilityCheckStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -312,6 +371,8 @@ const EligibilityChecks = () => {
   const [selected, setSelected] = useState<EligibilityCheck | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [applicantChecks, setApplicantChecks] = useState<EligibilityCheck[]>([]);
+  const [applicantChecksLoading, setApplicantChecksLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
   /* Delete confirm modal — null hone par modal band. */
@@ -345,14 +406,74 @@ const EligibilityChecks = () => {
     };
   }, [search, product, eligible, from, to, page, reloadKey]);
 
+  /*
+  Clients view ke liye saare matching checks (max 10 pages × 100). Grouping
+  server-side pagination ke paar chahiye, warna same client do pages me toot
+  jayega. View tabhi load hota hai jab user Clients par jaye.
+  */
+  useEffect(() => {
+    if (view !== "clients") return undefined;
+
+    let cancelled = false;
+    setClientChecksLoading(true);
+
+    const loadAll = async () => {
+      const collected: EligibilityCheck[] = [];
+      let nextPage = 1;
+      let pages = 1;
+
+      do {
+        const list = await getEligibilityChecks({
+          search,
+          product,
+          eligible,
+          from,
+          to,
+          page: nextPage,
+          limit: 100,
+        });
+        if (cancelled) return;
+        collected.push(...list.checks);
+        pages = list.pages;
+        nextPage += 1;
+      } while (nextPage <= pages && nextPage <= 10);
+
+      if (!cancelled) setClientChecks(collected);
+    };
+
+    loadAll()
+      .catch(() => {
+        if (!cancelled) setClientChecks([]);
+      })
+      .finally(() => {
+        if (!cancelled) setClientChecksLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [view, search, product, eligible, from, to, reloadKey]);
+
   const checks = data?.checks ?? [];
   const totalCount = data?.total ?? 0;
   const currentPage = data?.page ?? 1;
   const totalPages = data?.pages ?? 1;
   const summary = stats ?? EMPTY_STATS;
 
+  const clients = groupChecksByClient(clientChecks);
+  const clientTotalPages = Math.max(1, Math.ceil(clients.length / PAGE_SIZE));
+  const currentClientPage = Math.min(clientPage, clientTotalPages);
+  const visibleClients = clients.slice(
+    (currentClientPage - 1) * PAGE_SIZE,
+    currentClientPage * PAGE_SIZE,
+  );
+  const selectedClient = selectedClientKey
+    ? (clients.find((client) => client.key === selectedClientKey) ?? null)
+    : null;
+
   const resetPage = () => {
     setPage(1);
+    setClientPage(1);
   };
 
   const submitSearch = (event: FormEvent) => {
@@ -403,6 +524,47 @@ const EligibilityChecks = () => {
     setSelected(null);
     setDetailLoading(false);
   };
+
+  /*
+  Same mobile/email wale saare checks — pata chale is client ne eligibility
+  calculator kitni baar hit kiya. Search endpoint mobile/email/name/checkNo
+  par match karta hai, isliye exact mobile ya email par filter karte hain.
+  */
+  useEffect(() => {
+    const mobile = selected?.mobile.trim() ?? "";
+    const email = selected?.email.trim().toLowerCase() ?? "";
+
+    if (!mobile && !email) {
+      setApplicantChecks([]);
+      setApplicantChecksLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setApplicantChecksLoading(true);
+
+    getEligibilityChecks({ search: mobile || email, limit: 100 })
+      .then((list) => {
+        if (cancelled) return;
+        setApplicantChecks(
+          list.checks.filter(
+            (check) =>
+              (mobile && check.mobile.trim() === mobile) ||
+              (email && check.email.trim().toLowerCase() === email),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setApplicantChecks([]);
+      })
+      .finally(() => {
+        if (!cancelled) setApplicantChecksLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.mobile, selected?.email]);
 
   const requestDelete = (check: EligibilityCheck) => setPendingDelete(check);
 
@@ -692,18 +854,162 @@ const EligibilityChecks = () => {
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-700">All checks</h3>
+            <div className="flex items-center gap-2.5">
+              <h3 className="text-sm font-semibold text-slate-700">
+                {view === "checks" ? "All checks" : "Clients"}
+              </h3>
+              <div className="flex rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
+                {([
+                  { value: "checks", label: "All checks" },
+                  { value: "clients", label: "Clients" },
+                ] as const).map((tab) => (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => setView(tab.value)}
+                    className={`rounded-md px-2 py-0.5 transition ${
+                      view === tab.value
+                        ? "bg-white text-slate-800 shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <p className="text-xs text-slate-500">
-              {count(totalCount)} record{totalCount === 1 ? "" : "s"}
+              {view === "clients"
+                ? clientChecksLoading
+                  ? "Grouping by mobile / email…"
+                  : `${count(clients.length)} client${clients.length === 1 ? "" : "s"} · ${count(clientChecks.length)} checks`
+                : `${count(totalCount)} record${totalCount === 1 ? "" : "s"}`}
               {product !== "all" && summary.byProduct.some((row) => row.product === product)
                 ? ` · ${summary.byProduct.find((row) => row.product === product)?.label}`
                 : ""}
             </p>
           </div>
-          <span className="text-[11px] text-slate-400">Latest first</span>
+          <span className="text-[11px] text-slate-400">
+            {view === "checks" ? "Latest first" : "Same mobile / email = one client"}
+          </span>
         </div>
 
-        {loading ? (
+        {view === "clients" ? (
+          clientChecksLoading ? (
+            <p className="px-5 py-12 text-center text-sm text-slate-400">Loading clients…</p>
+          ) : clients.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-5 py-14 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <Users size={22} />
+              </span>
+              <p className="text-sm font-semibold text-slate-700">No clients found</p>
+              <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+                Is filter par koi eligibility check nahi mila.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1000px] text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-slate-100 bg-slate-50/90 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500 backdrop-blur">
+                    <th className="w-14 px-5 py-2.5">S.No.</th>
+                    <th className="px-4 py-2.5">Client</th>
+                    <th className="px-4 py-2.5">Contact</th>
+                    <th className="px-4 py-2.5">Checks</th>
+                    <th className="px-4 py-2.5">Products</th>
+                    <th className="px-4 py-2.5">Last check</th>
+                    <th className="px-4 py-2.5">Eligible</th>
+                    <th className="px-5 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visibleClients.map((client, index) => (
+                    <tr
+                      key={client.key}
+                      onClick={() => setSelectedClientKey(client.key)}
+                      className="cursor-pointer align-top transition hover:bg-slate-50/70"
+                    >
+                      <td className="px-5 py-3 text-[11px] font-semibold text-slate-400">
+                        {(currentClientPage - 1) * PAGE_SIZE + index + 1}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                            style={{ background: BRAND }}
+                            aria-hidden
+                          >
+                            {initialsOf(client.name)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block max-w-[12rem] truncate font-semibold text-slate-800">
+                              {client.name || "Unnamed"}
+                            </span>
+                            <span className="block text-[11px] text-slate-400">
+                              {client.mobile || "—"}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-[11px] text-slate-500">
+                        <p className="max-w-[14rem] truncate" title={client.emails.join(", ")}>
+                          {client.emails[0] || "—"}
+                        </p>
+                        {client.emails.length > 1 && (
+                          <p className="text-slate-400">
+                            +{client.emails.length - 1} more email
+                            {client.emails.length - 1 === 1 ? "" : "s"}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full bg-[rgba(6,106,156,0.08)] px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-[rgb(6,106,156)]">
+                          {client.checks.length} check{client.checks.length === 1 ? "" : "s"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex max-w-[16rem] flex-wrap gap-1">
+                          {client.products.slice(0, 2).map((label) => (
+                            <span
+                              key={label}
+                              className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] whitespace-nowrap text-slate-600"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                          {client.products.length > 2 && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                              +{client.products.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-[11px] whitespace-nowrap text-slate-500">
+                        {dateTime(client.lastCheckAt)}
+                      </td>
+                      <td className="px-4 py-3 text-[11px] whitespace-nowrap">
+                        <span className="font-semibold text-emerald-700">{client.eligible}</span>
+                        <span className="text-slate-400"> / {client.checks.length}</span>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedClientKey(client.key);
+                          }}
+                          className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-[rgb(6,106,156)] hover:text-[rgb(6,106,156)]"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : loading ? (
           <p className="px-5 py-12 text-center text-sm text-slate-400">Loading checks…</p>
         ) : checks.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-14 text-center">
@@ -875,7 +1181,7 @@ const EligibilityChecks = () => {
           </div>
         )}
 
-        {totalPages > 1 && (
+        {view === "checks" && totalPages > 1 && (
           <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">
             <span>
               {count(totalCount)} checks · page {currentPage} of {totalPages}
@@ -900,7 +1206,147 @@ const EligibilityChecks = () => {
             </div>
           </div>
         )}
+
+        {view === "clients" && clientTotalPages > 1 && (
+          <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">
+            <span>
+              {count(clients.length)} clients · page {currentClientPage} of {clientTotalPages}
+            </span>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setClientPage((current) => Math.max(1, current - 1))}
+                disabled={currentClientPage <= 1}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 font-semibold disabled:opacity-40"
+              >
+                <ChevronLeft size={12} /> Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => setClientPage((current) => Math.min(clientTotalPages, current + 1))}
+                disabled={currentClientPage >= clientTotalPages}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 font-semibold disabled:opacity-40"
+              >
+                Next <ChevronRight size={12} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Client modal — same mobile/email ke saare checks */}
+      {selectedClient && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/40 p-4"
+          onClick={() => setSelectedClientKey(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Client ${selectedClient.name}`}
+            className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div className="flex items-start gap-3">
+                <span
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white"
+                  style={{ background: BRAND }}
+                  aria-hidden
+                >
+                  {initialsOf(selectedClient.name)}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Client · {selectedClient.checks.length} check
+                    {selectedClient.checks.length === 1 ? "" : "s"}
+                  </p>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {selectedClient.name || "Unnamed"}
+                  </h2>
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <span className="inline-flex items-center gap-1">
+                      <Phone size={11} className="text-slate-400" />
+                      {selectedClient.mobile || "—"}
+                    </span>
+                    {selectedClient.emails.map((email) => (
+                      <span key={email} className="inline-flex items-center gap-1 break-all">
+                        <Mail size={11} className="text-slate-400" />
+                        {email}
+                      </span>
+                    ))}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {selectedClient.eligible} eligible · {selectedClient.checks.length - selectedClient.eligible}{" "}
+                    not eligible
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedClientKey(null)}
+                aria-label="Close client"
+                className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto">
+              {selectedClient.checks.map((check) => (
+                <button
+                  key={check.id}
+                  type="button"
+                  onClick={() => openCheck(check)}
+                  className="flex w-full items-start justify-between gap-3 px-5 py-3 text-left transition hover:bg-slate-50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-slate-800">
+                      {check.productLabel}
+                      <span className="ml-1.5 font-normal text-slate-400">
+                        {check.checkNo || "—"}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-slate-400">
+                      {dateTime(check.checkedAt)} · {check.occupation || "—"} · EMI{" "}
+                      {formatRupees(check.existingEmi)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span
+                      className={`block text-xs font-semibold ${
+                        check.eligible ? "text-slate-800" : "text-rose-600"
+                      }`}
+                    >
+                      {check.eligible ? formatRupees(check.maxLoanAmount) : "Not eligible"}
+                    </span>
+                    <span className="mt-0.5 block max-w-[11rem] text-[11px] text-slate-400">
+                      {check.eligible
+                        ? check.emi !== null
+                          ? `EMI ${formatRupees(check.emi)}/mo`
+                          : ""
+                        : check.reason || ""}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <footer className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-3">
+              <p className="text-[11px] text-slate-400">
+                {selectedClient.checks.length} checks · {selectedClient.eligible} eligible
+              </p>
+              <button
+                type="button"
+                onClick={() => setSelectedClientKey(null)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       {/* View modal — centered, poora data */}
       {selected && (
@@ -1114,6 +1560,75 @@ const EligibilityChecks = () => {
                     </ul>
                   </section>
                 )}
+
+                <section className="sm:col-span-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Applicant activity
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {applicantChecksLoading
+                        ? "Loading…"
+                        : `${applicantChecks.length} check${applicantChecks.length === 1 ? "" : "s"}`}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                    Same mobile / email se kiye gaye sab checks — is client ne calculator kitni
+                    baar hit kiya.
+                  </p>
+
+                  {applicantChecksLoading ? (
+                    <p className="mt-2 text-xs text-slate-400">Loading applicant history…</p>
+                  ) : applicantChecks.length <= 1 ? (
+                    <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-2 text-xs text-slate-500">
+                      Is mobile / email par sirf yahi check mila.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+                      {applicantChecks.slice(0, 10).map((check) => {
+                        const isCurrent = check.id === selected.id;
+                        return (
+                          <li key={check.id}>
+                            <button
+                              type="button"
+                              onClick={() => openCheck(check)}
+                              className={`flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left transition hover:bg-slate-50 ${
+                                isCurrent ? "bg-slate-50/80" : ""
+                              }`}
+                            >
+                              <span className="min-w-0">
+                                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                                  <span className="truncate">{check.productLabel}</span>
+                                  {isCurrent && (
+                                    <span className="shrink-0 rounded bg-white px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[rgb(6,106,156)] ring-1 ring-slate-200">
+                                      this
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="block text-[11px] text-slate-400">
+                                  {check.checkNo || "—"} · {dateTime(check.checkedAt)}
+                                </span>
+                              </span>
+                              <span
+                                className={`shrink-0 text-right text-xs font-semibold ${
+                                  check.eligible ? "text-slate-700" : "text-rose-600"
+                                }`}
+                              >
+                                {check.eligible ? formatRupees(check.maxLoanAmount) : "Not eligible"}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
+                  {applicantChecks.length > 10 && (
+                    <p className="mt-1.5 text-[11px] text-slate-400">
+                      Latest 10 dikhaye — total {applicantChecks.length} checks.
+                    </p>
+                  )}
+                </section>
 
                 <section className="sm:col-span-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
