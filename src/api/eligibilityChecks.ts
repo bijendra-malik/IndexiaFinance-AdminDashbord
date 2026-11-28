@@ -12,6 +12,20 @@ Base URL axiosInstance me /api/admin hai, isliye yahan sirf
 
 export type EligibleFilter = "all" | "yes" | "no";
 
+/** LAP checks ka property snapshot (baaki products par null). */
+export interface EligibilityProperty {
+  type: string;
+  typeOther: string;
+  usage: string;
+  city: string;
+  marketValue: number;
+  monthlyRent: number;
+  /** Rent ka 75% jo income me joda gaya. */
+  rentCounted: number;
+  existingLoan: number;
+  ltvPercent: number | null;
+}
+
 export interface EligibilityCheck {
   id: string;
   checkNo: string;
@@ -27,10 +41,16 @@ export interface EligibilityCheck {
   monthlyIncome: number;
   /** Business loan ki saal ki income (yearly); monthly income isi se banti hai. */
   annualIncome: number;
+  /** Loan Against Property ka property detail; doosre products par null. */
+  property: EligibilityProperty | null;
   existingEmi: number;
   netIncome: number;
   foirPercent: number | null;
   maxEmi: number;
+  /** FOIR lagane wali counted income (LAP rented-out me rent ka 75% included). */
+  foirIncome: number;
+  /** Naye loan se pehle available EMI room (maxEmi − existing EMI). */
+  emiHeadroom: number;
   roi: number | null;
   tenureMonths: number | null;
   maxLoanAmount: number | null;
@@ -104,6 +124,22 @@ const asDate = (value: unknown): string | null => {
   return text ? text : null;
 };
 
+const toProperty = (value: unknown): EligibilityProperty | null => {
+  if (value === null || value === undefined || typeof value !== "object") return null;
+  const item = recordOf(value);
+  return {
+    type: asText(item.type),
+    typeOther: asText(item.typeOther),
+    usage: asText(item.usage),
+    city: asText(item.city),
+    marketValue: asNumber(item.marketValue),
+    monthlyRent: asNumber(item.monthlyRent),
+    rentCounted: asNumber(item.rentCounted),
+    existingLoan: asNumber(item.existingLoan),
+    ltvPercent: asNumberOrNull(item.ltvPercent),
+  };
+};
+
 const toCheck = (value: unknown): EligibilityCheck => {
   const item = recordOf(value);
   return {
@@ -118,10 +154,13 @@ const toCheck = (value: unknown): EligibilityCheck => {
     productLabel: asText(item.productLabel) || "—",
     monthlyIncome: asNumber(item.monthlyIncome),
     annualIncome: asNumber(item.annualIncome),
+    property: toProperty(item.property),
     existingEmi: asNumber(item.existingEmi),
     netIncome: asNumber(item.netIncome),
     foirPercent: asNumberOrNull(item.foirPercent),
     maxEmi: asNumber(item.maxEmi),
+    foirIncome: asNumber(item.foirIncome),
+    emiHeadroom: asNumber(item.emiHeadroom),
     family: asText(item.family),
     roi: asNumberOrNull(item.roi),
     tenureMonths: asNumberOrNull(item.tenureMonths),
