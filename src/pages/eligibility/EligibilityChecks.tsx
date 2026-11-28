@@ -1497,6 +1497,106 @@ const EligibilityChecks = () => {
                   </dl>
                 </section>
 
+                {selected.property && (
+                  <section className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        Property
+                      </p>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold ring-1 ${
+                          selected.property.usage === "Rented out"
+                            ? "text-emerald-700 ring-emerald-200"
+                            : "text-slate-600 ring-slate-200"
+                        }`}
+                      >
+                        Property usage · {selected.property.usage || "—"}
+                      </span>
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+                      <div>
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Property type
+                        </dt>
+                        <dd className="font-semibold text-slate-700">
+                          {selected.property.type === "Other"
+                            ? `Other — ${selected.property.typeOther || "—"}`
+                            : selected.property.type || "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                          City category
+                        </dt>
+                        <dd className="font-semibold text-slate-700">
+                          {selected.property.city ? `Category ${selected.property.city}` : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Market value
+                        </dt>
+                        <dd className="font-semibold text-slate-700">
+                          {formatRupees(selected.property.marketValue)}
+                        </dd>
+                      </div>
+                      {selected.property.usage === "Rented out" && (
+                        <>
+                          <div>
+                            <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                              Monthly rent
+                            </dt>
+                            <dd className="font-semibold text-slate-700">
+                              {formatRupees(selected.property.monthlyRent)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                              Rent counted (75%)
+                            </dt>
+                            <dd className="font-semibold text-emerald-700">
+                              +{formatRupees(selected.property.rentCounted)}
+                            </dd>
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Existing loan on property
+                        </dt>
+                        <dd className="font-semibold text-slate-700">
+                          {formatRupees(selected.property.existingLoan)}
+                        </dd>
+                      </div>
+                      {selected.property.ltvPercent !== null && (
+                        <>
+                          <div>
+                            <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                              LTV applied
+                            </dt>
+                            <dd className="font-semibold text-slate-700">
+                              {selected.property.ltvPercent}%
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+                              Property cap
+                            </dt>
+                            <dd className="font-semibold text-slate-700">
+                              {formatRupees(
+                                Math.round(
+                                  selected.property.marketValue *
+                                    (selected.property.ltvPercent / 100)
+                                )
+                              )}
+                            </dd>
+                          </div>
+                        </>
+                      )}
+                    </dl>
+                  </section>
+                )}
+
                 <section className="sm:col-span-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                     Calculation
@@ -1507,8 +1607,18 @@ const EligibilityChecks = () => {
                         ? [["Annual income", formatRupees(selected.annualIncome)]]
                         : []),
                       ["Monthly income", formatRupees(selected.monthlyIncome)],
+                      ...(selected.property && selected.property.rentCounted > 0
+                        ? [["Rental income (75%)", `+${formatRupees(selected.property.rentCounted)}`]]
+                        : []),
+                      ...(selected.foirIncome > 0 &&
+                      Math.round(selected.foirIncome) !== Math.round(selected.monthlyIncome)
+                        ? [["FOIR income", formatRupees(selected.foirIncome)]]
+                        : []),
                       ["Existing EMI", formatRupees(selected.existingEmi)],
-                      ["Net income", formatRupees(selected.netIncome)],
+                      ...(selected.foirIncome > 0
+                        ? [["EMI headroom", formatRupees(selected.emiHeadroom)]]
+                        : []),
+                      ["Income after existing EMI", formatRupees(selected.netIncome)],
                       ["FOIR", selected.foirPercent !== null ? `${selected.foirPercent}%` : "—"],
                       ["Max EMI", formatRupees(selected.maxEmi)],
                       ["Max loan", formatRupees(selected.maxLoanAmount)],
@@ -1523,6 +1633,12 @@ const EligibilityChecks = () => {
                       </div>
                     ))}
                   </dl>
+                  {selected.foirIncome > 0 && (
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                      Max EMI = FOIR income × {selected.foirPercent ?? 70}% · EMI headroom = Max EMI
+                      − existing EMI. LAP me rent ka 75% FOIR income me joda jata hai.
+                    </p>
+                  )}
                 </section>
 
                 {selected.caps.length > 0 && (
