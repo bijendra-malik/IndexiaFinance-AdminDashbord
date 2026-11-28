@@ -25,6 +25,8 @@ export interface EligibilityCheck {
   productLabel: string;
   family: string;
   monthlyIncome: number;
+  /** Business loan ki saal ki income (yearly); monthly income isi se banti hai. */
+  annualIncome: number;
   existingEmi: number;
   netIncome: number;
   foirPercent: number | null;
@@ -115,6 +117,7 @@ const toCheck = (value: unknown): EligibilityCheck => {
     product: asText(item.product),
     productLabel: asText(item.productLabel) || "—",
     monthlyIncome: asNumber(item.monthlyIncome),
+    annualIncome: asNumber(item.annualIncome),
     existingEmi: asNumber(item.existingEmi),
     netIncome: asNumber(item.netIncome),
     foirPercent: asNumberOrNull(item.foirPercent),
